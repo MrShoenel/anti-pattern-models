@@ -1,18 +1,18 @@
 ---
 title: "Tests with DTW"
 output:
-  pdf_document:
-    number_sections: true
-    toc: true
-    toc_depth: 6
-  md_document:
-    df_print: paged
   html_document:
     df_print: paged
     number_sections: true
     toc: true
     toc_depth: 6
     toc_float: true
+  md_document:
+    df_print: paged
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
   word_document: default
 ---
 
@@ -89,12 +89,40 @@ print(c(find_signal$distance, find_signal$normalizedDistance))
 Before we go further, we want to extract the matching portions of the pattern from the window and compare it to the original signal. We approximate functions for the original and the matched signal and then calculate the difference as the area between the curves in a unit square.
 
 ```{r}
-#' TODO: We should also return start/end index of
-#' when the warping-function starts/ends
-#' TODO: We should try to implement detecting a 'flat'
-#' warping curve, as it indicates whether the pattern
-#' is present (see last example in this notebook)
-extract_signal_from_window <- function(dtwAlign, window) {
+extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = FALSE) {
+  # First, we check whether the warping function is flat. This
+  # test has two components: a linear regression, and a check
+  # of the vertical co-domain of that function.
+  tempLm <- stats::lm(
+    formula = y ~ x, data = data.frame(
+      x = 1:length(dtwAlign$index2),
+      y = dtwAlign$index2
+    )
+  )
+  if (tempLm$coefficients[2] < .1) {
+    # The slope is less than 0.1.
+    # It is very flat, let's check the values in the co-domain:
+    if (((max(dtwAlign$index2) - min(dtwAlign$index2)) / nrow(dtwAlign$reference)) < .1) {
+      # Also, the values in the co-domain cover less than 10%
+      # of the available range, indicating an actual flat line.
+      # We will return two values, both 0, so that a function
+      # can be approximated.
+      wMsg <- "DTW warping function is flat."
+      if (throwIfFlat) {
+        stop(wMsg)
+      }
+      warning(wMsg)
+      
+      return(list(
+        indices = c(0, 0),
+        start = 0,
+        end = 0,
+        data = c(0, 0)
+      ))
+    }
+  }
+  
+  
   indices <- c()
   for (idx in 1:min(length(window) - 1, length(dtwAlign$index2) - 1)) {
     if (dtwAlign$index2[idx] < dtwAlign$index2[idx + 1]) {
@@ -104,7 +132,13 @@ extract_signal_from_window <- function(dtwAlign, window) {
   
   indices <- unique(indices)
   
-  return(window[indices])
+  #return(window[indices])
+  return(list(
+    indices = indices,
+    start = min(indices),
+    end = max(indices),
+    data = window[indices]
+  ))
 }
 ```
 
@@ -114,11 +148,18 @@ After this, we want to approximate two functions. For the original pattern we us
 
 ```{r}
 pattern_approxfun <- function(yData, smooth = FALSE) {
+  if (all(yData == 0)) {
+    return(approxfun(
+      x = c(0, 1),
+      y = c(0, 0)
+    ))
+  }
+  
   if (smooth) {
     temp <- loess.smooth(
       x = 1:length(yData),
       y = yData,
-      span = 0.1
+      span = 0.15
     )
     
     yData <- temp$y
@@ -190,13 +231,16 @@ Let's do a full example using the match from above. We do not have a window, so 
 ```{r fig.keep='all'}
 signal_org_f <- pattern_approxfun(org_signal$y)
 
-signal_mat3 <- extract_signal_from_window(find_signal, window = stats::window(noisy_signal$y))
+signal_ext3 <- extract_signal_from_window(find_signal, window = stats::window(noisy_signal$y))
+signal_mat3 <- signal_ext3$data
 signal_mat_f3 <- pattern_approxfun(signal_mat3, smooth = TRUE)
 
 print(paste0("The difference in area is (max 1): ", area_diff_2_functions(signal_org_f, signal_mat_f3)))
 
 curve(signal_org_f, 0, 1, col = "red")
 curve(signal_mat_f3, 0, 1, add = TRUE)
+
+print(paste0("The window starts at ", signal_ext3$start, " and ends at ", signal_ext3$end))
 ```
 
 ### Example using a Window
@@ -234,11 +278,14 @@ Let's do a full example using the match from above:
 ```{r fig.keep='all'}
 signal_org_f <- pattern_approxfun(org_signal$y)
 
-signal_mat <- extract_signal_from_window(find_signal_w, window = win)
+signal_ext <- extract_signal_from_window(find_signal_w, window = win)
+signal_mat <- signal_ext$data
 signal_mat_f <- pattern_approxfun(signal_mat, smooth = TRUE)
 
 curve(signal_org_f, 0, 1, col = "red")
 curve(signal_mat_f, 0, 1, add = TRUE)
+
+print(paste0("The window starts at ", signal_ext$start, " and ends at ", signal_ext$end))
 ```
 Now the area between the curves in the unit square is:
 ```{r}
@@ -272,13 +319,16 @@ print(c(find_signal_w2$distance, find_signal_w2$normalizedDistance))
 ```
 
 ```{r fig.keep='all'}
-signal_mat2 <- extract_signal_from_window(find_signal_w2, window = win2)
+signal_ext2 <- extract_signal_from_window(find_signal_w2, window = win2)
+signal_mat2 <- signal_ext2$data
 signal_mat_f2 <- pattern_approxfun(signal_mat2, smooth = FALSE)
 
 area_diff_2_functions(signal_org_f, signal_mat_f2)
 
 curve(signal_org_f, 0, 1, col = "red")
 curve(signal_mat_f2, 0, 1, add = TRUE)
+
+print(paste0("The window starts at ", signal_ext2$start, " and ends at ", signal_ext2$end))
 ```
 
 ### Example with a window that does not contain the pattern:
@@ -305,15 +355,32 @@ plot(find_signal_w1, type = "three")
 print(c(find_signal_w1$distance, find_signal_w1$normalizedDistance))
 ```
 
+As we can see, the warping function is flat, indicating that DTW can not match the sought-after pattern to the given signal. ___In that case, any distance metric should indicate the maximum possible distance___, and we demonstrate this case below, catching the error. Then, we show what happens if we just go ahead and ignore the error, and estimate the difference in areas (it still works as expected).
+
+```{r}
+# This'll throw:
+tryCatch({
+  signal_mat1 <- extract_signal_from_window(
+    find_signal_w1, window = win1, throwIfFlat = TRUE)
+}, error = function(cond) {
+  warning(cond)
+})
+```
+
+Let's go ahead and __ignore__ the warning about the flat warping function. Note that `pattern_approxfun(..)` returns the linear function between ((0,0), (1,0)) in this case, so that `area_diff_2_functions()` works.
 
 ```{r fig.keep='all'}
-signal_mat1 <- extract_signal_from_window(find_signal_w1, window = win1)
+signal_ext1 <- extract_signal_from_window(
+  find_signal_w1, window = win1, throwIfFlat = FALSE)
+signal_mat1 <- signal_ext1$data
 signal_mat_f1 <- pattern_approxfun(signal_mat1, smooth = FALSE)
 
 area_diff_2_functions(signal_org_f, signal_mat_f1)
 
 curve(signal_org_f, 0, 1, col = "red")
 curve(signal_mat_f1, 0, 1, add = TRUE)
+
+print(paste0("The window starts at ", signal_ext1$start, " and ends at ", signal_ext1$end))
 ```
 
 
