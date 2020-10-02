@@ -1,18 +1,22 @@
 ---
 title: "Tests with DTW"
+bibliography: ../inst/REFERENCES.bib
 output:
-  html_document:
-    df_print: paged
-    number_sections: true
+  md_document:
     toc: true
     toc_depth: 6
-    toc_float: true
-  md_document:
-    df_print: paged
+    df_print: kable
   pdf_document:
     number_sections: true
     toc: true
     toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
   word_document: default
 ---
 
@@ -21,6 +25,20 @@ In this notebook we want to test whether we can detect patterns in noisy data us
 ```{r warning=FALSE, message=FALSE}
 library(dtw)
 ```
+
+```{r}
+# Let's define a function to plot both patterns as functions:
+plot_2_functions <- function(fReference, fQuery, interval = c(0, 1)) {
+  ggplot2::ggplot(data.frame(x = interval), ggplot2::aes(x)) +
+    ggplot2::stat_function(fun = fReference, ggplot2::aes(color="Reference")) +
+    ggplot2::stat_function(fun = fQuery, ggplot2::aes(color="Query")) +
+    ggplot2::scale_color_manual("Patterns", values = c("black", "red")) +
+    ggplot2::theme(
+      axis.title.x = ggplot2::element_blank(),
+      axis.title.y = ggplot2::element_blank())
+}
+```
+
 
 # Create an Example Signal
 
@@ -67,29 +85,13 @@ org_signal <- list(
 )
 ```
 
-# Use Dynamic Time Warping to find the pattern
 
-```{r}
-find_signal <- dtw::dtw(x = noisy_signal$y, y = org_signal$y, keep.internals = TRUE)
-
-#par(mfrow=c(3,1))
-
-plot(org_signal)
-
-plot(noisy_signal)
-
-plot(find_signal, type = "alignment")
-plot(find_signal, type = "three")
-
-print(c(find_signal$distance, find_signal$normalizedDistance))
-```
-
-## Define functions for assessing goodness-of-match
+# Define functions for assessing goodness-of-match
 
 Before we go further, we want to extract the matching portions of the pattern from the window and compare it to the original signal. We approximate functions for the original and the matched signal and then calculate the difference as the area between the curves in a unit square.
 
 ```{r}
-extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = FALSE) {
+extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE) {
   # First, we check whether the warping function is flat. This
   # test has two components: a linear regression, and a check
   # of the vertical co-domain of that function.
@@ -201,10 +203,12 @@ area_diff_2_functions <- function(f1, f2) {
     intersections <- c(intersections, 1)
   }
   
+  
+  
   # Now, for each pair of intersections, we integrate both
   # functions and sum up the areas.
   
-  area <- 0
+  areas <- c()
   for (intsec in 1:(length(intersections) - 1)) {
     temp <- abs(
       stats::integrate(
@@ -217,14 +221,83 @@ area_diff_2_functions <- function(f1, f2) {
         lower = intersections[intsec],
         upper = intersections[intsec + 1])$value)
     
-    area <- area + temp
+    areas <- c(areas, temp)
   }
   
-  return(area)
+  return(list(
+    areas = areas,
+    value = sum(areas),
+    intersections = intersections
+  ))
 }
 ```
 
-### Example using no Window
+There are probably many methods for comparing the query to the reference, and we want to suggest another one that uniformly samples from both functions (that were previously approximated to be in the unit-square), and then quantifies the difference using some function, e.g., correlation.
+
+```{r}
+stat_diff_2_functions <- function(f1, f2, statFunc = stats::cor, numSamples = 1e4) {
+  #indices <- sort(stats::runif(n = numSamples, min = 0, max = 1))
+  indices <- seq(0, 1, by = 1 / numSamples)
+  
+  d1 <- sapply(indices, f1)
+  d2 <- sapply(indices, f2)
+  
+  return(list(
+    dataF1 = d1,
+    dataF2 = d2,
+    indices = indices,
+    value = statFunc(d1, d2)
+  ))
+}
+
+stat_diff_2_functions_cov <- function(f1, f2, numSamples = 1e4) {
+  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = stats::cov, numSamples = numSamples))
+}
+
+stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
+  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = stats::cor, numSamples = numSamples))
+}
+
+stat_diff_2_functions_cor_kendall <- function(f1, f2, numSamples = 1e4) {
+  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
+    return(stats::cor(x = x, y = y, method = "kendall"))
+  }, numSamples = numSamples))
+}
+
+stat_diff_2_functions_cor_spearman <- function(f1, f2, numSamples = 1e4) {
+  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
+    return(stats::cor(x = x, y = y, method = "spearman"))
+  }, numSamples = numSamples))
+}
+
+stat_diff_2_functions_var <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp$value <- stats::var(temp$dataF1 - temp$dataF2)
+  return(temp)
+}
+
+stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp$value <- stats::sd(temp$dataF1 - temp$dataF2)
+  return(temp)
+}
+```
+
+
+# Use Dynamic Time Warping to find the pattern
+
+```{r}
+find_signal <- dtw::dtw(x = noisy_signal$y, y = org_signal$y, keep.internals = TRUE)
+
+plot(org_signal)
+plot(noisy_signal)
+plot(find_signal, type = "alignment")
+plot(find_signal, type = "three")
+
+print(c(find_signal$distance, find_signal$normalizedDistance))
+```
+
+## Example using no Window
 
 Let's do a full example using the match from above. We do not have a window, so we use the entire warping function to extract matches of our sought-after pattern. We will use smoothing since no window is used:
 
@@ -235,15 +308,17 @@ signal_ext3 <- extract_signal_from_window(find_signal, window = stats::window(no
 signal_mat3 <- signal_ext3$data
 signal_mat_f3 <- pattern_approxfun(signal_mat3, smooth = TRUE)
 
-print(paste0("The difference in area is (max 1): ", area_diff_2_functions(signal_org_f, signal_mat_f3)))
+print(paste0("The difference in area is (max 1): ", area_diff_2_functions(signal_org_f, signal_mat_f3)$value))
 
-curve(signal_org_f, 0, 1, col = "red")
-curve(signal_mat_f3, 0, 1, add = TRUE)
+
+plot_2_functions(signal_org_f, signal_mat_f3)
+#curve(signal_org_f, 0, 1, col = "red")
+#curve(signal_mat_f3, 0, 1, add = TRUE)
 
 print(paste0("The window starts at ", signal_ext3$start, " and ends at ", signal_ext3$end))
 ```
 
-### Example using a Window
+## Example using a Window
 
 Try the same with a window that closer encapsulates the pattern (the pattern starts at 256 with a length of 256):
 
@@ -282,18 +357,19 @@ signal_ext <- extract_signal_from_window(find_signal_w, window = win)
 signal_mat <- signal_ext$data
 signal_mat_f <- pattern_approxfun(signal_mat, smooth = TRUE)
 
-curve(signal_org_f, 0, 1, col = "red")
-curve(signal_mat_f, 0, 1, add = TRUE)
+plot_2_functions(signal_org_f, signal_mat_f)
+#curve(signal_org_f, 0, 1, col = "red")
+#curve(signal_mat_f, 0, 1, add = TRUE)
 
 print(paste0("The window starts at ", signal_ext$start, " and ends at ", signal_ext$end))
 ```
 Now the area between the curves in the unit square is:
 ```{r}
-area_diff_2_functions(signal_org_f, signal_mat_f)
+area_diff_2_functions(signal_org_f, signal_mat_f)$value
 ```
 
 
-### Example using a partially matching window:
+## Example using a partially matching window:
 
 Try the same with a window that only PARTIALLY contains the pattern:
 
@@ -323,15 +399,16 @@ signal_ext2 <- extract_signal_from_window(find_signal_w2, window = win2)
 signal_mat2 <- signal_ext2$data
 signal_mat_f2 <- pattern_approxfun(signal_mat2, smooth = FALSE)
 
-area_diff_2_functions(signal_org_f, signal_mat_f2)
+area_diff_2_functions(signal_org_f, signal_mat_f2)$value
 
-curve(signal_org_f, 0, 1, col = "red")
-curve(signal_mat_f2, 0, 1, add = TRUE)
+plot_2_functions(signal_org_f, signal_mat_f2)
+#curve(signal_org_f, 0, 1, col = "red")
+#curve(signal_mat_f2, 0, 1, add = TRUE)
 
 print(paste0("The window starts at ", signal_ext2$start, " and ends at ", signal_ext2$end))
 ```
 
-### Example with a window that does not contain the pattern:
+## Example with a window that does not contain the pattern:
 
 Try the same with a window that does NOT contain the pattern:
 ```{r}
@@ -361,13 +438,13 @@ As we can see, the warping function is flat, indicating that DTW can not match t
 # This'll throw:
 tryCatch({
   signal_mat1 <- extract_signal_from_window(
-    find_signal_w1, window = win1, throwIfFlat = TRUE)
+    find_signal_w1, window = win1)
 }, error = function(cond) {
   warning(cond)
 })
 ```
 
-Let's go ahead and __ignore__ the warning about the flat warping function. Note that `pattern_approxfun(..)` returns the linear function between ((0,0), (1,0)) in this case, so that `area_diff_2_functions()` works.
+Let's go ahead and __ignore__ the warning about the flat warping function. Note that `pattern_approxfun(..)` returns the linear function between $([0,0], [1,0])$ in this case, so that `area_diff_2_functions()` will still work.
 
 ```{r fig.keep='all'}
 signal_ext1 <- extract_signal_from_window(
@@ -375,12 +452,207 @@ signal_ext1 <- extract_signal_from_window(
 signal_mat1 <- signal_ext1$data
 signal_mat_f1 <- pattern_approxfun(signal_mat1, smooth = FALSE)
 
-area_diff_2_functions(signal_org_f, signal_mat_f1)
+area_diff_2_functions(signal_org_f, signal_mat_f1)$value
 
-curve(signal_org_f, 0, 1, col = "red")
-curve(signal_mat_f1, 0, 1, add = TRUE)
+plot_2_functions(signal_org_f, signal_mat_f1)
+#curve(signal_org_f, 0, 1, col = "red")
+#curve(signal_mat_f1, 0, 1, add = TRUE)
 
 print(paste0("The window starts at ", signal_ext1$start, " and ends at ", signal_ext1$end))
+```
+
+
+## Example from the Paper
+
+
+This is an example (figure 9) from the original article [@giorgino2009] using a noisy and chopped-off sine-wave.
+
+```{r}
+idx <- seq(0,6.28,len=100)
+query <- sin(idx) + runif(100)/10
+reference <- cos(idx)
+alignment <- dtw::dtw(query,reference,step=dtw::asymmetric,keep=TRUE)
+
+dtw::dtwPlotTwoWay(alignment)
+dtw::dtwPlotThreeWay(alignment)
+```
+
+Let's use our methods to check how well the "query" matches the "reference".
+
+```{r}
+signal_ex_query <- extract_signal_from_window(
+  dtwAlign = alignment,
+  window = query # no window is used in that example
+)
+
+signal_mat_query <- signal_ex_query$data
+signal_mat_query_f <- pattern_approxfun(signal_mat_query)
+
+signal_mat_ref_f <- pattern_approxfun(reference)
+
+area_match <- area_diff_2_functions(signal_mat_ref_f, signal_mat_query_f)
+print(area_match$value)
+
+plot_2_functions(signal_mat_ref_f, signal_mat_query_f)
+#curve(signal_mat_ref_f, 0, 1, col = "red")
+#curve(signal_mat_query_f, 0, 1, add = TRUE)
+
+print(paste0("The enclosed areas are: ", area_match$areas))
+```
+
+__The area between the curves is `r round(area_match$value, 4)`__ and hence is a good match, as we are also dealing with a partial signal -- observe how the query only matches approx. ~80% of the reference (it has a sudden end). Also, `dtw` maps the beginning of the query to the reference (cf. the previous 3-way plot as well).
+
+
+## Example with a clear, but phase-shifted pattern
+
+We will make an example similar to the last one. However, the query will not be noise, only phase-shifted and stretched.
+
+```{r}
+idx2 <- seq(0,6.28,len=100)
+query2 <- 2 * sin((idx2 + 1)[1:60])
+reference2 <- sin(idx2)
+alignment2 <- dtw::dtw(
+  query2, reference2, step = dtw::asymmetric,
+  keep = TRUE, open.end = TRUE)
+
+dtw::dtwPlotTwoWay(alignment2)
+dtw::dtwPlotThreeWay(alignment2)
+```
+
+Let's use our methods to check how well the "query" matches the "reference".
+
+```{r}
+signal_ex_query2 <- extract_signal_from_window(
+  dtwAlign = alignment2,
+  window = query2 # no window is used in that example
+)
+
+signal_mat_query2 <- signal_ex_query2$data
+signal_mat_query_f2 <- pattern_approxfun(signal_mat_query2)
+
+signal_mat_ref_f2 <- pattern_approxfun(reference2)
+
+area_match2 <- area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
+print(area_match2$value)
+
+plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
+#curve(signal_mat_ref_f2, 0, 1, col = "red")
+#curve(signal_mat_query_f2, 0, 1, add = TRUE)
+
+print(paste0("The enclosed area is: ", area_match2$value))
+```
+
+
+## Overview of the examples
+
+In this section we show again all overlaid patterns for each example, together with a tabular overview of the differences in area, as well as some statistical measurements.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE, results="show"}
+library(ggpubr)
+
+ggpubr::ggarrange(
+  plot_2_functions(signal_org_f, signal_mat_f3),
+  plot_2_functions(signal_org_f, signal_mat_f),
+  plot_2_functions(signal_org_f, signal_mat_f2),
+  plot_2_functions(signal_org_f, signal_mat_f1),
+  plot_2_functions(signal_mat_ref_f, signal_mat_query_f),
+  plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2),
+  
+  labels = c(
+    "No window",
+    "With window",
+    "Partial window",
+    "Flat warping func.",
+    "Ex. from article",
+    "Ex. phase-shifted"
+  ),
+  
+  font.label = list(size = 8),
+  vjust = 1,
+  
+  nrow = 3,
+  ncol = 2
+)
+```
+
+### Tabular overview of goodness-of-match
+
+Let's compute again and show how well the match is, using the implemented area- and statistics-methods.
+
+```{r warning=FALSE, echo=FALSE, results="show"}
+data.frame(
+  which = c(
+    "No window",
+    "With window",
+    "Partial window",
+    "Flat warping func.",
+    "Ex. from article",
+    "Ex. phase-shifted"
+  ),
+  
+  area = c(
+    area_diff_2_functions(signal_org_f, signal_mat_f3)$value,
+    area_diff_2_functions(signal_org_f, signal_mat_f)$value,
+    area_diff_2_functions(signal_org_f, signal_mat_f2)$value,
+    area_diff_2_functions(signal_org_f, signal_mat_f1)$value,
+    area_diff_2_functions(signal_mat_ref_f, signal_mat_query_f)$value,
+    area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ),
+  
+  cov = c(
+    stat_diff_2_functions_cov(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_cov(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_cov(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cov(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_cov(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_cov(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ),
+  
+  corr = c(
+    stat_diff_2_functions_cor(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_cor(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_cor(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cor(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_cor(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_cor(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ),
+  
+  corr_kend = c(
+    stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_cor_kendall(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_cor_kendall(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ),
+  
+  corr_spea = c(
+    stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_cor_spearman(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_cor_spearman(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ),
+  
+  sd = c(
+    stat_diff_2_functions_sd(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_sd(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_sd(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_sd(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_sd(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_sd(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ),
+  
+  var = c(
+    stat_diff_2_functions_var(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_var(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_var(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_var(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_var(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_var(signal_mat_ref_f2, signal_mat_query_f2)$value
+  )
+)
 ```
 
 
@@ -394,6 +666,12 @@ As Journal of Empirical Software Engineering (EISSN 1573-7616) article:
 *   We start by making best guesses for how we think each maintenance activity's distribution looks for when the pattern occurs (similar to how we modeled the example signal above; however, we need to model one signal for each activity, so that it (kind of) becomes a multivariate Kernel)
 *   Using these best guesses and DTW, we try to detect the pattern in student projects
 *   Then Petr/Premek will help us to corroborate our findings, and to adjust our best guess (e.g., length of time frames, function-match thresholds etc.)
-*   Using the fine-tuned tools, we'll mine some of the bigger Apache projects. Btw., here's a recent article from that journal using such projects: https://link.springer.com/article/10.1007/s10664-020-09880-1
+*   Using the fine-tuned tools, we'll mine some of the bigger Apache projects. Btw., here's a recent article from that journal using such projects: [@trautsch2020longitudinal].
 
+
+
+
+# References {-}
+
+<div id="refs"></div>
 
