@@ -251,34 +251,38 @@ stat_diff_2_functions <- function(f1, f2, statFunc = stats::cor, numSamples = 1e
 }
 
 stat_diff_2_functions_cov <- function(f1, f2, numSamples = 1e4) {
-  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = stats::cov, numSamples = numSamples))
+  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
+    return(stats::cov(x = x, y = y, use = "pairwise.complete.obs"))
+  }, numSamples = numSamples))
 }
 
 stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
-  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = stats::cor, numSamples = numSamples))
+  return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
+    return(stats::cor(x = x, y = y, use = "pairwise.complete.obs"))
+  }, numSamples = numSamples))
 }
 
 stat_diff_2_functions_cor_kendall <- function(f1, f2, numSamples = 1e4) {
   return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-    return(stats::cor(x = x, y = y, method = "kendall"))
+    return(stats::cor(x = x, y = y, use = "pairwise.complete.obs", method = "kendall"))
   }, numSamples = numSamples))
 }
 
 stat_diff_2_functions_cor_spearman <- function(f1, f2, numSamples = 1e4) {
   return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-    return(stats::cor(x = x, y = y, method = "spearman"))
+    return(stats::cor(x = x, y = y, use = "pairwise.complete.obs", method = "spearman"))
   }, numSamples = numSamples))
 }
 
 stat_diff_2_functions_var <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-  temp$value <- stats::var(temp$dataF1 - temp$dataF2)
+  temp$value <- stats::var(temp$dataF1 - temp$dataF2, na.rm = TRUE)
   return(temp)
 }
 
 stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-  temp$value <- stats::sd(temp$dataF1 - temp$dataF2)
+  temp$value <- stats::sd(temp$dataF1 - temp$dataF2, na.rm = TRUE)
   return(temp)
 }
 ```
@@ -577,7 +581,7 @@ ggpubr::ggarrange(
 
 ### Tabular overview of goodness-of-match
 
-Let's compute again and show how well the match is, using the implemented area- and statistics-methods.
+Let's compute again and show how well the match is, using the implemented area- and statistics-methods. Note: 'oB' and 'oE' stand for open begin and end.
 
 ```{r warning=FALSE, echo=FALSE, results="show"}
 data.frame(
@@ -590,67 +594,285 @@ data.frame(
     "Ex. phase-shifted"
   ),
   
-  area = c(
+  # for brevity use 1/0
+  oB = c(
+    if (find_signal$openBegin) 1 else 0,
+    if (find_signal_w$openBegin) 1 else 0,
+    if (find_signal_w2$openBegin) 1 else 0,
+    if (find_signal_w1$openBegin) 1 else 0,
+    if (alignment$openBegin) 1 else 0,
+    if (alignment2$openBegin) 1 else 0
+  ),
+  
+  oE = c(
+    if (find_signal$openEnd) 1 else 0,
+    if (find_signal_w$openEnd) 1 else 0,
+    if (find_signal_w2$openEnd) 1 else 0,
+    if (find_signal_w1$openEnd) 1 else 0,
+    if (alignment$openEnd) 1 else 0,
+    if (alignment2$openEnd) 1 else 0
+  ),
+  
+  area = round(c(
     area_diff_2_functions(signal_org_f, signal_mat_f3)$value,
     area_diff_2_functions(signal_org_f, signal_mat_f)$value,
     area_diff_2_functions(signal_org_f, signal_mat_f2)$value,
     area_diff_2_functions(signal_org_f, signal_mat_f1)$value,
     area_diff_2_functions(signal_mat_ref_f, signal_mat_query_f)$value,
     area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ),
+  ), 5),
   
-  cov = c(
+  cov = round(c(
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f3)$value,
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f)$value,
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f2)$value,
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cov(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cov(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ),
+  ), 5),
   
-  corr = c(
+  corr = round(c(
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f3)$value,
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f)$value,
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f2)$value,
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ),
+  ), 5),
   
-  corr_kend = c(
+  corr_kend = round(c(
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f3)$value,
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f)$value,
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f2)$value,
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor_kendall(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor_kendall(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ),
+  ), 5),
   
-  corr_spea = c(
+  corr_spea = round(c(
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f3)$value,
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f)$value,
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f2)$value,
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor_spearman(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor_spearman(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ),
+  ), 5),
   
-  sd = c(
+  sd = round(c(
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f3)$value,
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f)$value,
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f2)$value,
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_sd(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_sd(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ),
+  ), 5),
   
-  var = c(
+  var = round(c(
     stat_diff_2_functions_var(signal_org_f, signal_mat_f3)$value,
     stat_diff_2_functions_var(signal_org_f, signal_mat_f)$value,
     stat_diff_2_functions_var(signal_org_f, signal_mat_f2)$value,
     stat_diff_2_functions_var(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_var(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_var(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ), 5)
+)
+```
+
+
+# Some tests using FFT
+
+We could also use FFT and its inverse to _clean_ a matched query, and then compare how well that matches.
+
+## Examine the Signal/Query
+
+Let's obtain the data for a matched signal/query and compare how its FFT looks compared to the reference signal.
+
+```{r warning=FALSE}
+# Dummy to get some data:
+temp <- stat_diff_2_functions(signal_org_f, signal_mat_f)
+
+temp$f1 <- stats::fft(temp$dataF1)
+temp$f2 <- stats::fft(temp$dataF2)
+
+fftData <- data.frame(
+  Re = Re(c(temp$f1, temp$f2)),
+  Im = Im(c(temp$f1, temp$f2)),
+  series = c(
+    rep("ref", length(temp$f1)), rep("query", length(temp$f2)))
+)
+
+ggplot2::ggplot(data = fftData, ggplot2::aes(x = Re, y = Im)) +
+  ggplot2::geom_point() +
+  ggplot2::facet_wrap(series ~., scales = "free")
+
+
+fftDataDens <- data.frame(
+  data = c(Re(c(temp$f1, temp$f2)), Im(c(temp$f1, temp$f2))),
+  isRe = c(
+    rep("Re", length(temp$f1) + length(temp$f2)),
+    rep("Im", length(temp$f1) + length(temp$f2))),
+  series = rep(c(rep("ref", length(temp$f1)), rep("query", length(temp$f2))), 2)
+)
+
+ggplot2::ggplot(data = fftDataDens, ggplot2::aes(data)) +
+  ggplot2::geom_density() +
+  ggplot2::facet_grid(series ~ isRe, scales = "free") +
+  ggplot2::scale_x_log10()
+```
+
+## Cleaning the Query / Visual comparison
+
+In order for it to be useful, we would probably need to clean out extra frequencies not present in the reference, and then perform some matching to the signal.
+
+We perform a rather simple test by constraining the data from the query to the real and imaginary parts that are also present in the reference:
+
+```{r fig.height=10}
+fftDataClean_Im <- temp$f2[
+  Im(temp$f2) >= min(Im(temp$f1)) &
+  Im(temp$f2) <= max(Im(temp$f1))
+]
+fftDataClean_Re <- temp$f2[
+  Re(temp$f2) >= min(Re(temp$f1)) &
+  Re(temp$f2) <= max(Re(temp$f1))
+]
+
+fftDataClean_Both <- temp$f2[
+  Re(temp$f2) >= min(Re(temp$f1)) &
+  Re(temp$f2) <= max(Re(temp$f1)) &
+  Im(temp$f2) >= min(Im(temp$f1)) &
+  Im(temp$f2) <= max(Im(temp$f1))
+]
+
+fftDataInv <- data.frame(
+  x = c(
+    1:length(temp$f1),
+    1:length(temp$f2),
+    1:length(fftDataClean_Im),
+    1:length(fftDataClean_Re),
+    1:length(fftDataClean_Both)
+  ),
+  y = c(
+    Re(stats::fft(temp$f1, inverse = TRUE)),
+    Re(stats::fft(temp$f2, inverse = TRUE)),
+    # now the cleaned signals:
+    Re(stats::fft(fftDataClean_Im, inverse = TRUE)),
+    Re(stats::fft(fftDataClean_Re, inverse = TRUE)),
+    Re(stats::fft(fftDataClean_Both, inverse = TRUE))
+  ),
+  
+  series = c(
+    rep("ref", length(temp$f1)),
+    rep("query", length(temp$f2)),
+    rep("clean_Im", length(fftDataClean_Im)),
+    rep("clean_Re", length(fftDataClean_Re)),
+    rep("clean_both", length(fftDataClean_Both))
+  )
+)
+
+ggplot2::ggplot(data = fftDataInv, ggplot2::aes(x, y)) +
+  ggplot2::geom_line() +
+  ggplot2::facet_grid(series ~ ., scales = "free")
+```
+
+Subjectively it appears that the signal with cleaned real parts is closest to the reference signal. However, let's calculate distances with our functions for areas and other statistics to get some numbers.
+
+```{r}
+fft_org_f1 <- pattern_approxfun(Re(stats::fft(temp$f1, inverse = TRUE)))
+fft_org_f2 <- pattern_approxfun(Re(stats::fft(temp$f2, inverse = TRUE)))
+
+fft_clean_Im_f <- pattern_approxfun(
+  Re(stats::fft(fftDataClean_Im, inverse = TRUE)))
+fft_clean_Re_f <- pattern_approxfun(
+  Re(stats::fft(fftDataClean_Re, inverse = TRUE)))
+fft_clean_Both_f <- pattern_approxfun(
+  Re(stats::fft(fftDataClean_Both, inverse = TRUE)))
+```
+
+And do some figures of these functions:
+
+```{r}
+ggpubr::ggarrange(
+  plot_2_functions(fft_org_f1, fft_org_f2),
+  plot_2_functions(fft_org_f1, fft_clean_Im_f),
+  plot_2_functions(fft_org_f1, fft_clean_Re_f),
+  plot_2_functions(fft_org_f1, fft_clean_Both_f),
+  
+  
+  labels = c(
+    "Query",
+    "clean_Im",
+    "clean_Re",
+    "clean_both"
+  ),
+  
+  font.label = list(size = 8),
+  vjust = 1,
+  
+  nrow = 2,
+  ncol = 2
+)
+```
+
+### Tabular overview of goodness-of-match
+
+Let's compute again and show how well the match is, using the implemented area- and statistics-methods.
+
+```{r warning=FALSE, echo=FALSE, results="show"}
+data.frame(
+  which = c(
+    "Query",
+    "clean_Im",
+    "clean_Re",
+    "clean_both"
+  ),
+  
+  area = c(
+    area_diff_2_functions(fft_org_f1, fft_org_f2)$value,
+    area_diff_2_functions(fft_org_f1, fft_clean_Im_f)$value,
+    area_diff_2_functions(fft_org_f1, fft_clean_Re_f)$value,
+    area_diff_2_functions(fft_org_f1, fft_clean_Both_f)$value
+  ),
+  
+  cov = c(
+    stat_diff_2_functions_cov(fft_org_f1, fft_org_f2)$value,
+    stat_diff_2_functions_cov(fft_org_f1, fft_clean_Im_f)$value,
+    stat_diff_2_functions_cov(fft_org_f1, fft_clean_Re_f)$value,
+    stat_diff_2_functions_cov(fft_org_f1, fft_clean_Both_f)$value
+  ),
+  
+  corr = c(
+    stat_diff_2_functions_cor(fft_org_f1, fft_org_f2)$value,
+    stat_diff_2_functions_cor(fft_org_f1, fft_clean_Im_f)$value,
+    stat_diff_2_functions_cor(fft_org_f1, fft_clean_Re_f)$value,
+    stat_diff_2_functions_cor(fft_org_f1, fft_clean_Both_f)$value
+  ),
+  
+  corr_kend = c(
+    stat_diff_2_functions_cor_kendall(fft_org_f1, fft_org_f2)$value,
+    stat_diff_2_functions_cor_kendall(fft_org_f1, fft_clean_Im_f)$value,
+    stat_diff_2_functions_cor_kendall(fft_org_f1, fft_clean_Re_f)$value,
+    stat_diff_2_functions_cor_kendall(fft_org_f1, fft_clean_Both_f)$value
+  ),
+  
+  corr_spea = c(
+    stat_diff_2_functions_cor_spearman(fft_org_f1, fft_org_f2)$value,
+    stat_diff_2_functions_cor_spearman(fft_org_f1, fft_clean_Im_f)$value,
+    stat_diff_2_functions_cor_spearman(fft_org_f1, fft_clean_Re_f)$value,
+    stat_diff_2_functions_cor_spearman(fft_org_f1, fft_clean_Both_f)$value
+  ),
+  
+  sd = c(
+    stat_diff_2_functions_sd(fft_org_f1, fft_org_f2)$value,
+    stat_diff_2_functions_sd(fft_org_f1, fft_clean_Im_f)$value,
+    stat_diff_2_functions_sd(fft_org_f1, fft_clean_Re_f)$value,
+    stat_diff_2_functions_sd(fft_org_f1, fft_clean_Both_f)$value
+  ),
+  
+  var = c(
+    stat_diff_2_functions_var(signal_org_f, fft_org_f2)$value,
+    stat_diff_2_functions_var(signal_org_f, fft_clean_Im_f)$value,
+    stat_diff_2_functions_var(signal_org_f, fft_clean_Re_f)$value,
+    stat_diff_2_functions_var(signal_org_f, fft_clean_Both_f)$value
   )
 )
 ```
@@ -658,11 +880,11 @@ data.frame(
 
 
 
-# Ideas
+# Ideas for Publication
 
 As Journal of Empirical Software Engineering (EISSN 1573-7616) article:
 
-*   We take only one pattern (maybe include some more that do not require additional implementation in our tools, otherwise skip) -- the pattern we're currently interested in is __"Half Done Is Enough"__
+*   We take only one pattern (maybe include some more that do not require additional implementation in our tools (e.g., "Fire Drill"), otherwise skip) -- the pattern we're currently interested in is __"Half Done Is Enough"__
 *   We start by making best guesses for how we think each maintenance activity's distribution looks for when the pattern occurs (similar to how we modeled the example signal above; however, we need to model one signal for each activity, so that it (kind of) becomes a multivariate Kernel)
 *   Using these best guesses and DTW, we try to detect the pattern in student projects
 *   Then Petr/Premek will help us to corroborate our findings, and to adjust our best guess (e.g., length of time frames, function-match thresholds etc.)

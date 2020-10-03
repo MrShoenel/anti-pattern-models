@@ -17,7 +17,13 @@
     -   [Overview of the examples](#overview-of-the-examples)
         -   [Tabular overview of
             goodness-of-match](#tabular-overview-of-goodness-of-match)
--   [Ideas](#ideas)
+-   [Some tests using FFT](#some-tests-using-fft)
+    -   [Examine the Signal/Query](#examine-the-signalquery)
+    -   [Cleaning the Query / Visual
+        comparison](#cleaning-the-query-visual-comparison)
+        -   [Tabular overview of
+            goodness-of-match](#tabular-overview-of-goodness-of-match-1)
+-   [Ideas for Publication](#ideas-for-publication)
 -   [References](#references)
 
 In this notebook we want to test whether we can detect patterns in noisy
@@ -260,34 +266,38 @@ e.g., correlation.
     }
 
     stat_diff_2_functions_cov <- function(f1, f2, numSamples = 1e4) {
-      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = stats::cov, numSamples = numSamples))
+      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
+        return(stats::cov(x = x, y = y, use = "pairwise.complete.obs"))
+      }, numSamples = numSamples))
     }
 
     stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
-      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = stats::cor, numSamples = numSamples))
+      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
+        return(stats::cor(x = x, y = y, use = "pairwise.complete.obs"))
+      }, numSamples = numSamples))
     }
 
     stat_diff_2_functions_cor_kendall <- function(f1, f2, numSamples = 1e4) {
       return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-        return(stats::cor(x = x, y = y, method = "kendall"))
+        return(stats::cor(x = x, y = y, use = "pairwise.complete.obs", method = "kendall"))
       }, numSamples = numSamples))
     }
 
     stat_diff_2_functions_cor_spearman <- function(f1, f2, numSamples = 1e4) {
       return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-        return(stats::cor(x = x, y = y, method = "spearman"))
+        return(stats::cor(x = x, y = y, use = "pairwise.complete.obs", method = "spearman"))
       }, numSamples = numSamples))
     }
 
     stat_diff_2_functions_var <- function(f1, f2, numSamples = 1e4) {
       temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      temp$value <- stats::var(temp$dataF1 - temp$dataF2)
+      temp$value <- stats::var(temp$dataF1 - temp$dataF2, na.rm = TRUE)
       return(temp)
     }
 
     stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
       temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      temp$value <- stats::sd(temp$dataF1 - temp$dataF2)
+      temp$value <- stats::sd(temp$dataF1 - temp$dataF2, na.rm = TRUE)
       return(temp)
     }
 
@@ -663,16 +673,258 @@ some statistical measurements.
 ### Tabular overview of goodness-of-match
 
 Let’s compute again and show how well the match is, using the
+implemented area- and statistics-methods. Note: ‘oB’ and ‘oE’ stand for
+open begin and end.
+
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">which</th>
+<th style="text-align: right;">oB</th>
+<th style="text-align: right;">oE</th>
+<th style="text-align: right;">area</th>
+<th style="text-align: right;">cov</th>
+<th style="text-align: right;">corr</th>
+<th style="text-align: right;">corr_kend</th>
+<th style="text-align: right;">corr_spea</th>
+<th style="text-align: right;">sd</th>
+<th style="text-align: right;">var</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">No window</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.23792</td>
+<td style="text-align: right;">0.04804</td>
+<td style="text-align: right;">0.61268</td>
+<td style="text-align: right;">0.23504</td>
+<td style="text-align: right;">0.35153</td>
+<td style="text-align: right;">0.28069</td>
+<td style="text-align: right;">0.07879</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">With window</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.16569</td>
+<td style="text-align: right;">0.08593</td>
+<td style="text-align: right;">0.92969</td>
+<td style="text-align: right;">0.90687</td>
+<td style="text-align: right;">0.97775</td>
+<td style="text-align: right;">0.14832</td>
+<td style="text-align: right;">0.02200</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Partial window</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.32714</td>
+<td style="text-align: right;">0.00826</td>
+<td style="text-align: right;">0.10443</td>
+<td style="text-align: right;">0.08832</td>
+<td style="text-align: right;">0.10362</td>
+<td style="text-align: right;">0.39904</td>
+<td style="text-align: right;">0.15924</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Flat warping func.</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.37809</td>
+<td style="text-align: right;">0.00000</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">0.35514</td>
+<td style="text-align: right;">0.12612</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Ex. from article</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.25668</td>
+<td style="text-align: right;">0.06269</td>
+<td style="text-align: right;">0.60173</td>
+<td style="text-align: right;">0.43907</td>
+<td style="text-align: right;">0.59277</td>
+<td style="text-align: right;">0.29399</td>
+<td style="text-align: right;">0.08643</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Ex. phase-shifted</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.18160</td>
+<td style="text-align: right;">0.09908</td>
+<td style="text-align: right;">0.84080</td>
+<td style="text-align: right;">0.68349</td>
+<td style="text-align: right;">0.85751</td>
+<td style="text-align: right;">0.19476</td>
+<td style="text-align: right;">0.03793</td>
+</tr>
+</tbody>
+</table>
+
+Some tests using FFT
+====================
+
+We could also use FFT and its inverse to *clean* a matched query, and
+then compare how well that matches.
+
+Examine the Signal/Query
+------------------------
+
+Let’s obtain the data for a matched signal/query and compare how its FFT
+looks compared to the reference signal.
+
+    # Dummy to get some data:
+    temp <- stat_diff_2_functions(signal_org_f, signal_mat_f)
+
+    temp$f1 <- stats::fft(temp$dataF1)
+    temp$f2 <- stats::fft(temp$dataF2)
+
+    fftData <- data.frame(
+      Re = Re(c(temp$f1, temp$f2)),
+      Im = Im(c(temp$f1, temp$f2)),
+      series = c(
+        rep("ref", length(temp$f1)), rep("query", length(temp$f2)))
+    )
+
+    ggplot2::ggplot(data = fftData, ggplot2::aes(x = Re, y = Im)) +
+      ggplot2::geom_point() +
+      ggplot2::facet_wrap(series ~., scales = "free")
+
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-25-1.png)
+
+    fftDataDens <- data.frame(
+      data = c(Re(c(temp$f1, temp$f2)), Im(c(temp$f1, temp$f2))),
+      isRe = c(
+        rep("Re", length(temp$f1) + length(temp$f2)),
+        rep("Im", length(temp$f1) + length(temp$f2))),
+      series = rep(c(rep("ref", length(temp$f1)), rep("query", length(temp$f2))), 2)
+    )
+
+    ggplot2::ggplot(data = fftDataDens, ggplot2::aes(data)) +
+      ggplot2::geom_density() +
+      ggplot2::facet_grid(series ~ isRe, scales = "free") +
+      ggplot2::scale_x_log10()
+
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-25-2.png)
+
+Cleaning the Query / Visual comparison
+--------------------------------------
+
+In order for it to be useful, we would probably need to clean out extra
+frequencies not present in the reference, and then perform some matching
+to the signal.
+
+We perform a rather simple test by constraining the data from the query
+to the real and imaginary parts that are also present in the reference:
+
+    fftDataClean_Im <- temp$f2[
+      Im(temp$f2) >= min(Im(temp$f1)) &
+      Im(temp$f2) <= max(Im(temp$f1))
+    ]
+    fftDataClean_Re <- temp$f2[
+      Re(temp$f2) >= min(Re(temp$f1)) &
+      Re(temp$f2) <= max(Re(temp$f1))
+    ]
+
+    fftDataClean_Both <- temp$f2[
+      Re(temp$f2) >= min(Re(temp$f1)) &
+      Re(temp$f2) <= max(Re(temp$f1)) &
+      Im(temp$f2) >= min(Im(temp$f1)) &
+      Im(temp$f2) <= max(Im(temp$f1))
+    ]
+
+    fftDataInv <- data.frame(
+      x = c(
+        1:length(temp$f1),
+        1:length(temp$f2),
+        1:length(fftDataClean_Im),
+        1:length(fftDataClean_Re),
+        1:length(fftDataClean_Both)
+      ),
+      y = c(
+        Re(stats::fft(temp$f1, inverse = TRUE)),
+        Re(stats::fft(temp$f2, inverse = TRUE)),
+        # now the cleaned signals:
+        Re(stats::fft(fftDataClean_Im, inverse = TRUE)),
+        Re(stats::fft(fftDataClean_Re, inverse = TRUE)),
+        Re(stats::fft(fftDataClean_Both, inverse = TRUE))
+      ),
+      
+      series = c(
+        rep("ref", length(temp$f1)),
+        rep("query", length(temp$f2)),
+        rep("clean_Im", length(fftDataClean_Im)),
+        rep("clean_Re", length(fftDataClean_Re)),
+        rep("clean_both", length(fftDataClean_Both))
+      )
+    )
+
+    ggplot2::ggplot(data = fftDataInv, ggplot2::aes(x, y)) +
+      ggplot2::geom_line() +
+      ggplot2::facet_grid(series ~ ., scales = "free")
+
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-26-1.png)
+
+Subjectively it appears that the signal with cleaned real parts is
+closest to the reference signal. However, let’s calculate distances with
+our functions for areas and other statistics to get some numbers.
+
+    fft_org_f1 <- pattern_approxfun(Re(stats::fft(temp$f1, inverse = TRUE)))
+    fft_org_f2 <- pattern_approxfun(Re(stats::fft(temp$f2, inverse = TRUE)))
+
+    fft_clean_Im_f <- pattern_approxfun(
+      Re(stats::fft(fftDataClean_Im, inverse = TRUE)))
+    fft_clean_Re_f <- pattern_approxfun(
+      Re(stats::fft(fftDataClean_Re, inverse = TRUE)))
+    fft_clean_Both_f <- pattern_approxfun(
+      Re(stats::fft(fftDataClean_Both, inverse = TRUE)))
+
+And do some figures of these functions:
+
+    ggpubr::ggarrange(
+      plot_2_functions(fft_org_f1, fft_org_f2),
+      plot_2_functions(fft_org_f1, fft_clean_Im_f),
+      plot_2_functions(fft_org_f1, fft_clean_Re_f),
+      plot_2_functions(fft_org_f1, fft_clean_Both_f),
+      
+      
+      labels = c(
+        "Query",
+        "clean_Im",
+        "clean_Re",
+        "clean_both"
+      ),
+      
+      font.label = list(size = 8),
+      vjust = 1,
+      
+      nrow = 2,
+      ncol = 2
+    )
+
+    ## Warning: Removed 1 row(s) containing missing values (geom_path).
+
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-28-1.png)
+
+### Tabular overview of goodness-of-match
+
+Let’s compute again and show how well the match is, using the
 implemented area- and statistics-methods.
 
-<table style="width:100%;">
+<table>
 <colgroup>
-<col style="width: 21%" />
+<col style="width: 12%" />
 <col style="width: 11%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
 <col style="width: 11%" />
 <col style="width: 11%" />
 </colgroup>
@@ -690,77 +942,57 @@ implemented area- and statistics-methods.
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">No window</td>
-<td style="text-align: right;">0.2379152</td>
-<td style="text-align: right;">0.0480384</td>
-<td style="text-align: right;">0.6126804</td>
-<td style="text-align: right;">0.2350393</td>
-<td style="text-align: right;">0.3515324</td>
-<td style="text-align: right;">0.2806933</td>
-<td style="text-align: right;">0.0787887</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">With window</td>
-<td style="text-align: right;">0.1656930</td>
-<td style="text-align: right;">0.0859314</td>
+<td style="text-align: left;">Query</td>
+<td style="text-align: right;">0.1657019</td>
+<td style="text-align: right;">0.0859364</td>
 <td style="text-align: right;">0.9296884</td>
 <td style="text-align: right;">0.9068694</td>
 <td style="text-align: right;">0.9777458</td>
-<td style="text-align: right;">0.1483172</td>
-<td style="text-align: right;">0.0219980</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Partial window</td>
-<td style="text-align: right;">0.3271415</td>
-<td style="text-align: right;">0.0082624</td>
-<td style="text-align: right;">0.1044250</td>
-<td style="text-align: right;">0.0883182</td>
-<td style="text-align: right;">0.1036203</td>
-<td style="text-align: right;">0.3990427</td>
-<td style="text-align: right;">0.1592351</td>
+<td style="text-align: right;">0.1483118</td>
+<td style="text-align: right;">0.0219960</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Flat warping func.</td>
-<td style="text-align: right;">0.3780928</td>
-<td style="text-align: right;">0.0000000</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">0.3551363</td>
-<td style="text-align: right;">0.1261218</td>
+<td style="text-align: left;">clean_Im</td>
+<td style="text-align: right;">0.5024658</td>
+<td style="text-align: right;">-0.0234189</td>
+<td style="text-align: right;">-0.4612696</td>
+<td style="text-align: right;">-0.3971956</td>
+<td style="text-align: right;">-0.4862539</td>
+<td style="text-align: right;">0.4397689</td>
+<td style="text-align: right;">0.1933954</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Ex. from article</td>
-<td style="text-align: right;">0.2566771</td>
-<td style="text-align: right;">0.0626897</td>
-<td style="text-align: right;">0.6017306</td>
-<td style="text-align: right;">0.4390660</td>
-<td style="text-align: right;">0.5927748</td>
-<td style="text-align: right;">0.2939937</td>
-<td style="text-align: right;">0.0864323</td>
+<td style="text-align: left;">clean_Re</td>
+<td style="text-align: right;">0.2327784</td>
+<td style="text-align: right;">0.0849731</td>
+<td style="text-align: right;">0.9321898</td>
+<td style="text-align: right;">0.9223252</td>
+<td style="text-align: right;">0.9876789</td>
+<td style="text-align: right;">0.1485183</td>
+<td style="text-align: right;">0.0220573</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Ex. phase-shifted</td>
-<td style="text-align: right;">0.1816005</td>
-<td style="text-align: right;">0.0990778</td>
-<td style="text-align: right;">0.8407971</td>
-<td style="text-align: right;">0.6834921</td>
-<td style="text-align: right;">0.8575143</td>
-<td style="text-align: right;">0.1947621</td>
-<td style="text-align: right;">0.0379323</td>
+<td style="text-align: left;">clean_both</td>
+<td style="text-align: right;">0.4822632</td>
+<td style="text-align: right;">-0.0025898</td>
+<td style="text-align: right;">-0.0641672</td>
+<td style="text-align: right;">-0.2463714</td>
+<td style="text-align: right;">-0.2608303</td>
+<td style="text-align: right;">0.3797598</td>
+<td style="text-align: right;">0.1442164</td>
 </tr>
 </tbody>
 </table>
 
-Ideas
-=====
+Ideas for Publication
+=====================
 
 As Journal of Empirical Software Engineering (EISSN 1573-7616) article:
 
 -   We take only one pattern (maybe include some more that do not
-    require additional implementation in our tools, otherwise skip) –
-    the pattern we’re currently interested in is **“Half Done Is
-    Enough”**
+    require additional implementation in our tools (e.g., “Fire Drill”),
+    otherwise skip) – the pattern we’re currently interested in is
+    **“Half Done Is Enough”**
 -   We start by making best guesses for how we think each maintenance
     activity’s distribution looks for when the pattern occurs (similar
     to how we modeled the example signal above; however, we need to
