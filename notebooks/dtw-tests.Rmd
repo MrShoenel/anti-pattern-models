@@ -371,8 +371,6 @@ signal_mat <- signal_ext$data
 signal_mat_f <- pattern_approxfun(signal_mat, smooth = TRUE)
 
 plot_2_functions(signal_org_f, signal_mat_f)
-#curve(signal_org_f, 0, 1, col = "red")
-#curve(signal_mat_f, 0, 1, add = TRUE)
 
 print(paste0("The window starts at ", signal_ext$start, " and ends at ", signal_ext$end))
 ```
@@ -545,8 +543,6 @@ area_match2 <- area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
 print(area_match2$value)
 
 plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
-#curve(signal_mat_ref_f2, 0, 1, col = "red")
-#curve(signal_mat_query_f2, 0, 1, add = TRUE)
 
 print(paste0("The enclosed area is: ", area_match2$value))
 ```

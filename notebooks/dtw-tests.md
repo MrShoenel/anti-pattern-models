@@ -431,9 +431,6 @@ Let’s do a full example using the match from above:
 
 ![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-12-1.png)
 
-    #curve(signal_org_f, 0, 1, col = "red")
-    #curve(signal_mat_f, 0, 1, add = TRUE)
-
     print(paste0("The window starts at ", signal_ext$start, " and ends at ", signal_ext$end))
 
     ## [1] "The window starts at 73 and ends at 375"
@@ -669,9 +666,6 @@ Let’s use our methods to check how well the “query” matches the
     plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
 
 ![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-22-1.png)
-
-    #curve(signal_mat_ref_f2, 0, 1, col = "red")
-    #curve(signal_mat_query_f2, 0, 1, add = TRUE)
 
     print(paste0("The enclosed area is: ", area_match2$value))
 
