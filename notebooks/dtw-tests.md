@@ -1122,6 +1122,9 @@ regarding our research methodology.
     the pattern actually occurred, if this is not documented otherwise
     (such as in the meeting minutes). Only this will provide us with
     undeniable evidence.
+    -   Against the ground-truth, we can measure how well detection
+        through either, ALM- or source code-data works, or a combination
+        of both.
 
 As for the pattern primarily described in this notebook, *Half Done Is
 Enough*, we need to make sure to properly outline (and delineate) the
