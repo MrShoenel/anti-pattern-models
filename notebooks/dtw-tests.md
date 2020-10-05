@@ -27,6 +27,8 @@
     -   [Prerequisites](#prerequisites)
     -   [Step by step](#step-by-step)
     -   [After detection by LNU](#after-detection-by-lnu)
+-   [Things to consider before we
+    publish](#things-to-consider-before-we-publish)
 -   [Ideas for Publication](#ideas-for-publication)
     -   [One larger article](#one-larger-article)
     -   [Making two articles/papers](#making-two-articlespapers)
@@ -1013,7 +1015,9 @@ Ideas for matching the pattern
 Here we briefly describe how the entire process could look for the
 pattern *Half Done Is Enough*. The characteristics for this pattern
 comprise the parallel emergence of three sub-patterns that are strongly
-correlated (however over time this correlation is non-linear).
+temporally correlated (however over time this correlation is non-linear,
+i.e., a linear increase for some sub-pattern is not necessarily
+accompanied by a linear change of another sub-pattern).
 
 Given some window that delimits a range of commits and their maintenance
 activities and also contains the pattern, the expectation is the
@@ -1025,7 +1029,7 @@ following:
     -   The density of the commits should also increase in this window,
         as the focus is on delivering working code and not necessarily
         documentation.
-    -   We might simplify this this pattern by grouping all non-adaptive
+    -   We might simplify this pattern by grouping all non-adaptive
         activities into one sub-pattern. That way we would also require
         fewer assumptions about their respective distributions.
 -   Shortly after the critical point, the amount of adaptive activities
@@ -1087,6 +1091,53 @@ After detection by LNU
     -   LNU could further assist with additional models to find other
         patterns.
 
+Things to consider before we publish
+====================================
+
+The following is a loose (but important) collection of considerations
+regarding our research methodology.
+
+-   UWB needs to be able to provide 4 cases of pattern occurrence: True
+    positives, False positives (Type I error), False negatives (Type II
+    error) and True negatives.
+    -   For each case, it is important do document how we came to the
+        realization – it is important that this realization is **not**
+        done through the symptoms’ descriptions.
+    -   For example, let’s say UWB falsely detects the occurrence of
+        *Half Done Is Enough* (a False positive), then there must exist
+        probable justification.
+-   LNU needs to find the *range* of the pattern, i.e., what are the
+    strongest and weakest occurrences (this is probably part of
+    adjusting the hyperparameters).
+    -   Also, not every group/project runs into the pattern – LNU’s
+        models must provide a sufficient precision and recall.
+-   There have been studies outlining the differences between student-
+    and real-world projects, and those seem to agree that the
+    differences are insignificant (good for us). We need to include this
+    research in our writings (Morgan has a few references and examples).
+-   The “pipeline” for the proposed approach below is that LNU detects
+    the patterns with their models, and then gets corroboration by UWB
+    and further adjusts their models. However, the actual ground-truth
+    lies in the students itself, and they would need to be asked whether
+    the pattern actually occurred, if this is not documented otherwise
+    (such as in the meeting minutes). Only this will provide us with
+    undeniable evidence.
+
+As for the pattern primarily described in this notebook, *Half Done Is
+Enough*, we need to make sure to properly outline (and delineate) the
+value of our research, e.g.,
+
+-   As for the planned work, we can only detect the anti-pattern in the
+    past – the models in question are not made for forecasting. This
+    however could be subject of further research.
+-   Still, there is value in detecting anti-patterns in historical data,
+    with benefits to, e.g., *Organizational Learning* and socio-economic
+    properties, such as detecting managerial incompetence and adjusting
+    team composition, or misplanning of resources etc.
+    -   We also need to think about it from a cost perspective: What is
+        the cost of a False negative or a False positive? What are the
+        gains of a True positive or True negative case?
+
 Ideas for Publication
 =====================
 
@@ -1134,10 +1185,10 @@ collaboration.
     -   UWB would only briefly introduce the concept of anti-patterns in
         software projects, and the focus would be more on LNU’s tools
         and models to detect them.
--   UWB would pick up the work for their article, conducting a more
-    longitudinal and quantitative study of open source projects also
-    using the tools and models from LNU, but with focus on UWB’s work
-    and contributions.
+-   As an example, UWB could pick up the work for their article,
+    conducting a more longitudinal and quantitative study of open source
+    projects also using the tools and models from LNU, but with focus on
+    UWB’s work and contributions.
     -   This study then would probably deal with a wider range of
         anti-patterns.
     -   This then does not necessarily be limited to one pattern, as the
