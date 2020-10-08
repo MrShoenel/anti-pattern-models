@@ -1,0 +1,176 @@
+---
+title: "Commit Classification models"
+bibliography: ../inst/REFERENCES.bib
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  word_document: default
+---
+
+```{r}
+source("../helpers.R")
+```
+
+
+# Models for Commit Classification
+
+In this notebook, we will train and store some best best models for commit classification, as these will be detrimental to detecting maintenance activities in software projects. The models will be based on our latest work [@honel2020using].
+
+Throughout this notebook, we will build a few models that are all similar. Our latest work indicated that including up to three previous generations of commits is beneficial. We will evaluate models that include 1, 2 or 3 previous generations.
+
+Likewise, we want to go into the other direction, looking forward at children, using similar amounts of commits. We will call those models _stateful_ in this notebook, and only the model without any adjacent commits is called _stateless_, but they all belong to the same _class_. Finally, having a few best models, the overall classifier shall use the best model for the available data.
+
+For finding the best models, the process is separated into two steps: First, do a k-fold cross-validation to find the best model and hyperparameters. Then, use the findings to train a model using the entire data. Also, we will store the associated scaler/pre-processor for that model.
+
+Also note that each of the following models was already optimized w.r.t. to some aspects of the training, like using an already oversampled dataset. Also, we are using a very high split, as the resulting model will also be using all data. Using many folds and repeats, we make sure that overfitting is not a problem.
+
+```{r echo=FALSE, warning=FALSE}
+library(caret)
+```
+
+
+# Stateless model
+
+The stateless model shall be used whenever there is data available from the parents or children.
+
+## Load and prepare the data
+
+```{r}
+# the stateless data:
+data_sl <- getDataset("antipat_gt_all")
+
+# remove SHAs:
+data_sl <- data_sl[, !(names(data_sl) %in% c("SHA1", "ParentCommitSHA1s"))]
+# factorize the labels:
+data_sl$label <- factor(
+  x = data_sl$label, levels = sort(unique(data_sl$label)))
+```
+
+The zero-variance predictors should be removed (if any).
+
+```{r}
+nzv_sl <- caret::nearZeroVar(x = data_sl, saveMetrics = TRUE, names = TRUE)
+
+print(paste0("Zero-variance predictors to be removed are: ",
+             paste(names(data_sl)[nzv_sl$zeroVar], collapse = ", ")))
+
+data_sl <- data_sl[, !nzv_sl$zeroVar]
+```
+
+For each type of model, we will use a pre-defined train control.
+
+Instead of sampling during training, we'll work with a resample of the entire dataset, using the _synthetic minority over-sampling technique_
+[@chawla2002smote].
+
+```{r}
+numFolds <- 10
+numRepeats <- 5
+
+tc_sl <- caret::trainControl(
+  method = "repeatedcv", p = 0.9,
+  returnResamp = "all", savePredictions = "all", classProbs = TRUE
+  , number = numFolds, repeats = numRepeats
+  , preProcOptions = c("center", "scale")
+  , seeds = get_seeds(nh = 2, amount = 2 * numFolds * numRepeats)
+  #, sampling = "smote"
+)
+```
+
+Caret:
+
+```{r warning=FALSE}
+# As described above, use an oversampled dataset for this model.
+data_smote_sl <- balanceDatasetSmote(
+  data = data_sl, stateColumn = "label")
+
+p <- caret::createDataPartition(
+  y = data_smote_sl$label, p = 90 / nrow(data_smote_sl), list = FALSE)
+
+train_sl <- data_smote_sl[-p,]
+valid_sl <- data_smote_sl[p, ]
+
+# Caret itself needs e1071
+library(e1071)
+
+library(gbm)
+library(plyr)
+
+# LogitBoost
+library(caTools)
+
+# C5.0
+library(C50)
+
+# ranger, rf
+library(ranger)
+library(dplyr)
+library(randomForest)
+
+# naive_bayes
+library(naivebayes)
+
+# mlp, mlpMl etc.
+library(RSNNS)
+
+# nnet
+library(nnet)
+
+# svmPoly, svmRadial etc.
+library(kernlab)
+
+# xgbTree, xgbLinear, xgbDART
+library(xgboost)
+
+
+
+results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    resList <- list()
+    methods <- c("gbm", "LogitBoost", "C5.0", "ranger", "rf",
+                 "naive_bayes", "mlp", "nnet", "svmPoly", "svmRadial",
+                 "xgbTree", "xgbDART", "xgbLinear")
+    
+    for (method in methods) {
+      resList[[method]] <- base::tryCatch({
+        caret::train(
+          label ~ ., data = train_sl,
+          method = method, verbose = FALSE)
+      }, error = function(cond) cond)
+    }
+    
+    resList
+  })
+})
+
+round(caret::modelCor(caret::resamples(results_sl)), 4)
+```
+
+
+
+# References {-}
+
+<div id="refs"></div>
+
+
+
+
+
+
+
+
+
+
+
