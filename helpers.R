@@ -119,7 +119,7 @@ balanceDatasetSmote <- function(data, stateColumn) {
 
 
 loadResultsOrCompute <- function(file, computeExpr) {
-  file <- base::normalizePath(file)
+  file <- base::normalizePath(file, mustWork = FALSE)
   if (file.exists(file)) {
     return(base::readRDS(file))
   }
@@ -134,4 +134,22 @@ loadResultsOrCompute <- function(file, computeExpr) {
   base::saveRDS(res, file)
   return(res)
 }
+
+caretFitOneModeltoAllData <- function(method, tuneGrid, data) {
+  set.seed(42)
+  tr <- caret::trainControl(
+    method = "none", p = 1, returnResamp = "all"
+    , savePredictions = "all", classProbs = TRUE
+    , number = 1)
+  
+  set.seed(43)
+  caret::train(
+    label ~ ., data = data, trControl = tr,
+    tuneGrid = tuneGrid, preProcess = c("center", "scale"),
+    method = method, verbose = FALSE)
+}
+
+
+
+
 
