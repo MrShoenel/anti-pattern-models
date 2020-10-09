@@ -70,37 +70,45 @@ print(paste0("Zero-variance predictors to be removed are: ",
 data_sl <- data_sl[, !nzv_sl$zeroVar]
 ```
 
+## Define how the training works
+
 For each type of model, we will use a pre-defined train control.
 
 Instead of sampling during training, we'll work with a resample of the entire dataset, using the _synthetic minority over-sampling technique_
 [@chawla2002smote].
 
 ```{r}
-numFolds <- 10
+numFolds <- 5
 numRepeats <- 5
 
 tc_sl <- caret::trainControl(
   method = "repeatedcv", p = 0.9,
   returnResamp = "all", savePredictions = "all", classProbs = TRUE
   , number = numFolds, repeats = numRepeats
-  , preProcOptions = c("center", "scale")
-  , seeds = get_seeds(nh = 2, amount = 2 * numFolds * numRepeats)
+  , seeds = get_seeds(nh = 200, amount = 2 * numFolds * numRepeats)
   #, sampling = "smote"
 )
 ```
 
-Caret:
+## Tuning of several models
 
-```{r warning=FALSE}
-# As described above, use an oversampled dataset for this model.
-data_smote_sl <- balanceDatasetSmote(
-  data = data_sl, stateColumn = "label")
+We do this step to find which models work well with our data. Later, we can try to combine the best models into a meta-model.
 
+```{r echo=FALSE, warning=FALSE}
+set.seed(1337)
+# Let's preserve 100 instances from the original data as validation data:
 p <- caret::createDataPartition(
-  y = data_smote_sl$label, p = 90 / nrow(data_smote_sl), list = FALSE)
+  y = data_sl$label, p = 0.95, list = FALSE)
 
-train_sl <- data_smote_sl[-p,]
-valid_sl <- data_smote_sl[p, ]
+train_sl <- data_sl[p, ]
+valid_sl <- data_sl[-p,]
+
+
+# As described above, we can use an oversampled dataset for this model.
+# However, most recent changes indicate this may or may not be beneficial.
+train_sl <- balanceDatasetSmote(
+  data = train_sl, stateColumn = "label")
+
 
 # Caret itself needs e1071
 library(e1071)
@@ -135,18 +143,26 @@ library(kernlab)
 library(xgboost)
 
 
-
 results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
   doWithParallelCluster(expr = {
     resList <- list()
-    methods <- c("gbm", "LogitBoost", "C5.0", "ranger", "rf",
-                 "naive_bayes", "mlp", "nnet", "svmPoly", "svmRadial",
-                 "xgbTree", "xgbDART", "xgbLinear")
+    methods <- c("gbm", "LogitBoost", "C5.0", "rf",
+                 "ranger",
+                 "naive_bayes", "mlp", "nnet",
+                 "svmPoly",
+                 "svmRadial",
+                 "xgbTree",
+                 "xgbDART",
+                 "xgbLinear",
+                 "null"
+                 )
     
     for (method in methods) {
       resList[[method]] <- base::tryCatch({
         caret::train(
           label ~ ., data = train_sl,
+          trControl = tc_sl,
+          preProcess = c("center", "scale"),
           method = method, verbose = FALSE)
       }, error = function(cond) cond)
     }
@@ -154,9 +170,375 @@ results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
     resList
   })
 })
-
-round(caret::modelCor(caret::resamples(results_sl)), 4)
 ```
+
+### Several models: correlation and performance
+
+The following will give us a correlation matrix of the models' predictions. The goal is to find models with high performance and unrelated predictions, so that they can be combined.
+
+```{r echo=FALSE, warning=FALSE}
+data.frame(round(caret::modelCor(caret::resamples(results_sl)), 4))
+```
+
+Show for each model the performance during training, and also predict on our validation data to get an idea of their goodness.
+
+
+### Several models: train candidates
+
+Using a selection of the best models, we will train a corresponding best model using the best-working hyperparameters. These models will then be evaluated below and used in the stacking attempts.
+
+```{r}
+models_sl <- loadResultsOrCompute(file = "../results/models_sl.rds", computeExpr = {
+  res <- list()
+
+  for (modelName in names(results_sl)) {
+    m <- results_sl[[modelName]]
+    
+    res[[modelName]] <- caretFitOneModeltoAllData(
+      method = modelName, tuneGrid = m$bestTune,
+      data = train_sl)
+  }
+  
+  res
+})
+```
+
+
+
+As for predicting on validation data, we will use the models that were fit to the entire training data.
+
+```{r echo=FALSE}
+# Let's define a function to generate a tabular overview
+# of a list of caret-trained models:
+generateModelOverview <- function(
+  modelListTrain, modelListFinal,
+  modelNames = intersect(names(modelListTrain), names(modelListFinal)),
+  validationData)
+{
+  overview <- NULL
+  
+  for (modelName in modelNames) {
+    m <- modelListTrain[[modelName]]
+    mFinal <- modelListFinal[[modelName]]
+    maxAcc <- which.max(m$results$Accuracy)
+    maxRow <- m$results[maxAcc, ]
+    
+    # Use the final fit model here..
+    predFinal <- predict(
+      mFinal, validationData[, !(names(validationData) %in% c("label"))])
+    cm <- caret::confusionMatrix(validationData$label, predFinal)
+    hasNAs <- any(is.na(predFinal))
+    
+    if (hasNAs) {
+      # replace NAs with same label
+      idx <- which(is.na(predFinal), arr.ind = TRUE)
+      predTemp <- predFinal
+      predTemp[idx] <- predFinal[-idx][1]
+      cmWithNAs <- caret::confusionMatrix(validationData$label, predTemp)
+    } else {
+      cmWithNAs <- cm
+    }
+    
+    overview <- rbind(overview, data.frame(
+      model = modelName,
+      train_acc = maxRow$Accuracy,
+      train_Kappa = maxRow$Kappa,
+      predNA = hasNAs,
+      valid_acc_witNA = cmWithNAs$overall[["Accuracy"]],
+      valid_Kappa_withNA = cmWithNAs$overall[["Kappa"]],
+      valid_acc = cm$overall[["Accuracy"]],
+      valid_Kappa = cm$overall[["Kappa"]]
+    ))
+  }
+  
+  return(overview)
+}
+
+```
+
+
+```{r warning=FALSE}
+generateModelOverview(results_sl, models_sl, validationData = valid_sl)
+```
+
+# Manual stacking of models
+
+While there are methods to train an ensemble classifier, we are attempting this first manually. Using some of the best and most uncorrelated models from the previous section, we will train a meta model based on these models' outputs. For that, we need a dataset. It will be generated by predicting class probabilities from each single model.
+
+```{r}
+data_stack_train_sl <- data.frame(matrix(ncol = 0, nrow = nrow(train_sl)))
+data_stack_valid_sl <- data.frame(matrix(ncol = 0, nrow = nrow(valid_sl)))
+
+# The name of the models to use from the previous section:
+#stack_manual_models <- names(results_sl)[
+#  !(names(results_sl) %in% c("naive_bayes", "mlp", "nnet", "svmPoly", "svmRadial", "xgbTree", "xgbLinear"))]
+#stack_manual_models <- c("LogitBoost", "gbm", "xgbDART", "mlp") # <- This appears to work best
+stack_manual_models <- c("LogitBoost", "gbm", "ranger") # <- This appears to work best
+
+
+for (modelName in stack_manual_models) {
+  m <- models_sl[[modelName]]
+  
+  preds <- tryCatch({
+    predict(m, train_sl[, !(names(train_sl) %in% c("label"))], type = "prob")
+  }, error = function(cond) cond)
+  
+  preds_valid <- tryCatch({
+    predict(m, valid_sl[, !(names(valid_sl) %in% c("label"))], type = "prob")
+  }, error = function(cond) cond)
+  
+  if (any(class(preds) %in% c("simpleError", "error","condition"))) {
+    print(paste0("Cannot predict class probabilities for: ", modelName))
+  } else {
+    colnames(preds) <- paste0(colnames(preds), "_", modelName)
+    colnames(preds_valid) <- paste0(colnames(preds_valid), "_", modelName)
+    
+    data_stack_train_sl <- cbind(data_stack_train_sl, preds)
+    data_stack_valid_sl <- cbind(data_stack_valid_sl, preds_valid)
+  }
+}
+
+# Let's append the label-column:
+data_stack_train_sl$label <- train_sl$label
+data_stack_valid_sl$label <- valid_sl$label
+```
+
+Now that we have the data prepared for our manual ensemble, let's attempt to train some models.
+
+## Manual neural network
+
+Before going back to caret, let's try a neural network the manual way.
+
+```{r echo=FALSE, warning=FALSE}
+library(neuralnet)
+library(e1071)
+
+nnet <- loadResultsOrCompute("../results/nnet.rds", computeExpr = {
+  set.seed(0xc0de)
+  neuralnet::neuralnet(
+    formula = label ~ ., data = data_stack_train_sl,
+    act.fct = function(x) 1.5 * x * sigmoid(x),
+    hidden = c(3), threshold = 5e-3,
+    stepmax = 2e5,
+    lifesign = if (interactive()) "full" else "minimal")
+})
+```
+The network has the following structure:
+
+```{r}
+plot(nnet)
+```
+
+
+```{r}
+nnet_pred <- predict(nnet, data_stack_valid_sl)
+colnames(nnet_pred) <- levels(valid_sl$label)
+
+nnet_pred_label <- factor(
+  x = levels(valid_sl$label)[apply(nnet_pred, 1, which.max)],
+  levels = levels(valid_sl$label))
+
+caret::confusionMatrix(valid_sl$label, nnet_pred_label)
+```
+
+While it works, the results are not better than those from the individual models.
+
+
+## Manual stack (ms) using caret
+
+Let's attempt to learn a meta-model using caret.
+
+```{r echo=FALSE, warning=FALSE}
+results_ms <- loadResultsOrCompute("../results/ms.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    resList <- list()
+    methods <- c("gbm"
+                 , "LogitBoost"
+                 #, "C5.0"
+                 , "ranger"
+                 #, "rf"
+                 #,"naive_bayes"
+                 , "mlp"
+                 ,"nnet"
+                 #"svmPoly",
+                 , "svmRadial"
+                 #"xgbTree",
+                 #"xgbDART",
+                 #"xgbLinear"
+                 )
+    
+    for (method in methods) {
+      resList[[method]] <- base::tryCatch({
+        caret::train(
+          label ~ ., data = data_stack_train_sl,
+          trControl = tc_sl,
+          preProcess = c("center", "scale"),
+          method = method, verbose = FALSE)
+      }, error = function(cond) cond)
+    }
+    
+    resList
+  })
+})
+```
+
+For the next overview, again, fit the selected single models using their best tune and all available training data.
+
+```{r echo=FALSE, warning=FALSE}
+models_ms <- loadResultsOrCompute(file = "../results/models_ms.rds", computeExpr = {
+  res <- list()
+
+  for (modelName in names(results_ms)) {
+    m <- results_ms[[modelName]]
+    
+    res[[modelName]] <- caretFitOneModeltoAllData(
+      method = modelName, tuneGrid = m$bestTune,
+      data = data_stack_train_sl)
+  }
+  
+  res
+})
+```
+
+Now show the overview:
+
+```{r}
+generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
+```
+
+The overview for all models, using oversampled training data, was this:
+
+```{r}
+results_ms_all <- readRDS("../results/ms_all.rds")
+models_ms_all <- readRDS("../results/models_ms_all.rds")
+
+generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
+
+results_ms_all <- NULL
+models_ms_all <- NULL
+```
+
+
+It appears that the manual stacking was slightly useful, and we decide to use the `nnet` meta-model, that is based on the single models`r paste(stack_manual_models, collapse = ", ")`, as the final models. Remember that the single models produce predictions as to the class membership on the original data, and these are fed into the meta-model (the pipeline is: predict class memberships (once using each single model), combine all votes into a new dataset, predict final label based on these votes (using the meta model)).
+
+```{r}
+create_final_model <- function() {
+  # The meta-model from the manual stacking:
+  meta_model <- models_ms$nnet
+  # The single models from earlier training:
+  single_models <- models_sl[stack_manual_models]
+  
+  predict_class_membership <- function(data, modelList = single_models, labelCol = "label") {
+    dataLabel <- data[[labelCol]]
+    data <- data[, !(names(data) %in% labelCol)]
+    dataCM <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
+    
+    for (modelName in names(modelList)) {
+      m <- modelList[[modelName]]
+      temp <- stats::predict(m, data, type = "prob")
+      colnames(temp) <- paste0(colnames(temp), "_", modelName)
+      dataCM <- cbind(dataCM, temp)
+    }
+    
+    return(cbind(dataCM, dataLabel))
+  }
+  
+  predict <- function(data, labelCol = "label", type = c("raw", "prob", "both")) {
+    type <- type[1]
+    dataCM <- predict_class_membership(data = data, labelCol = labelCol)
+    res <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
+    
+    doRaw <- type == "raw"
+    doProb <- type == "prob"
+    
+    asRaw <- stats::predict(meta_model, dataCM, type = "raw")
+    asProb <- stats::predict(meta_model, dataCM, type = "prob")
+    colnames(asProb) <- levels(data[[labelCol]])
+    
+    if (doRaw) {
+      return(asRaw)
+    } else if (doProb) {
+      return(asProb)
+    }
+    
+    # Both:
+    res <- cbind(res, asRaw)
+    colnames(res) <- labelCol
+    res <- cbind(res, asProb)
+    return(res)
+  }
+  
+  return(list(
+    meta_model = meta_model,
+    single_models = single_models,
+    predict_class_membership = predict_class_membership,
+    predict = predict
+  ))
+}
+
+
+final_model <- create_final_model()
+
+saveRDS(final_model, file = "../results/final_model.rds")
+```
+
+A quick test of the final model:
+
+```{r}
+caret::confusionMatrix(final_model$predict(train_sl), train_sl$label)
+```
+
+
+```{r}
+head(final_model$predict(valid_sl, type = "both"))
+
+caret::confusionMatrix(final_model$predict(valid_sl), valid_sl$label)
+```
+
+
+
+## Creating an ensemble (es) using caretEnsemble
+
+The last thing to do is creating an ensemble using `caretEnsemble`. __NOTE__: Unfortunately, that package does not supports multi-class problems, and we will not attempt to modify the problem to fit the model at this time. The following tests below do not work.
+
+```{r echo=FALSE, warning=FALSE}
+library(caretEnsemble)
+
+tc_sl_es <- caret::trainControl(
+  method = "cv", savePredictions = "final",
+  classProbs = TRUE)
+```
+
+Now let's create a list of models we would like to use.
+
+```{r echo=FALSE, warning=FALSE}
+es_list <- loadResultsOrCompute(file = "../results/es.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    caretEnsemble::caretList(
+      label ~ ., data = data_stack_train_sl,
+      trControl = tc_sl_es, methodList = names(models_ms),
+      verbose = FALSE)
+  })
+})
+```
+
+### Create a linear ensemble
+
+Using the list of trained models from the previous section, we create an ensemble that is a linear combination of all models.
+
+```{r}
+#model_es_linear <- caretEnsemble::caretStack(
+#  all.models = es_list,
+#  method = "glm",
+#  #metric = "Accuracy",
+#  trControl = caret::trainControl(
+#    classProbs = TRUE)
+#)
+#
+#summary(model_es_linear)
+```
+
+
 
 
 
