@@ -429,7 +429,7 @@ create_final_model <- function() {
   single_models <- models_sl[stack_manual_models]
   
   predict_class_membership <- function(data, modelList = single_models, labelCol = "label") {
-    dataLabel <- data[[labelCol]]
+    dataLabel <- if (labelCol %in% colnames(data)) data[[labelCol]] else matrix(ncol = 0, nrow = nrow(data))
     data <- data[, !(names(data) %in% labelCol)]
     dataCM <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
     
@@ -453,7 +453,9 @@ create_final_model <- function() {
     
     asRaw <- stats::predict(meta_model, dataCM, type = "raw")
     asProb <- stats::predict(meta_model, dataCM, type = "prob")
-    colnames(asProb) <- levels(data[[labelCol]])
+    if (is.factor(data[[labelCol]])) {
+      colnames(asProb) <- levels(data[[labelCol]])
+    }
     
     if (doRaw) {
       return(asRaw)
