@@ -542,6 +542,91 @@ Using the list of trained models from the previous section, we create an ensembl
 
 
 
+# Some tests using Angular
+
+Let's load the data we extracted using _Git-Tools_ from the Angular repository (begin 2020 - now). After loading, we will predict the maintenance activity and save the file.
+
+```{r}
+# GitTools.exe -r C:\temp\angular\ -o 'C:\temp\angular.csv' -s '2019-01-01 00:00'
+dateFormat <- "%Y-%m-%d %H:%M:%S"
+angularFile <- "../data/angular.csv"
+angular <- read.csv(angularFile)
+temp <- final_model$predict(data = angular, type = "both")
+angular$label <- temp$label
+angular$prob_a <- temp$a
+angular$prob_c <- temp$c
+angular$prob_p <- temp$p
+
+angular$CommitterTimeObj <- strptime(
+  angular$CommitterTime, format = dateFormat)
+angular$AuthorTimeObj <- strptime(
+  angular$AuthorTime, format = dateFormat)
+
+write.csv(angular, file = angularFile, row.names = FALSE)
+
+table(angular$label)
+```
+
+Let's attempt some straightforward density plots for each activity, using the relative timestamp of each commit.
+
+```{r}
+ggplot2::ggplot(
+  #data = angular[angular$AuthorTimeUnixEpochMilliSecs <= 1.57e12, ],
+  data = angular[angular$AuthorTimeObj < as.POSIXct("2019-11-01"), ],
+  ggplot2::aes(
+    AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
+  ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
+
+
+ggplot2::ggplot(
+  #data = angular[angular$AuthorTimeUnixEpochMilliSecs <= 1.57e12, ],
+  data = angular[angular$AuthorTimeObj >= as.POSIXct("2019-11-01"), ],
+  ggplot2::aes(
+    AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
+  ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
+```
+
+It appears that the activities after 2019-11-01 are much more balanced. Let's look at a much smaller window:
+
+```{r}
+temp <- ggplot2::ggplot(
+  data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
+  ggplot2::aes(
+    AuthorTimeUnixEpochMilliSecs, color = label, fill = label))
+
+temp + ggplot2::geom_density(size = 1, alpha = 0.4)
+temp + ggplot2::geom_density(size = 1, alpha = 0.4, position = "fill")
+temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular")
+temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular", position = "fill")
+```
+
+The above plot is a 3-week snapshot, with weeks starting at Monday, 00:00, and ending at Sunday, 23:59. It appears that each week starts with a somewhat corrective phase. We can see this more easily when using a rectangular Kernel in a non-filled plot.
+
+Here are some attempts with a rolling mean over the class-probabilities:
+
+```{r}
+library(zoo)
+
+data<-AirPassengers
+plot(data,main='Simple Moving Average (SMA)',ylab='Passengers')
+lines(rollmean(data,5),col='blue')
+lines(rollmean(data,40),col='red')
+legend(1950,600,col=c('black','blue', 'red'),legend=c('Raw', 'SMA 5', 'SMA 40'),lty=1,cex=0.8)
+```
+
+```{r}
+data <- angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),]
+
+plot(list(
+  #x = as.Date(data$AuthorTimeObj),
+  x = 1:nrow(data),
+  y = data$prob_a
+))
+#lines(rollmean(data$prob_c, 5), col='red')
+lines(rollmean(data$prob_c, 10), col='blue')
+#plot(rollmean(data$prob_a, 5))
+```
+
 
 
 # References {-}
