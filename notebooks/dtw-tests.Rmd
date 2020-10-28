@@ -287,6 +287,36 @@ stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
   temp$value <- stats::sd(temp$dataF1 - temp$dataF2, na.rm = TRUE)
   return(temp)
 }
+
+stat_diff_2_functions_mae <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp$value <- mean(abs(temp$dataF1 - temp$dataF2))
+  return(temp)
+}
+
+stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp$value <- Metrics::rmse(temp$dataF1, temp$dataF2)
+  return(temp)
+}
+
+#' This is the symmetric KL-divergence
+stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  tol <- 1e-3
+  
+  PQ <- function(x) f1(x) * log(f1(x) / f2(x))
+  QP <- function(x) f2(x) * log(f2(x) / f1(x))
+  temp$value <- tryCatch({
+    stats::integrate(f = PQ, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value +
+    stats::integrate(f = QP, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
+  }, error = function(cond) {
+    warning(cond)
+    return(NA)
+  })
+  
+  return(temp)
+}
 ```
 
 
@@ -621,7 +651,16 @@ data.frame(
     area_diff_2_functions(signal_org_f, signal_mat_f1)$value,
     area_diff_2_functions(signal_mat_ref_f, signal_mat_query_f)$value,
     area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 5),
+  ), 4),
+  
+  KL_sy = round(c(
+    stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_symmetric_KL(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_symmetric_KL(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ), 4),
   
   cov = round(c(
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f3)$value,
@@ -630,7 +669,7 @@ data.frame(
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cov(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cov(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 5),
+  ), 4),
   
   corr = round(c(
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f3)$value,
@@ -639,7 +678,7 @@ data.frame(
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 5),
+  ), 4),
   
   corr_kend = round(c(
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f3)$value,
@@ -648,7 +687,7 @@ data.frame(
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor_kendall(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor_kendall(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 5),
+  ), 4),
   
   corr_spea = round(c(
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f3)$value,
@@ -657,7 +696,7 @@ data.frame(
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor_spearman(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor_spearman(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 5),
+  ), 4),
   
   sd = round(c(
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f3)$value,
@@ -666,16 +705,25 @@ data.frame(
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_sd(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_sd(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 5),
+  ), 4),
   
-  var = round(c(
-    stat_diff_2_functions_var(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_var(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_var(signal_org_f, signal_mat_f2)$value,
-    stat_diff_2_functions_var(signal_org_f, signal_mat_f1)$value,
-    stat_diff_2_functions_var(signal_mat_ref_f, signal_mat_query_f)$value,
-    stat_diff_2_functions_var(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 5)
+#  var = round(c(
+#    stat_diff_2_functions_var(signal_org_f, signal_mat_f3)$value,
+#    stat_diff_2_functions_var(signal_org_f, signal_mat_f)$value,
+#    stat_diff_2_functions_var(signal_org_f, signal_mat_f2)$value,
+#    stat_diff_2_functions_var(signal_org_f, signal_mat_f1)$value,
+#    stat_diff_2_functions_var(signal_mat_ref_f, signal_mat_query_f)$value,
+#    stat_diff_2_functions_var(signal_mat_ref_f2, signal_mat_query_f2)$value
+#  ), 4),
+  
+  rmse = round(c(
+    stat_diff_2_functions_rmse(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_rmse(signal_org_f, signal_mat_f)$value,
+    stat_diff_2_functions_rmse(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_rmse(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_rmse(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_rmse(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ), 4)
 )
 ```
 
@@ -830,54 +878,68 @@ data.frame(
     "clean_both"
   ),
   
-  area = c(
+  area = round(c(
     area_diff_2_functions(fft_org_f1, fft_org_f2)$value,
     area_diff_2_functions(fft_org_f1, fft_clean_Im_f)$value,
     area_diff_2_functions(fft_org_f1, fft_clean_Re_f)$value,
     area_diff_2_functions(fft_org_f1, fft_clean_Both_f)$value
-  ),
+  ), 4),
   
-  cov = c(
+  KL_sy = round(c(
+    stat_diff_2_functions_symmetric_KL(fft_org_f1, fft_org_f2)$value,
+    stat_diff_2_functions_symmetric_KL(fft_org_f1, fft_clean_Im_f)$value,
+    stat_diff_2_functions_symmetric_KL(fft_org_f1, fft_clean_Re_f)$value,
+    stat_diff_2_functions_symmetric_KL(fft_org_f1, fft_clean_Both_f)$value
+  ), 4),
+  
+  cov = round(c(
     stat_diff_2_functions_cov(fft_org_f1, fft_org_f2)$value,
     stat_diff_2_functions_cov(fft_org_f1, fft_clean_Im_f)$value,
     stat_diff_2_functions_cov(fft_org_f1, fft_clean_Re_f)$value,
     stat_diff_2_functions_cov(fft_org_f1, fft_clean_Both_f)$value
-  ),
+  ), 4),
   
-  corr = c(
+  corr = round(c(
     stat_diff_2_functions_cor(fft_org_f1, fft_org_f2)$value,
     stat_diff_2_functions_cor(fft_org_f1, fft_clean_Im_f)$value,
     stat_diff_2_functions_cor(fft_org_f1, fft_clean_Re_f)$value,
     stat_diff_2_functions_cor(fft_org_f1, fft_clean_Both_f)$value
-  ),
+  ), 4),
   
-  corr_kend = c(
+  corr_kend = round(c(
     stat_diff_2_functions_cor_kendall(fft_org_f1, fft_org_f2)$value,
     stat_diff_2_functions_cor_kendall(fft_org_f1, fft_clean_Im_f)$value,
     stat_diff_2_functions_cor_kendall(fft_org_f1, fft_clean_Re_f)$value,
     stat_diff_2_functions_cor_kendall(fft_org_f1, fft_clean_Both_f)$value
-  ),
+  ), 4),
   
-  corr_spea = c(
+  corr_spea = round(c(
     stat_diff_2_functions_cor_spearman(fft_org_f1, fft_org_f2)$value,
     stat_diff_2_functions_cor_spearman(fft_org_f1, fft_clean_Im_f)$value,
     stat_diff_2_functions_cor_spearman(fft_org_f1, fft_clean_Re_f)$value,
     stat_diff_2_functions_cor_spearman(fft_org_f1, fft_clean_Both_f)$value
-  ),
+  ), 4),
   
-  sd = c(
+  sd = round(c(
     stat_diff_2_functions_sd(fft_org_f1, fft_org_f2)$value,
     stat_diff_2_functions_sd(fft_org_f1, fft_clean_Im_f)$value,
     stat_diff_2_functions_sd(fft_org_f1, fft_clean_Re_f)$value,
     stat_diff_2_functions_sd(fft_org_f1, fft_clean_Both_f)$value
-  ),
+  ), 4),
   
-  var = c(
-    stat_diff_2_functions_var(signal_org_f, fft_org_f2)$value,
-    stat_diff_2_functions_var(signal_org_f, fft_clean_Im_f)$value,
-    stat_diff_2_functions_var(signal_org_f, fft_clean_Re_f)$value,
-    stat_diff_2_functions_var(signal_org_f, fft_clean_Both_f)$value
-  )
+#  var = round(c(
+#    stat_diff_2_functions_var(signal_org_f, fft_org_f2)$value,
+#    stat_diff_2_functions_var(signal_org_f, fft_clean_Im_f)$value,
+#    stat_diff_2_functions_var(signal_org_f, fft_clean_Re_f)$value,
+#    stat_diff_2_functions_var(signal_org_f, fft_clean_Both_f)$value
+#  ), 4),
+  
+  rmse = round(c(
+    stat_diff_2_functions_rmse(signal_org_f, fft_org_f2)$value,
+    stat_diff_2_functions_rmse(signal_org_f, fft_clean_Im_f)$value,
+    stat_diff_2_functions_rmse(signal_org_f, fft_clean_Re_f)$value,
+    stat_diff_2_functions_rmse(signal_org_f, fft_clean_Both_f)$value
+  ), 4)
 )
 ```
 In summary, it appears that cleaning the signal does not bring the two functions closer together (and hence reduce the area between them). However, we see increases in correlation for when we clean/constrain the Real part. This could mean that the query resembles the reference more closely in shape when this transformation is applied.
