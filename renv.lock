@@ -44,6 +44,13 @@
       "Repository": "CRAN",
       "Hash": "41ed85b66d2e8e9a5d6c51b1d9fdfcc1"
     },
+    "Deriv": {
+      "Package": "Deriv",
+      "Version": "4.1.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "44aa1df454edaa3bc3279ee2ae995787"
+    },
     "Formula": {
       "Package": "Formula",
       "Version": "1.2-3",
@@ -260,6 +267,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "77b0545e2c16b4e57c8da2d14042b28d"
+    },
+    "caretEnsemble": {
+      "Package": "caretEnsemble",
+      "Version": "2.0.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "270d9a081d3c8d9fde38afa92376ddb5"
     },
     "cellranger": {
       "Package": "cellranger",
@@ -730,6 +744,13 @@
       "Repository": "CRAN",
       "Hash": "56ffe03b04e5cb4128cb23130dedd169"
     },
+    "neuralnet": {
+      "Package": "neuralnet",
+      "Version": "1.44.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "645dfddf82e231bd334f916ede114128"
+    },
     "nlme": {
       "Package": "nlme",
       "Version": "3.1-148",
@@ -778,6 +799,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "d82ccde44926035061859784b19c857d"
+    },
+    "pbapply": {
+      "Package": "pbapply",
+      "Version": "1.4-3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "52f8028b028076bc3b7ee5d6251abf0d"
     },
     "pbkrtest": {
       "Package": "pbkrtest",
@@ -1142,6 +1170,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "d1c0b777b432e4b4c039c8aaecc54e0f"
+    },
+    "xgboost": {
+      "Package": "xgboost",
+      "Version": "1.2.0.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "e83e1df3948005afbddd83db86f3a0cb"
     },
     "xts": {
       "Package": "xts",
