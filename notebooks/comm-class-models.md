@@ -58,8 +58,8 @@ that overfitting is not a problem.
 Stateless model
 ===============
 
-The stateless model shall be used whenever there is data available from
-the parents or children.
+The stateless model shall be used whenever there is **no** data
+available from the parents or children.
 
 Load and prepare the data
 -------------------------
@@ -1031,13 +1031,13 @@ The overview for all models, using oversampled training data, was this:
     models_ms_all <- NULL
 
 It appears that the manual stacking was slightly useful, and we decide
-to use the `nnet` meta-model, that is based on the single
-modelsLogitBoost, gbm, ranger, as the final models. Remember that the
-single models produce predictions as to the class membership on the
-original data, and these are fed into the meta-model (the pipeline is:
-predict class memberships (once using each single model), combine all
-votes into a new dataset, predict final label based on these votes
-(using the meta model)).
+to use the `nnet` meta-model, that is based on the single models
+LogitBoost, gbm, ranger, as the final models. Remember that the single
+models produce predictions as to the class membership on the original
+data, and these are fed into the meta-model (the pipeline is: predict
+class memberships (once using each single model), combine all votes into
+a new dataset, predict final label based on these votes (using the meta
+model)).
 
     create_final_model <- function() {
       # The meta-model from the manual stacking:
@@ -1061,7 +1061,7 @@ votes into a new dataset, predict final label based on these votes
       }
       
       predict <- function(data, labelCol = "label", type = c("raw", "prob", "both")) {
-        type <- type[1]
+        type <- if (missing(type)) type[1] else type
         dataCM <- predict_class_membership(data = data, labelCol = labelCol)
         res <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
         
