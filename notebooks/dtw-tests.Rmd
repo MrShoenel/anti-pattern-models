@@ -329,13 +329,15 @@ stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
 
 stat_diff_2_functions_mae <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-  temp$value <- mean(abs(temp$dataF1 - temp$dataF2))
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  temp$value <- mean(abs(temp$dataF1[idx] - temp$dataF2[idx]))
   return(temp)
 }
 
 stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-  temp$value <- Metrics::rmse(temp$dataF1, temp$dataF2)
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  temp$value <- Metrics::rmse(temp$dataF1[idx], temp$dataF2[idx])
   return(temp)
 }
 
