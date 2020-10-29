@@ -400,6 +400,7 @@ print(paste0(
 plot_2_functions(signal_org_f, signal_mat_f3)
 
 print(paste0("The window starts at ", signal_ext3$start, " and ends at ", signal_ext3$end))
+print(paste0("The reference is matched from ", signal_ext3$start_ref, " to ", signal_ext3$end_ref))
 ```
 
 ## Example using a Window
@@ -435,19 +436,21 @@ print(c(find_signal_w$distance, find_signal_w$normalizedDistance))
 Let's do a full example using the match from above:
 
 ```{r fig.keep='all'}
-signal_org_f <- pattern_approxfun(org_signal$y)
-
 signal_ext <- extract_signal_from_window(find_signal_w, window = win)
 signal_mat <- signal_ext$data
 signal_mat_f <- pattern_approxfun(signal_mat, smooth = TRUE)
 
-plot_2_functions(signal_org_f, signal_mat_f)
+signal_org_1_f <- pattern_approxfun(
+  org_signal$y[signal_ext$start_ref:signal_ext$end_ref])
+
+plot_2_functions(signal_org_1_f, signal_mat_f)
 
 print(paste0("The window starts at ", signal_ext$start, " and ends at ", signal_ext$end))
+print(paste0("The reference is matched from ", signal_ext$start_ref, " to ", signal_ext$end_ref))
 ```
 Now the area between the curves in the unit square is:
 ```{r}
-area_diff_2_functions(signal_org_f, signal_mat_f)$value
+area_diff_2_functions(signal_org_1_f, signal_mat_f)$value
 ```
 
 
@@ -479,15 +482,18 @@ print(c(find_signal_w2$distance, find_signal_w2$normalizedDistance))
 The `dtw` did a good job in mapping that portion of the query this is left in the original signal (the decline on the left).
 
 ```{r fig.keep='all'}
-signal_ext2 <- extract_signal_from_window(find_signal_w2, window = win2)
+signal_ext2 <- extract_signal_from_window(find_signal_w2, window = win2, idxMethod = "smooth", smoothCnt = 3)
 signal_mat2 <- signal_ext2$data
 signal_mat_f2 <- pattern_approxfun(signal_mat2, smooth = FALSE)
 
-area_diff_2_functions(signal_org_f, signal_mat_f2)$value
+signal_org_2_f <- pattern_approxfun(org_signal$y[signal_ext2$start_ref:signal_ext2$end_ref])
 
-plot_2_functions(signal_org_f, signal_mat_f2)
+area_diff_2_functions(signal_org_2_f, signal_mat_f2)$value
+
+plot_2_functions(signal_org_2_f, signal_mat_f2)
 
 print(paste0("The window starts at ", signal_ext2$start, " and ends at ", signal_ext2$end))
+print(paste0("The monotony/continuity is ", signal_ext2$monotonicity, " (relative is ", signal_ext2$monotonicity_rel, ")"))
 ```
 
 ## Example with a window that does not contain the pattern:
@@ -551,7 +557,7 @@ This is an example (figure 9) from the original article [@giorgino2009] using a 
 idx <- seq(0,6.28,len=100)
 query <- sin(idx) + runif(100)/10
 reference <- cos(idx)
-alignment <- dtw::dtw(query,reference,step=dtw::asymmetric,keep=TRUE)
+alignment <- dtw::dtw(query,reference,step=dtw::asymmetric,keep=TRUE, open.begin = TRUE, open.end = TRUE)
 
 dtw::dtwPlotTwoWay(alignment)
 dtw::dtwPlotThreeWay(alignment)
@@ -568,7 +574,9 @@ signal_ex_query <- extract_signal_from_window(
 signal_mat_query <- signal_ex_query$data
 signal_mat_query_f <- pattern_approxfun(signal_mat_query)
 
-signal_mat_ref_f <- pattern_approxfun(reference)
+#signal_mat_ref_f <- pattern_approxfun(reference)
+signal_mat_ref_f <- pattern_approxfun(
+  reference[signal_ex_query$start_ref:signal_ex_query$end_ref])
 
 area_match <- area_diff_2_functions(signal_mat_ref_f, signal_mat_query_f)
 print(area_match$value)
@@ -608,7 +616,7 @@ signal_ex_query2 <- extract_signal_from_window(
 signal_mat_query2 <- signal_ex_query2$data
 signal_mat_query_f2 <- pattern_approxfun(signal_mat_query2)
 
-signal_mat_ref_f2 <- pattern_approxfun(reference2)
+signal_mat_ref_f2 <- pattern_approxfun(reference2[signal_ex_query2$start_ref:signal_ex_query2$end_ref])
 
 area_match2 <- area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
 print(area_match2$value)
@@ -628,8 +636,8 @@ library(ggpubr)
 
 ggpubr::ggarrange(
   plot_2_functions(signal_org_f, signal_mat_f3),
-  plot_2_functions(signal_org_f, signal_mat_f),
-  plot_2_functions(signal_org_f, signal_mat_f2),
+  plot_2_functions(signal_org_1_f, signal_mat_f),
+  plot_2_functions(signal_org_2_f, signal_mat_f2),
   plot_2_functions(signal_org_f, signal_mat_f1),
   plot_2_functions(signal_mat_ref_f, signal_mat_query_f),
   plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2),
@@ -653,7 +661,7 @@ ggpubr::ggarrange(
 
 ### Tabular overview of goodness-of-match
 
-Let's compute again and show how well the match is, using the implemented area- and statistics-methods. Note: 'oB' and 'oE' stand for open begin and end.
+Let's compute again and show how well the match is, using the implemented area- and statistics-methods. __Note__: 'oB' and 'oE' stand for open begin and end. 'start' and 'end' mean the relative beginning/end of the reference or query that were matched (where in the reference or query the match started as percentage).
 
 ```{r warning=FALSE, echo=FALSE, results="show"}
 data.frame(
@@ -685,10 +693,64 @@ data.frame(
     if (alignment2$openEnd) 1 else 0
   ),
   
+  start_r = round(c(
+    signal_ext3$start_rel_ref,
+    signal_ext$start_rel_ref,
+    signal_ext2$start_rel_ref,
+    signal_ext1$start_rel_ref,
+    signal_ex_query$start_rel_ref,
+    signal_ex_query2$start_rel_ref
+  ), 4),
+  
+  end_r = round(c(
+    signal_ext3$end_rel_ref,
+    signal_ext$end_rel_ref,
+    signal_ext2$end_rel_ref,
+    signal_ext1$end_rel_ref,
+    signal_ex_query$end_rel_ref,
+    signal_ex_query2$end_rel_ref
+  ), 4),
+  
+  start_q = round(c(
+    signal_ext3$start_rel,
+    signal_ext$start_rel,
+    signal_ext2$start_rel,
+    signal_ext1$start_rel,
+    signal_ex_query$start_rel,
+    signal_ex_query2$start_rel
+  ), 4),
+  
+  end_q = round(c(
+    signal_ext3$end_rel,
+    signal_ext$end_rel,
+    signal_ext2$end_rel,
+    signal_ext1$end_rel,
+    signal_ex_query$end_rel,
+    signal_ex_query2$end_rel
+  ), 4),
+  
+  mono = round(c(
+    signal_ext3$monotonicity,
+    signal_ext$monotonicity,
+    signal_ext2$monotonicity,
+    signal_ext1$monotonicity,
+    signal_ex_query$monotonicity,
+    signal_ex_query2$monotonicity
+  ), 4),
+  
+  mono_rel = round(c(
+    signal_ext3$monotonicity_rel,
+    signal_ext$monotonicity_rel,
+    signal_ext2$monotonicity_rel,
+    signal_ext1$monotonicity_rel,
+    signal_ex_query$monotonicity_rel,
+    signal_ex_query2$monotonicity_rel
+  ), 4),
+  
   area = round(c(
     area_diff_2_functions(signal_org_f, signal_mat_f3)$value,
-    area_diff_2_functions(signal_org_f, signal_mat_f)$value,
-    area_diff_2_functions(signal_org_f, signal_mat_f2)$value,
+    area_diff_2_functions(signal_org_1_f, signal_mat_f)$value,
+    area_diff_2_functions(signal_org_2_f, signal_mat_f2)$value,
     area_diff_2_functions(signal_org_f, signal_mat_f1)$value,
     area_diff_2_functions(signal_mat_ref_f, signal_mat_query_f)$value,
     area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)$value
@@ -696,17 +758,30 @@ data.frame(
   
   KL_sy = round(c(
     stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_symmetric_KL(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_symmetric_KL(signal_org_2_f, signal_mat_f2)$value,
     stat_diff_2_functions_symmetric_KL(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_symmetric_KL(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_symmetric_KL(signal_mat_ref_f2, signal_mat_query_f2)$value
-  ), 4),
+  ), 4)
+)
+```
+
+```{r warning=FALSE, echo=FALSE, results="show"}
+data.frame(
+  which = c(
+    "No window",
+    "With window",
+    "Partial window",
+    "Flat warping func.",
+    "Ex. from article",
+    "Ex. phase-shifted"
+  ),
   
   cov = round(c(
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_cov(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_cov(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cov(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_cov(signal_org_2_f, signal_mat_f2)$value,
     stat_diff_2_functions_cov(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cov(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cov(signal_mat_ref_f2, signal_mat_query_f2)$value
@@ -714,8 +789,8 @@ data.frame(
   
   corr = round(c(
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_cor(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_cor(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cor(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_cor(signal_org_2_f, signal_mat_f2)$value,
     stat_diff_2_functions_cor(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor(signal_mat_ref_f2, signal_mat_query_f2)$value
@@ -723,8 +798,8 @@ data.frame(
   
   corr_kend = round(c(
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cor_kendall(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_cor_kendall(signal_org_2_f, signal_mat_f2)$value,
     stat_diff_2_functions_cor_kendall(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor_kendall(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor_kendall(signal_mat_ref_f2, signal_mat_query_f2)$value
@@ -732,8 +807,8 @@ data.frame(
   
   corr_spea = round(c(
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_cor_spearman(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_cor_spearman(signal_org_2_f, signal_mat_f2)$value,
     stat_diff_2_functions_cor_spearman(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_cor_spearman(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_cor_spearman(signal_mat_ref_f2, signal_mat_query_f2)$value
@@ -741,26 +816,35 @@ data.frame(
   
   sd = round(c(
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_sd(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_sd(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_sd(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_sd(signal_org_2_f, signal_mat_f2)$value,
     stat_diff_2_functions_sd(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_sd(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_sd(signal_mat_ref_f2, signal_mat_query_f2)$value
   ), 4),
   
-#  var = round(c(
-#    stat_diff_2_functions_var(signal_org_f, signal_mat_f3)$value,
-#    stat_diff_2_functions_var(signal_org_f, signal_mat_f)$value,
-#    stat_diff_2_functions_var(signal_org_f, signal_mat_f2)$value,
-#    stat_diff_2_functions_var(signal_org_f, signal_mat_f1)$value,
-#    stat_diff_2_functions_var(signal_mat_ref_f, signal_mat_query_f)$value,
-#    stat_diff_2_functions_var(signal_mat_ref_f2, signal_mat_query_f2)$value
-#  ), 4),
+  var = round(c(
+    stat_diff_2_functions_var(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_var(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_var(signal_org_2_f, signal_mat_f2)$value,
+    stat_diff_2_functions_var(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_var(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_var(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ), 4),
+  
+  mae = round(c(
+    stat_diff_2_functions_mae(signal_org_f, signal_mat_f3)$value,
+    stat_diff_2_functions_mae(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_mae(signal_org_2_f, signal_mat_f2)$value,
+    stat_diff_2_functions_mae(signal_org_f, signal_mat_f1)$value,
+    stat_diff_2_functions_mae(signal_mat_ref_f, signal_mat_query_f)$value,
+    stat_diff_2_functions_mae(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ), 4),
   
   rmse = round(c(
     stat_diff_2_functions_rmse(signal_org_f, signal_mat_f3)$value,
-    stat_diff_2_functions_rmse(signal_org_f, signal_mat_f)$value,
-    stat_diff_2_functions_rmse(signal_org_f, signal_mat_f2)$value,
+    stat_diff_2_functions_rmse(signal_org_1_f, signal_mat_f)$value,
+    stat_diff_2_functions_rmse(signal_org_2_f, signal_mat_f2)$value,
     stat_diff_2_functions_rmse(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_rmse(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_rmse(signal_mat_ref_f2, signal_mat_query_f2)$value
