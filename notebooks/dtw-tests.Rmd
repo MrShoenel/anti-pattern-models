@@ -93,7 +93,9 @@ plot(org_signal)
 Before we go further, we want to extract the matching portions of the pattern from the window and compare it to the original signal. We approximate functions for the original and the matched signal and then calculate the difference as the area between the curves in a unit square.
 
 ```{r}
-extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE) {
+extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idxMethod = c("discrete", "smooth"), smoothCnt = 3) {
+  idxMethod <- if (missing(idxMethod)) idxMethod[1] else idxMethod
+  
   # First, we check whether the warping function is flat. This
   # test has two components: a linear regression, and a check
   # of the vertical co-domain of that function.
@@ -118,29 +120,66 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE) {
       warning(wMsg)
       
       return(list(
+        monotonicity = NA,
+        monotonicity_rel = NA,
         indices = c(0, 0),
-        start = 0,
-        end = 0,
+        start = NA,
+        start_ref = NA,
+        start_rel = NA,
+        start_rel_ref = NA,
+        end = NA,
+        end_ref = NA,
+        end_rel = NA,
+        end_rel_ref = NA,
         data = c(0, 0)
       ))
     }
   }
   
-  
-  indices <- c()
-  for (idx in 1:min(length(window) - 1, length(dtwAlign$index2) - 1)) {
-    if (dtwAlign$index2[idx] < dtwAlign$index2[idx + 1]) {
-      indices <- c(indices, c(idx, idx + 1))
+  if (idxMethod == "discrete") {
+    # Here we store all indices that have a next index that has a value
+    # greater than that of the current index. This means there is a slope
+    # with a value > 0. In such a case, we store the index and its next
+    # index in an array.
+    indices <- c()
+    for (idx in 1:(min(length(window), length(dtwAlign$index2)) - 1)) {
+      if (dtwAlign$index2[idx] < dtwAlign$index2[idx + 1]) {
+        indices <- c(indices, c(idx, idx + 1))
+      }
     }
+    indices <- unique(indices)
+  } else if (idxMethod == "smooth") {
+    indices <- c()
+    for (idx in 1:(min(length(window), length(dtwAlign$index2)) - smoothCnt + 1)) {
+      temp <- dtwAlign$index2[idx:(idx + smoothCnt - 1)]
+      if (max(temp) > min(temp)) {
+        indices <- c(indices, idx:(idx + smoothCnt - 1))
+      }
+    }
+    indices <- unique(indices)
   }
   
-  indices <- unique(indices)
+  # We also are interested in the monotonicity or continuity of the
+  # reference and the signal. Ideally, all indices are in the previous
+  # list, indicating a strong monotonic behavior. For saddle points
+  # however, indices will be missing. With monotonicity we are measuring
+  # actually the continuity of the warping function.
+
+  indicies_x <- min(indices):max(indices)
   
-  #return(window[indices])
   return(list(
+    monotonicity = length(indices) / length(dtwAlign$index2),
+    monotonicity_rel = length(intersect(indices, indicies_x)) / length(indicies_x),
+    
     indices = indices,
     start = min(indices),
+    start_rel = min(indices) / dtwAlign$N,
     end = max(indices),
+    end_rel = max(indices) / dtwAlign$N,
+    start_ref = min(dtwAlign$index2),
+    start_rel_ref = min(dtwAlign$index2) / dtwAlign$M,
+    end_ref = max(dtwAlign$index2),
+    end_rel_ref = max(dtwAlign$index2) / dtwAlign$M,
     data = window[indices]
   ))
 }
