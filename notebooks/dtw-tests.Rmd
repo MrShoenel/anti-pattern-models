@@ -852,6 +852,27 @@ data.frame(
 )
 ```
 
+Some interpretations:
+
+In general:
+
+* Open begin and -end make better matches, but require an asymmetric pattern (which is fine).
+* `area` is a good metric to asses the closeness of ref and query. However, it would not work well if both these have a constant distance between each other. In that case, we would need to check how well the query's curve resembles the reference. The correlation is a good indicator for that (should be strongly positive).
+* `symmetric KL divergence` is similar to `area`, it seems to be a bit more robust though. However, while it seems to stay low (e.g., less than `1`) it does not have an upper bound (only a lower of `0`).
+* The `continuity` (monotonicity, esp. the relative version) is a good measure for how well the query can be mapped to the reference. If there were large horizontal or vertical plateaus in the `dtw` 3-way plots, this value would be low (close to `0` -- we prefer high values close to `1`). The value can be used to find better window-sizes; mostly analytically, however.
+* `correlation` is good for checking whether both curves behave similar. In other words, a high positive correlation means that both curves __resemble__ each other (each other's shape) well.
+* `sd`, `var`, `mae` and `rmse` should be low for good matches (remember all these are obtained in the unit-square). These simple statistical measures (and also the correlation) need to be checked together.
+* `extract_signal_from_window` in discrete mode can only detect warping with a slope `>= 0.5`. If more shallow slopes are expected, use it in `smooth` mode with `3` or more elements (where the detected minimum slope then is `1 /` number of elements). This results in the inclusion of more indices, too (which in turn results in higher values for monotonicity, for example).
+
+For each example:
+
+* __No window__: Not only do we not use a window, but we also force the `dtw` to match start to end, so it has to map the entire query to the entire reference. The monotonicity is low because we have large plateaus in the warping function (because of the forced start-end match). While the overall statistics are quite OK (low area, relatively high correlation/low mae), the KL is high. Also, these values are bad considering start/end were both 0/1 for ref and query.
+* __With window__: We used a window on the query but the actual trick was done by letting the begin and end be open. About 80% of the query were matched to about 40% of the reference. That could indicate that the window was too small. However, in this case, it is because we had simply too much noise, which led to a long cut-in and a long cut-out. Additionally, there was a large plateau in the query. The monotonicity is low because of that and a small part that was matched at the end. That part at the end was only matched because it was smaller than the noise in between. It is a good match (low area, KL, mae, var; high corr) -- however, this case should ring some bells because of the starts/ends and the low monotonicities. Ideally, one would attempt to reduce the noise or adjust the window.
+* __Partial Window__: This is actually a clear and very good match, it has all the right values. However, it covers only about 19% of the reference. Also, only about 10% of the query were used. That means that the window was not too small, but it did not cover the right portion of the reference -- in the case here, it should have been moved to the right a lot. The relative monotonicity is also perfect, as the small part of the query that is matchable, can perfectly be warped to the reference. The discrepancy between absolute and relative monotonicity indicate that large portions of the query cannot be mapped to the reference. It appears that if one were to read all the metrics correctly, the window could have been adjusted almost perfectly well.
+* __Flat warping function__: All computations have been deliberately disabled in this case, as such a flat function indicates that we cannot map the query to the reference, the metrics would be moot anyways. That is why also an error is thrown if this happens.
+* __Example from Article__: This is obviously a very good (partial) match, as much as possible from the query is mapped, all metrics have almost perfect values. The first part of the query does not match the reference, as it is monotonically increasing. Then, some is missing at the end (observe start/end for reference and query). This gives two indications: 1) the window may not be large enough and 2) the query may not be complete.
+* __Example phase-shifted__: Considering the 2-way plot for this scenario, this is a good partial match, large portions of the query can be mapped to the reference (see monotonicity). This would probably be another case of wrong window-size (query is cut-off)
+
 
 # Some tests using FFT
 
