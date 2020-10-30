@@ -119,7 +119,9 @@ approximate functions for the original and the matched signal and then
 calculate the difference as the area between the curves in a unit
 square.
 
-    extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE) {
+    extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idxMethod = c("discrete", "smooth"), smoothCnt = 3) {
+      idxMethod <- if (missing(idxMethod)) idxMethod[1] else idxMethod
+      
       # First, we check whether the warping function is flat. This
       # test has two components: a linear regression, and a check
       # of the vertical co-domain of that function.
@@ -144,29 +146,66 @@ square.
           warning(wMsg)
           
           return(list(
+            monotonicity = NA,
+            monotonicity_rel = NA,
             indices = c(0, 0),
-            start = 0,
-            end = 0,
+            start = NA,
+            start_ref = NA,
+            start_rel = NA,
+            start_rel_ref = NA,
+            end = NA,
+            end_ref = NA,
+            end_rel = NA,
+            end_rel_ref = NA,
             data = c(0, 0)
           ))
         }
       }
       
-      
-      indices <- c()
-      for (idx in 1:min(length(window) - 1, length(dtwAlign$index2) - 1)) {
-        if (dtwAlign$index2[idx] < dtwAlign$index2[idx + 1]) {
-          indices <- c(indices, c(idx, idx + 1))
+      if (idxMethod == "discrete") {
+        # Here we store all indices that have a next index that has a value
+        # greater than that of the current index. This means there is a slope
+        # with a value > 0. In such a case, we store the index and its next
+        # index in an array.
+        indices <- c()
+        for (idx in 1:(min(length(window), length(dtwAlign$index2)) - 1)) {
+          if (dtwAlign$index2[idx] < dtwAlign$index2[idx + 1]) {
+            indices <- c(indices, c(idx, idx + 1))
+          }
         }
+        indices <- unique(indices)
+      } else if (idxMethod == "smooth") {
+        indices <- c()
+        for (idx in 1:(min(length(window), length(dtwAlign$index2)) - smoothCnt + 1)) {
+          temp <- dtwAlign$index2[idx:(idx + smoothCnt - 1)]
+          if (max(temp) > min(temp)) {
+            indices <- c(indices, idx:(idx + smoothCnt - 1))
+          }
+        }
+        indices <- unique(indices)
       }
       
-      indices <- unique(indices)
+      # We also are interested in the monotonicity or continuity of the
+      # reference and the signal. Ideally, all indices are in the previous
+      # list, indicating a strong monotonic behavior. For saddle points
+      # however, indices will be missing. With monotonicity we are measuring
+      # actually the continuity of the warping function.
+
+      indicies_x <- min(indices):max(indices)
       
-      #return(window[indices])
       return(list(
+        monotonicity = length(indices) / length(dtwAlign$index2),
+        monotonicity_rel = length(intersect(indices, indicies_x)) / length(indicies_x),
+        
         indices = indices,
         start = min(indices),
+        start_rel = min(indices) / dtwAlign$N,
         end = max(indices),
+        end_rel = max(indices) / dtwAlign$N,
+        start_ref = min(dtwAlign$index2),
+        start_rel_ref = min(dtwAlign$index2) / dtwAlign$M,
+        end_ref = max(dtwAlign$index2),
+        end_rel_ref = max(dtwAlign$index2) / dtwAlign$M,
         data = window[indices]
       ))
     }
@@ -317,6 +356,38 @@ e.g., correlation.
       return(temp)
     }
 
+    stat_diff_2_functions_mae <- function(f1, f2, numSamples = 1e4) {
+      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+      idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+      temp$value <- mean(abs(temp$dataF1[idx] - temp$dataF2[idx]))
+      return(temp)
+    }
+
+    stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
+      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+      idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+      temp$value <- Metrics::rmse(temp$dataF1[idx], temp$dataF2[idx])
+      return(temp)
+    }
+
+    #' This is the symmetric KL-divergence
+    stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
+      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+      tol <- 1e-3
+      
+      PQ <- function(x) f1(x) * log(f1(x) / f2(x))
+      QP <- function(x) f2(x) * log(f2(x) / f1(x))
+      temp$value <- tryCatch({
+        stats::integrate(f = PQ, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value +
+        stats::integrate(f = QP, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
+      }, error = function(cond) {
+        warning(cond)
+        return(NA)
+      })
+      
+      return(temp)
+    }
+
 Use Dynamic Time Warping to find the pattern
 ============================================
 
@@ -378,6 +449,10 @@ sought-after pattern. We will use smoothing since no window is used:
 
     ## [1] "The window starts at 10 and ends at 967"
 
+    print(paste0("The reference is matched from ", signal_ext3$start_ref, " to ", signal_ext3$end_ref))
+
+    ## [1] "The reference is matched from 1 to 256"
+
 Example using a Window
 ----------------------
 
@@ -423,13 +498,16 @@ the reference:
 
 Let’s do a full example using the match from above:
 
-    signal_org_f <- pattern_approxfun(org_signal$y)
-
     signal_ext <- extract_signal_from_window(find_signal_w, window = win)
     signal_mat <- signal_ext$data
     signal_mat_f <- pattern_approxfun(signal_mat, smooth = TRUE)
 
-    plot_2_functions(signal_org_f, signal_mat_f)
+    signal_org_1_f <- pattern_approxfun(
+      org_signal$y[signal_ext$start_ref:signal_ext$end_ref])
+
+    plot_2_functions(signal_org_1_f, signal_mat_f)
+
+    ## Warning: Removed 1 row(s) containing missing values (geom_path).
 
 ![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-12-1.png)
 
@@ -437,11 +515,15 @@ Let’s do a full example using the match from above:
 
     ## [1] "The window starts at 73 and ends at 375"
 
+    print(paste0("The reference is matched from ", signal_ext$start_ref, " to ", signal_ext$end_ref))
+
+    ## [1] "The reference is matched from 77 to 180"
+
 Now the area between the curves in the unit square is:
 
-    area_diff_2_functions(signal_org_f, signal_mat_f)$value
+    area_diff_2_functions(signal_org_1_f, signal_mat_f)$value
 
-    ## [1] 0.165693
+    ## [1] 0.1409903
 
 Example using a partially matching window:
 ------------------------------------------
@@ -482,21 +564,27 @@ Try the same with a window that only *partially* contains the pattern:
 The `dtw` did a good job in mapping that portion of the query this is
 left in the original signal (the decline on the left).
 
-    signal_ext2 <- extract_signal_from_window(find_signal_w2, window = win2)
+    signal_ext2 <- extract_signal_from_window(find_signal_w2, window = win2, idxMethod = "smooth", smoothCnt = 3)
     signal_mat2 <- signal_ext2$data
     signal_mat_f2 <- pattern_approxfun(signal_mat2, smooth = FALSE)
 
-    area_diff_2_functions(signal_org_f, signal_mat_f2)$value
+    signal_org_2_f <- pattern_approxfun(org_signal$y[signal_ext2$start_ref:signal_ext2$end_ref])
 
-    ## [1] 0.3271415
+    area_diff_2_functions(signal_org_2_f, signal_mat_f2)$value
 
-    plot_2_functions(signal_org_f, signal_mat_f2)
+    ## [1] 0.1893936
+
+    plot_2_functions(signal_org_2_f, signal_mat_f2)
 
 ![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-15-1.png)
 
     print(paste0("The window starts at ", signal_ext2$start, " and ends at ", signal_ext2$end))
 
-    ## [1] "The window starts at 12 and ends at 50"
+    ## [1] "The window starts at 11 and ends at 51"
+
+    print(paste0("The monotony/continuity is ", signal_ext2$monotonicity, " (relative is ", signal_ext2$monotonicity_rel, ")"))
+
+    ## [1] "The monotony/continuity is 0.0983213429256595 (relative is 1)"
 
 Example with a window that does not contain the pattern:
 --------------------------------------------------------
@@ -573,7 +661,7 @@ between (\[0, 0\], \[1, 0\]) in this case, so that
 
     print(paste0("The window starts at ", signal_ext1$start, " and ends at ", signal_ext1$end))
 
-    ## [1] "The window starts at 0 and ends at 0"
+    ## [1] "The window starts at NA and ends at NA"
 
 Example from the Paper
 ----------------------
@@ -584,7 +672,7 @@ using a noisy and chopped-off sine-wave.
     idx <- seq(0,6.28,len=100)
     query <- sin(idx) + runif(100)/10
     reference <- cos(idx)
-    alignment <- dtw::dtw(query,reference,step=dtw::asymmetric,keep=TRUE)
+    alignment <- dtw::dtw(query,reference,step=dtw::asymmetric,keep=TRUE, open.begin = TRUE, open.end = TRUE)
 
     dtw::dtwPlotTwoWay(alignment)
 
@@ -605,12 +693,14 @@ Let’s use our methods to check how well the “query” matches the
     signal_mat_query <- signal_ex_query$data
     signal_mat_query_f <- pattern_approxfun(signal_mat_query)
 
-    signal_mat_ref_f <- pattern_approxfun(reference)
+    #signal_mat_ref_f <- pattern_approxfun(reference)
+    signal_mat_ref_f <- pattern_approxfun(
+      reference[signal_ex_query$start_ref:signal_ex_query$end_ref])
 
     area_match <- area_diff_2_functions(signal_mat_ref_f, signal_mat_query_f)
     print(area_match$value)
 
-    ## [1] 0.2566771
+    ## [1] 0.0177643
 
     plot_2_functions(signal_mat_ref_f, signal_mat_query_f)
 
@@ -618,9 +708,9 @@ Let’s use our methods to check how well the “query” matches the
 
     print(paste0("The enclosed areas are: ", paste(round(area_match$areas, 5), collapse = ", ")))
 
-    ## [1] "The enclosed areas are: 0.02014, 0.06185, 0.17469"
+    ## [1] "The enclosed areas are: 0.00362, 0.00017, 0.00017, 0.00028, 0.00024, 6e-04, 2e-04, 0.00572, 3e-05, 0.00037, 3e-05, 0.00054, 0.00015, 0.00063, 0.00188, 0, 0.00313"
 
-**The area between the curves is 0.2567** and hence is a good match, as
+**The area between the curves is 0.0178** and hence is a good match, as
 we are also dealing with a partial signal – observe how the query only
 matches approx. ~80% of the reference (it has a sudden end). Also, `dtw`
 maps the beginning of the query to the reference (cf. the previous 3-way
@@ -658,12 +748,12 @@ Let’s use our methods to check how well the “query” matches the
     signal_mat_query2 <- signal_ex_query2$data
     signal_mat_query_f2 <- pattern_approxfun(signal_mat_query2)
 
-    signal_mat_ref_f2 <- pattern_approxfun(reference2)
+    signal_mat_ref_f2 <- pattern_approxfun(reference2[signal_ex_query2$start_ref:signal_ex_query2$end_ref])
 
     area_match2 <- area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
     print(area_match2$value)
 
-    ## [1] 0.1816005
+    ## [1] 0.1162912
 
     plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
 
@@ -671,7 +761,7 @@ Let’s use our methods to check how well the “query” matches the
 
     print(paste0("The enclosed area is: ", area_match2$value))
 
-    ## [1] "The enclosed area is: 0.181600539490224"
+    ## [1] "The enclosed area is: 0.116291190047748"
 
 Overview of the examples
 ------------------------
@@ -685,8 +775,10 @@ some statistical measurements.
 ### Tabular overview of goodness-of-match
 
 Let’s compute again and show how well the match is, using the
-implemented area- and statistics-methods. Note: ‘oB’ and ‘oE’ stand for
-open begin and end.
+implemented area- and statistics-methods. **Note**: ‘oB’ and ‘oE’ stand
+for open begin and end. ‘start’ and ‘end’ mean the relative
+beginning/end of the reference or query that were matched (where in the
+reference or query the match started as percentage).
 
 <table>
 <thead>
@@ -694,13 +786,14 @@ open begin and end.
 <th style="text-align: left;">which</th>
 <th style="text-align: right;">oB</th>
 <th style="text-align: right;">oE</th>
+<th style="text-align: right;">start_r</th>
+<th style="text-align: right;">end_r</th>
+<th style="text-align: right;">start_q</th>
+<th style="text-align: right;">end_q</th>
+<th style="text-align: right;">mono</th>
+<th style="text-align: right;">mono_rel</th>
 <th style="text-align: right;">area</th>
-<th style="text-align: right;">cov</th>
-<th style="text-align: right;">corr</th>
-<th style="text-align: right;">corr_kend</th>
-<th style="text-align: right;">corr_spea</th>
-<th style="text-align: right;">sd</th>
-<th style="text-align: right;">var</th>
+<th style="text-align: right;">KL_sy</th>
 </tr>
 </thead>
 <tbody>
@@ -708,76 +801,250 @@ open begin and end.
 <td style="text-align: left;">No window</td>
 <td style="text-align: right;">0</td>
 <td style="text-align: right;">0</td>
-<td style="text-align: right;">0.23792</td>
-<td style="text-align: right;">0.04804</td>
-<td style="text-align: right;">0.61268</td>
-<td style="text-align: right;">0.23504</td>
-<td style="text-align: right;">0.35153</td>
-<td style="text-align: right;">0.28069</td>
-<td style="text-align: right;">0.07879</td>
+<td style="text-align: right;">0.0039</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">0.0098</td>
+<td style="text-align: right;">0.9443</td>
+<td style="text-align: right;">0.1576</td>
+<td style="text-align: right;">0.2056</td>
+<td style="text-align: right;">0.2379</td>
+<td style="text-align: right;">0.4013</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">With window</td>
 <td style="text-align: right;">1</td>
 <td style="text-align: right;">1</td>
-<td style="text-align: right;">0.16569</td>
-<td style="text-align: right;">0.08593</td>
-<td style="text-align: right;">0.92969</td>
-<td style="text-align: right;">0.90687</td>
-<td style="text-align: right;">0.97775</td>
-<td style="text-align: right;">0.14832</td>
-<td style="text-align: right;">0.02200</td>
+<td style="text-align: right;">0.3008</td>
+<td style="text-align: right;">0.7031</td>
+<td style="text-align: right;">0.1947</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">0.1947</td>
+<td style="text-align: right;">0.2409</td>
+<td style="text-align: right;">0.1410</td>
+<td style="text-align: right;">0.0477</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Partial window</td>
 <td style="text-align: right;">1</td>
 <td style="text-align: right;">1</td>
-<td style="text-align: right;">0.32714</td>
-<td style="text-align: right;">0.00826</td>
-<td style="text-align: right;">0.10443</td>
-<td style="text-align: right;">0.08832</td>
-<td style="text-align: right;">0.10362</td>
-<td style="text-align: right;">0.39904</td>
-<td style="text-align: right;">0.15924</td>
+<td style="text-align: right;">0.4805</td>
+<td style="text-align: right;">0.6797</td>
+<td style="text-align: right;">0.0264</td>
+<td style="text-align: right;">0.1223</td>
+<td style="text-align: right;">0.0983</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">0.1894</td>
+<td style="text-align: right;">0.1151</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Flat warping func.</td>
 <td style="text-align: right;">1</td>
 <td style="text-align: right;">1</td>
-<td style="text-align: right;">0.37809</td>
-<td style="text-align: right;">0.00000</td>
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
-<td style="text-align: right;">0.35514</td>
-<td style="text-align: right;">0.12612</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">0.3781</td>
+<td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Ex. from article</td>
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">0.25668</td>
-<td style="text-align: right;">0.06269</td>
-<td style="text-align: right;">0.60173</td>
-<td style="text-align: right;">0.43907</td>
-<td style="text-align: right;">0.59277</td>
-<td style="text-align: right;">0.29399</td>
-<td style="text-align: right;">0.08643</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.0800</td>
+<td style="text-align: right;">0.7600</td>
+<td style="text-align: right;">0.3500</td>
+<td style="text-align: right;">0.9900</td>
+<td style="text-align: right;">0.6400</td>
+<td style="text-align: right;">0.9846</td>
+<td style="text-align: right;">0.0178</td>
+<td style="text-align: right;">0.0092</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Ex. phase-shifted</td>
 <td style="text-align: right;">0</td>
 <td style="text-align: right;">1</td>
-<td style="text-align: right;">0.18160</td>
-<td style="text-align: right;">0.09908</td>
-<td style="text-align: right;">0.84080</td>
-<td style="text-align: right;">0.68349</td>
-<td style="text-align: right;">0.85751</td>
-<td style="text-align: right;">0.19476</td>
-<td style="text-align: right;">0.03793</td>
+<td style="text-align: right;">0.0100</td>
+<td style="text-align: right;">0.7500</td>
+<td style="text-align: right;">0.0167</td>
+<td style="text-align: right;">0.7833</td>
+<td style="text-align: right;">0.6667</td>
+<td style="text-align: right;">0.8511</td>
+<td style="text-align: right;">0.1163</td>
+<td style="text-align: right;">0.0349</td>
 </tr>
 </tbody>
 </table>
+
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">which</th>
+<th style="text-align: right;">cov</th>
+<th style="text-align: right;">corr</th>
+<th style="text-align: right;">corr_kend</th>
+<th style="text-align: right;">corr_spea</th>
+<th style="text-align: right;">sd</th>
+<th style="text-align: right;">var</th>
+<th style="text-align: right;">mae</th>
+<th style="text-align: right;">rmse</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">No window</td>
+<td style="text-align: right;">0.0480</td>
+<td style="text-align: right;">0.6127</td>
+<td style="text-align: right;">0.2350</td>
+<td style="text-align: right;">0.3515</td>
+<td style="text-align: right;">0.2807</td>
+<td style="text-align: right;">0.0788</td>
+<td style="text-align: right;">0.2379</td>
+<td style="text-align: right;">0.2907</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">With window</td>
+<td style="text-align: right;">0.0729</td>
+<td style="text-align: right;">0.9580</td>
+<td style="text-align: right;">0.9373</td>
+<td style="text-align: right;">0.9905</td>
+<td style="text-align: right;">0.0861</td>
+<td style="text-align: right;">0.0074</td>
+<td style="text-align: right;">0.1410</td>
+<td style="text-align: right;">0.1633</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Partial window</td>
+<td style="text-align: right;">0.0606</td>
+<td style="text-align: right;">0.8793</td>
+<td style="text-align: right;">0.7026</td>
+<td style="text-align: right;">0.8928</td>
+<td style="text-align: right;">0.1379</td>
+<td style="text-align: right;">0.0190</td>
+<td style="text-align: right;">0.1894</td>
+<td style="text-align: right;">0.2272</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Flat warping func.</td>
+<td style="text-align: right;">0.0000</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">0.3551</td>
+<td style="text-align: right;">0.1261</td>
+<td style="text-align: right;">0.3781</td>
+<td style="text-align: right;">0.5187</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Ex. from article</td>
+<td style="text-align: right;">0.0898</td>
+<td style="text-align: right;">0.9982</td>
+<td style="text-align: right;">0.9578</td>
+<td style="text-align: right;">0.9960</td>
+<td style="text-align: right;">0.0222</td>
+<td style="text-align: right;">0.0005</td>
+<td style="text-align: right;">0.0178</td>
+<td style="text-align: right;">0.0222</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Ex. phase-shifted</td>
+<td style="text-align: right;">0.1006</td>
+<td style="text-align: right;">0.8988</td>
+<td style="text-align: right;">0.7351</td>
+<td style="text-align: right;">0.8363</td>
+<td style="text-align: right;">0.1505</td>
+<td style="text-align: right;">0.0226</td>
+<td style="text-align: right;">0.1163</td>
+<td style="text-align: right;">0.1508</td>
+</tr>
+</tbody>
+</table>
+
+Some interpretations:
+
+In general:
+
+-   Open begin and -end make better matches, but require an asymmetric
+    pattern (which is fine).
+-   `area` is a good metric to asses the closeness of ref and query.
+    However, it would not work well if both these have a constant
+    distance between each other. In that case, we would need to check
+    how well the query’s curve resembles the reference. The correlation
+    is a good indicator for that (should be strongly positive).
+-   `symmetric KL divergence` is similar to `area`, it seems to be a bit
+    more robust though. However, while it seems to stay low (e.g., less
+    than `1`) it does not have an upper bound (only a lower of `0`).
+-   The `continuity` (monotonicity, esp. the relative version) is a good
+    measure for how well the query can be mapped to the reference. If
+    there were large horizontal or vertical plateaus in the `dtw` 3-way
+    plots, this value would be low (close to `0` – we prefer high values
+    close to `1`). The value can be used to find better window-sizes;
+    mostly analytically, however.
+-   `correlation` is good for checking whether both curves behave
+    similar. In other words, a high positive correlation means that both
+    curves **resemble** each other (each other’s shape) well.
+-   `sd`, `var`, `mae` and `rmse` should be low for good matches
+    (remember all these are obtained in the unit-square). These simple
+    statistical measures (and also the correlation) need to be checked
+    together.
+-   `extract_signal_from_window` in discrete mode can only detect
+    warping with a slope `>= 0.5`. If more shallow slopes are expected,
+    use it in `smooth` mode with `3` or more elements (where the
+    detected minimum slope then is `1 /` number of elements). This
+    results in the inclusion of more indices, too (which in turn results
+    in higher values for monotonicity, for example).
+
+For each example:
+
+-   **No window**: Not only do we not use a window, but we also force
+    the `dtw` to match start to end, so it has to map the entire query
+    to the entire reference. The monotonicity is low because we have
+    large plateaus in the warping function (because of the forced
+    start-end match). While the overall statistics are quite OK (low
+    area, relatively high correlation/low mae), the KL is high. Also,
+    these values are bad considering start/end were both 0/1 for ref and
+    query.
+-   **With window**: We used a window on the query but the actual trick
+    was done by letting the begin and end be open. About 80% of the
+    query were matched to about 40% of the reference. That could
+    indicate that the window was too small. However, in this case, it is
+    because we had simply too much noise, which led to a long cut-in and
+    a long cut-out. Additionally, there was a large plateau in the
+    query. The monotonicity is low because of that and a small part that
+    was matched at the end. That part at the end was only matched
+    because it was smaller than the noise in between. It is a good match
+    (low area, KL, mae, var; high corr) – however, this case should ring
+    some bells because of the starts/ends and the low monotonicities.
+    Ideally, one would attempt to reduce the noise or adjust the window.
+-   **Partial Window**: This is actually a clear and very good match, it
+    has all the right values. However, it covers only about 19% of the
+    reference. Also, only about 10% of the query were used. That means
+    that the window was not too small, but it did not cover the right
+    portion of the reference – in the case here, it should have been
+    moved to the right a lot. The relative monotonicity is also perfect,
+    as the small part of the query that is matchable, can perfectly be
+    warped to the reference. The discrepancy between absolute and
+    relative monotonicity indicate that large portions of the query
+    cannot be mapped to the reference. It appears that if one were to
+    read all the metrics correctly, the window could have been adjusted
+    almost perfectly well.
+-   **Flat warping function**: All computations have been deliberately
+    disabled in this case, as such a flat function indicates that we
+    cannot map the query to the reference, the metrics would be moot
+    anyways. That is why also an error is thrown if this happens.
+-   **Example from Article**: This is obviously a very good (partial)
+    match, as much as possible from the query is mapped, all metrics
+    have almost perfect values. The first part of the query does not
+    match the reference, as it is monotonically increasing. Then, some
+    is missing at the end (observe start/end for reference and query).
+    This gives two indications: 1) the window may not be large enough
+    and 2) the query may not be complete.
+-   **Example phase-shifted**: Considering the 2-way plot for this
+    scenario, this is a good partial match, large portions of the query
+    can be mapped to the reference (see monotonicity). This would
+    probably be another case of wrong window-size (query is cut-off)
 
 Some tests using FFT
 ====================
@@ -808,7 +1075,7 @@ looks compared to the reference signal.
       ggplot2::geom_point() +
       ggplot2::facet_wrap(series ~., scales = "free")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-25-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-26-1.png)
 
 The structural similarities of the query and the reference are obvious.
 
@@ -825,7 +1092,7 @@ The structural similarities of the query and the reference are obvious.
       ggplot2::facet_grid(series ~ isRe, scales = "free") +
       ggplot2::scale_x_log10()
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-26-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-27-1.png)
 
 Cleaning the Query / Visual comparison
 --------------------------------------
@@ -883,7 +1150,7 @@ to the real and imaginary parts that are also present in the reference:
       ggplot2::geom_line() +
       ggplot2::facet_grid(series ~ ., scales = "free")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-27-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-28-1.png)
 
 Subjectively it appears that the signal with cleaned real parts is
 closest to the reference signal. However, let’s calculate distances with
@@ -922,7 +1189,7 @@ And do some figures of these functions:
       ncol = 2
     )
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-29-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-30-1.png)
 
 ### Tabular overview of goodness-of-match
 
@@ -930,68 +1197,63 @@ Let’s compute again and show how well the match is, using the
 implemented area- and statistics-methods.
 
 <table>
-<colgroup>
-<col style="width: 12%" />
-<col style="width: 11%" />
-<col style="width: 12%" />
-<col style="width: 12%" />
-<col style="width: 12%" />
-<col style="width: 12%" />
-<col style="width: 11%" />
-<col style="width: 11%" />
-</colgroup>
 <thead>
 <tr class="header">
 <th style="text-align: left;">which</th>
 <th style="text-align: right;">area</th>
+<th style="text-align: right;">KL_sy</th>
 <th style="text-align: right;">cov</th>
 <th style="text-align: right;">corr</th>
 <th style="text-align: right;">corr_kend</th>
 <th style="text-align: right;">corr_spea</th>
 <th style="text-align: right;">sd</th>
-<th style="text-align: right;">var</th>
+<th style="text-align: right;">rmse</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
 <td style="text-align: left;">Query</td>
-<td style="text-align: right;">0.1657019</td>
-<td style="text-align: right;">0.0859364</td>
-<td style="text-align: right;">0.9296884</td>
-<td style="text-align: right;">0.9068694</td>
-<td style="text-align: right;">0.9777458</td>
-<td style="text-align: right;">0.1483118</td>
-<td style="text-align: right;">0.0219960</td>
+<td style="text-align: right;">0.1657</td>
+<td style="text-align: right;">0.1997</td>
+<td style="text-align: right;">0.0859</td>
+<td style="text-align: right;">0.9297</td>
+<td style="text-align: right;">0.9069</td>
+<td style="text-align: right;">0.9777</td>
+<td style="text-align: right;">0.1483</td>
+<td style="text-align: right;">0.1783</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">clean_Im</td>
-<td style="text-align: right;">0.5024658</td>
-<td style="text-align: right;">-0.0234189</td>
-<td style="text-align: right;">-0.4612696</td>
-<td style="text-align: right;">-0.3971956</td>
-<td style="text-align: right;">-0.4862539</td>
-<td style="text-align: right;">0.4397689</td>
-<td style="text-align: right;">0.1933954</td>
+<td style="text-align: right;">0.5025</td>
+<td style="text-align: right;">1.3697</td>
+<td style="text-align: right;">-0.0234</td>
+<td style="text-align: right;">-0.4613</td>
+<td style="text-align: right;">-0.3972</td>
+<td style="text-align: right;">-0.4863</td>
+<td style="text-align: right;">0.4398</td>
+<td style="text-align: right;">0.5756</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">clean_Re</td>
-<td style="text-align: right;">0.2327784</td>
-<td style="text-align: right;">0.0849731</td>
-<td style="text-align: right;">0.9321898</td>
-<td style="text-align: right;">0.9223252</td>
-<td style="text-align: right;">0.9876789</td>
-<td style="text-align: right;">0.1485183</td>
-<td style="text-align: right;">0.0220573</td>
+<td style="text-align: right;">0.2328</td>
+<td style="text-align: right;">0.4138</td>
+<td style="text-align: right;">0.0850</td>
+<td style="text-align: right;">0.9322</td>
+<td style="text-align: right;">0.9223</td>
+<td style="text-align: right;">0.9877</td>
+<td style="text-align: right;">0.1485</td>
+<td style="text-align: right;">0.2734</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">clean_both</td>
-<td style="text-align: right;">0.4822632</td>
-<td style="text-align: right;">-0.0025898</td>
-<td style="text-align: right;">-0.0641672</td>
-<td style="text-align: right;">-0.2463714</td>
-<td style="text-align: right;">-0.2608303</td>
-<td style="text-align: right;">0.3797598</td>
-<td style="text-align: right;">0.1442164</td>
+<td style="text-align: right;">0.4823</td>
+<td style="text-align: right;">1.3637</td>
+<td style="text-align: right;">-0.0026</td>
+<td style="text-align: right;">-0.0642</td>
+<td style="text-align: right;">-0.2464</td>
+<td style="text-align: right;">-0.2608</td>
+<td style="text-align: right;">0.3798</td>
+<td style="text-align: right;">0.5725</td>
 </tr>
 </tbody>
 </table>
