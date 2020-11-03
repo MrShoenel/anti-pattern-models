@@ -148,6 +148,22 @@ square.
           return(list(
             monotonicity = NA,
             monotonicity_rel = NA,
+            warp_resid = list(
+              lm = NULL,
+              score = NA,
+              sd = NA,
+              var = NA,
+              mae = NA,
+              rmse = NA
+            ),
+            warp_rel_resid = list(
+              lm = NULL,
+              score = NA,
+              sd = NA,
+              var = NA,
+              mae = NA,
+              rmse = NA
+            ),
             indices = c(0, 0),
             start = NA,
             start_ref = NA,
@@ -185,17 +201,54 @@ square.
         indices <- unique(indices)
       }
       
-      # We also are interested in the monotonicity or continuity of the
-      # reference and the signal. Ideally, all indices are in the previous
-      # list, indicating a strong monotonic behavior. For saddle points
-      # however, indices will be missing. With monotonicity we are measuring
-      # actually the continuity of the warping function.
-
-      indicies_x <- min(indices):max(indices)
+      # An additional metric is computed from the linear model of the warping
+      # function, where we measure the residuals of it. We do this twice, once
+      # for the entire function, once after cutting in and out.
+      normalizeData <- function(x) {
+        return((x - min(x)) / (max(x) - min(x)))
+      }
+      
+      warpLm <- stats::lm(
+        formula = y ~ x, data = data.frame(
+          x = 1:length(dtwAlign$index2),
+          y = normalizeData(dtwAlign$index2)
+        ))
+      warpLm_rel <- stats::lm(
+        formula = y ~ x, data = data.frame(
+          x = 1:length(min(indices):max(indices)),
+          y = normalizeData(
+            dtwAlign$index2[min(indices):max(indices)])
+        ))
+      
+      warp_res <- stats::residuals(warpLm)
+      warp_rel_res <- stats::residuals(warpLm_rel)
       
       return(list(
+        # We also are interested in the monotonicity or continuity of the
+        # reference and the signal. Ideally, all indices are in the previous
+        # list, indicating a strong monotonic behavior. For saddle points
+        # however, indices will be missing. With monotonicity we are measuring
+        # actually the continuity of the warping function.
         monotonicity = length(indices) / length(dtwAlign$index2),
-        monotonicity_rel = length(intersect(indices, indicies_x)) / length(indicies_x),
+        # Cut off flat start and end and measure again:
+        monotonicity_rel = length(indices) / (max(indices) - min(indices) + 1),
+        
+        warp_resid = list(
+          lm = warpLm,
+          score = 1 - (mean(abs(warp_res)) * 2),
+          sd = stats::sd(warp_res),
+          var = stats::var(warp_res),
+          mae = mean(abs(warp_res)),
+          rmse = sqrt(mean(warp_res^2))
+        ),
+        warp_rel_resid = list(
+          lm = warpLm_rel,
+          score = 1 - (mean(abs(warp_rel_res)) * 2),
+          sd = stats::sd(warp_rel_res),
+          var = stats::var(warp_rel_res),
+          mae = mean(abs(warp_rel_res)),
+          rmse = sqrt(mean(warp_rel_res^2))
+        ),
         
         indices = indices,
         start = min(indices),
@@ -282,12 +335,14 @@ up all differences between the two functions.
           stats::integrate(
             f = f1,
             lower = intersections[intsec],
-            upper = intersections[intsec + 1])$value
+            upper = intersections[intsec + 1],
+            subdivisions = 1e5)$value
           -
           stats::integrate(
             f = f2,
             lower = intersections[intsec],
-            upper = intersections[intsec + 1])$value)
+            upper = intersections[intsec + 1],
+            subdivisions = 1e5)$value)
         
         areas <- c(areas, temp)
       }
@@ -305,6 +360,9 @@ from both functions (that were previously approximated to be in the
 unit-square), and then quantifies the difference using some function,
 e.g., correlation.
 
+    #' Samples from both function within [0,1] and returns the
+    #' indices used and the values from either function. These
+    #' two vectors can then be compared statistically.
     stat_diff_2_functions <- function(f1, f2, statFunc = stats::cor, numSamples = 1e4) {
       #indices <- sort(stats::runif(n = numSamples, min = 0, max = 1))
       indices <- seq(0, 1, by = 1 / numSamples)
@@ -371,6 +429,9 @@ e.g., correlation.
     }
 
     #' This is the symmetric KL-divergence
+    #' Note that both functions must return strictly
+    #' positive values because of their use in the
+    #' logarithm.
     stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
       temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
       tol <- 1e-3
@@ -431,7 +492,7 @@ sought-after pattern. We will use smoothing since no window is used:
     signal_org_f <- pattern_approxfun(org_signal$y)
 
     signal_ext3 <- extract_signal_from_window(
-      find_signal, window = stats::window(noisy_signal$y))
+      find_signal, window = noisy_signal$y)
     signal_mat3 <- signal_ext3$data
     signal_mat_f3 <- pattern_approxfun(signal_mat3, smooth = TRUE)
 
@@ -461,6 +522,8 @@ pattern starts at 256 with a length of 256). Also, we are using
 `open.Begin` and `open.End`, so that `dtw` can match a subsequence of
 the reference:
 
+    # We get a non-plateau match if the we scale the query to fit into the reference (/2.5),
+    # and by also constraining the window further (start = 250, end = 480)
     win <- stats::window(noisy_signal$y, start = 220, end = 594)
     plot(list(
       x = 1:length(win),
@@ -962,6 +1025,62 @@ reference or query the match started as percentage).
 </tbody>
 </table>
 
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">which</th>
+<th style="text-align: right;">warp_score</th>
+<th style="text-align: right;">warp_rel_score</th>
+<th style="text-align: right;">warp_resid</th>
+<th style="text-align: right;">warp_rel_resid</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">No window</td>
+<td style="text-align: right;">0.8645</td>
+<td style="text-align: right;">0.8328</td>
+<td style="text-align: right;">0.0678</td>
+<td style="text-align: right;">0.0836</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">With window</td>
+<td style="text-align: right;">0.7696</td>
+<td style="text-align: right;">0.7462</td>
+<td style="text-align: right;">0.1152</td>
+<td style="text-align: right;">0.1269</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Partial window</td>
+<td style="text-align: right;">0.7625</td>
+<td style="text-align: right;">0.8966</td>
+<td style="text-align: right;">0.1188</td>
+<td style="text-align: right;">0.0517</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Flat warping func.</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Ex. from article</td>
+<td style="text-align: right;">0.8339</td>
+<td style="text-align: right;">0.9747</td>
+<td style="text-align: right;">0.0831</td>
+<td style="text-align: right;">0.0127</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Ex. phase-shifted</td>
+<td style="text-align: right;">0.9034</td>
+<td style="text-align: right;">0.9156</td>
+<td style="text-align: right;">0.0483</td>
+<td style="text-align: right;">0.0422</td>
+</tr>
+</tbody>
+</table>
+
 Some interpretations:
 
 In general:
@@ -1075,7 +1194,7 @@ looks compared to the reference signal.
       ggplot2::geom_point() +
       ggplot2::facet_wrap(series ~., scales = "free")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-26-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-27-1.png)
 
 The structural similarities of the query and the reference are obvious.
 
@@ -1092,7 +1211,7 @@ The structural similarities of the query and the reference are obvious.
       ggplot2::facet_grid(series ~ isRe, scales = "free") +
       ggplot2::scale_x_log10()
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-27-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-28-1.png)
 
 Cleaning the Query / Visual comparison
 --------------------------------------
@@ -1150,7 +1269,7 @@ to the real and imaginary parts that are also present in the reference:
       ggplot2::geom_line() +
       ggplot2::facet_grid(series ~ ., scales = "free")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-28-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-29-1.png)
 
 Subjectively it appears that the signal with cleaned real parts is
 closest to the reference signal. However, let’s calculate distances with
@@ -1189,7 +1308,7 @@ And do some figures of these functions:
       ncol = 2
     )
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-30-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-31-1.png)
 
 ### Tabular overview of goodness-of-match
 
