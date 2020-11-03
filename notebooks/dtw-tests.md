@@ -1077,6 +1077,12 @@ reference or query the match started as percentage).
 </tbody>
 </table>
 
+In the following, we also use the Jensen-Shannon Divergence (JSD), as it
+has, contrary to the KL Divergence, an upper bound. When using the
+natural log, its upper bound is `log(2)` (~0.6931). Finding or defining
+an upper bound for the KLD is otherwise application-specific, if
+possible at all (cf. Silva and Narayanan 2006).
+
 <table>
 <thead>
 <tr class="header">
@@ -1652,6 +1658,11 @@ References
 Giorgino, Toni. 2009. “Computing and Visualizing Dynamic Time Warping
 Alignments in R: The dtw Package.” *Journal of Statistical Software* 31
 (7): 1–24. <https://doi.org/10.18637/jss.v031.i07>.
+
+Silva, Jorge, and Shrikanth Narayanan. 2006. “Upper Bound
+Kullback-Leibler Divergence for Hidden Markov Models with Application as
+Discrimination Measure for Speech Recognition.” In *2006 Ieee
+International Symposium on Information Theory*, 2299–2303. IEEE.
 
 Trautsch, Alexander, Steffen Herbold, and Jens Grabowski. 2020. “A
 Longitudinal Study of Static Analysis Warning Evolution and the Effects

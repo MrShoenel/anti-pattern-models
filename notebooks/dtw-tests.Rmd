@@ -967,6 +967,8 @@ data.frame(
 )
 ```
 
+In the following, we also use the Jensen-Shannon Divergence (JSD), as it has, contrary to the KL Divergence, an upper bound. When using the natural log, its upper bound is `log(2)` (~`r round(log(2), 4)`). Finding or defining an upper bound for the KLD is otherwise application-specific, if possible at all [cf. @silva2006upper].
+
 ```{r warning=FALSE, echo=FALSE, results="show"}
 data.frame(
   which = c(
