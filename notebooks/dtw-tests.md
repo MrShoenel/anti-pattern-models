@@ -430,17 +430,69 @@ e.g., correlation.
 
     #' This is the symmetric KL-divergence
     #' Note that both functions must return strictly
-    #' positive values because of their use in the
-    #' logarithm.
+    #' positive (including 0) values because of their
+    #' use in the logarithm.
     stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
       temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      tol <- 1e-3
+      tol <- 1e-8
       
-      PQ <- function(x) f1(x) * log(f1(x) / f2(x))
-      QP <- function(x) f2(x) * log(f2(x) / f1(x))
+      PQ <- function(x) {
+        f1x <- f1(x)
+        f2x <- f2(x)
+        if (all(f1x == 0) || all(f2x == 0)) {
+          return(rep(0, length(x)))
+        }
+        return(f1x * log(f1x / f2x))
+      }
+      QP <- function(x) {
+        f1x <- f1(x)
+        f2x <- f2(x)
+        if (all(f1x == 0) || all(f2x == 0)) {
+          return(rep(0, length(x)))
+        }
+        return(f2x * log(f2x / f1x))
+      }
+      
+      
       temp$value <- tryCatch({
         stats::integrate(f = PQ, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value +
         stats::integrate(f = QP, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
+      }, error = function(cond) {
+        warning(cond)
+        return(NA)
+      })
+      
+      return(temp)
+    }
+
+    #' https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
+    stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4) {
+      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+      tol <- 1e-8
+      
+      M <- function(x) 1/2 * (f1(x) + f2(x))
+      PM <- function(x) {
+        f1x <- f1(x)
+        mx <- M(x)
+        if (all(f1x == 0) || all(mx == 0)) {
+          return(rep(0, length(x)))
+        }
+        return(f1x * log(f1x / mx))
+      }
+      QM <- function(x) {
+        f2x <- f2(x)
+        mx <- M(x)
+        if (all(f2x == 0) || all(mx == 0)) {
+          return(rep(0, length(x)))
+        }
+        return(f2x * log(f2x / mx))
+      }
+      
+      JSD <- function(x) 1/2 * PM(x) + 1/2 * QM(x)
+      
+      temp$value <- tryCatch({
+        stats::integrate(
+          f = JSD, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
       }, error = function(cond) {
         warning(cond)
         return(NA)
@@ -871,7 +923,7 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.1576</td>
 <td style="text-align: right;">0.2056</td>
 <td style="text-align: right;">0.2379</td>
-<td style="text-align: right;">0.4013</td>
+<td style="text-align: right;">0.4047</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">With window</td>
@@ -884,7 +936,7 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.1947</td>
 <td style="text-align: right;">0.2409</td>
 <td style="text-align: right;">0.1410</td>
-<td style="text-align: right;">0.0477</td>
+<td style="text-align: right;">0.0478</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Partial window</td>
@@ -910,7 +962,7 @@ reference or query the match started as percentage).
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">0.3781</td>
-<td style="text-align: right;">NA</td>
+<td style="text-align: right;">0.0000</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Ex. from article</td>
@@ -923,7 +975,7 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.6400</td>
 <td style="text-align: right;">0.9846</td>
 <td style="text-align: right;">0.0178</td>
-<td style="text-align: right;">0.0092</td>
+<td style="text-align: right;">0.0093</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Ex. phase-shifted</td>
@@ -936,7 +988,7 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.6667</td>
 <td style="text-align: right;">0.8511</td>
 <td style="text-align: right;">0.1163</td>
-<td style="text-align: right;">0.0349</td>
+<td style="text-align: right;">0.0351</td>
 </tr>
 </tbody>
 </table>
@@ -1033,6 +1085,8 @@ reference or query the match started as percentage).
 <th style="text-align: right;">warp_rel_score</th>
 <th style="text-align: right;">warp_resid</th>
 <th style="text-align: right;">warp_rel_resid</th>
+<th style="text-align: right;">JSD_score</th>
+<th style="text-align: right;">JSD</th>
 </tr>
 </thead>
 <tbody>
@@ -1042,6 +1096,8 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.8328</td>
 <td style="text-align: right;">0.0678</td>
 <td style="text-align: right;">0.0836</td>
+<td style="text-align: right;">0.9446</td>
+<td style="text-align: right;">0.0384</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">With window</td>
@@ -1049,6 +1105,8 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.7462</td>
 <td style="text-align: right;">0.1152</td>
 <td style="text-align: right;">0.1269</td>
+<td style="text-align: right;">0.9914</td>
+<td style="text-align: right;">0.0059</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Partial window</td>
@@ -1056,6 +1114,8 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.8966</td>
 <td style="text-align: right;">0.1188</td>
 <td style="text-align: right;">0.0517</td>
+<td style="text-align: right;">0.9804</td>
+<td style="text-align: right;">0.0136</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Flat warping func.</td>
@@ -1063,6 +1123,8 @@ reference or query the match started as percentage).
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
+<td style="text-align: right;">0.8110</td>
+<td style="text-align: right;">0.1310</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Ex. from article</td>
@@ -1070,6 +1132,8 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.9747</td>
 <td style="text-align: right;">0.0831</td>
 <td style="text-align: right;">0.0127</td>
+<td style="text-align: right;">0.9988</td>
+<td style="text-align: right;">0.0008</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Ex. phase-shifted</td>
@@ -1077,6 +1141,8 @@ reference or query the match started as percentage).
 <td style="text-align: right;">0.9156</td>
 <td style="text-align: right;">0.0483</td>
 <td style="text-align: right;">0.0422</td>
+<td style="text-align: right;">0.9937</td>
+<td style="text-align: right;">0.0043</td>
 </tr>
 </tbody>
 </table>
@@ -1333,7 +1399,7 @@ implemented area- and statistics-methods.
 <tr class="odd">
 <td style="text-align: left;">Query</td>
 <td style="text-align: right;">0.1657</td>
-<td style="text-align: right;">0.1997</td>
+<td style="text-align: right;">0.2003</td>
 <td style="text-align: right;">0.0859</td>
 <td style="text-align: right;">0.9297</td>
 <td style="text-align: right;">0.9069</td>
@@ -1344,7 +1410,7 @@ implemented area- and statistics-methods.
 <tr class="even">
 <td style="text-align: left;">clean_Im</td>
 <td style="text-align: right;">0.5025</td>
-<td style="text-align: right;">1.3697</td>
+<td style="text-align: right;">1.3765</td>
 <td style="text-align: right;">-0.0234</td>
 <td style="text-align: right;">-0.4613</td>
 <td style="text-align: right;">-0.3972</td>
@@ -1355,7 +1421,7 @@ implemented area- and statistics-methods.
 <tr class="odd">
 <td style="text-align: left;">clean_Re</td>
 <td style="text-align: right;">0.2328</td>
-<td style="text-align: right;">0.4138</td>
+<td style="text-align: right;">0.4151</td>
 <td style="text-align: right;">0.0850</td>
 <td style="text-align: right;">0.9322</td>
 <td style="text-align: right;">0.9223</td>
@@ -1366,7 +1432,7 @@ implemented area- and statistics-methods.
 <tr class="even">
 <td style="text-align: left;">clean_both</td>
 <td style="text-align: right;">0.4823</td>
-<td style="text-align: right;">1.3637</td>
+<td style="text-align: right;">1.3707</td>
 <td style="text-align: right;">-0.0026</td>
 <td style="text-align: right;">-0.0642</td>
 <td style="text-align: right;">-0.2464</td>
