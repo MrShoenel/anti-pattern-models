@@ -308,12 +308,14 @@ area_diff_2_functions <- function(f1, f2) {
       stats::integrate(
         f = f1,
         lower = intersections[intsec],
-        upper = intersections[intsec + 1])$value
+        upper = intersections[intsec + 1],
+        subdivisions = 1e5)$value
       -
       stats::integrate(
         f = f2,
         lower = intersections[intsec],
-        upper = intersections[intsec + 1])$value)
+        upper = intersections[intsec + 1],
+        subdivisions = 1e5)$value)
     
     areas <- c(areas, temp)
   }
