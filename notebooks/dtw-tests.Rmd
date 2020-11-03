@@ -122,6 +122,22 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       return(list(
         monotonicity = NA,
         monotonicity_rel = NA,
+        warp_resid = list(
+          lm = NULL,
+          score = NA,
+          sd = NA,
+          var = NA,
+          mae = NA,
+          rmse = NA
+        ),
+        warp_rel_resid = list(
+          lm = NULL,
+          score = NA,
+          sd = NA,
+          var = NA,
+          mae = NA,
+          rmse = NA
+        ),
         indices = c(0, 0),
         start = NA,
         start_ref = NA,
@@ -159,17 +175,54 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
     indices <- unique(indices)
   }
   
-  # We also are interested in the monotonicity or continuity of the
-  # reference and the signal. Ideally, all indices are in the previous
-  # list, indicating a strong monotonic behavior. For saddle points
-  # however, indices will be missing. With monotonicity we are measuring
-  # actually the continuity of the warping function.
-
-  indicies_x <- min(indices):max(indices)
+  # An additional metric is computed from the linear model of the warping
+  # function, where we measure the residuals of it. We do this twice, once
+  # for the entire function, once after cutting in and out.
+  normalizeData <- function(x) {
+    return((x - min(x)) / (max(x) - min(x)))
+  }
+  
+  warpLm <- stats::lm(
+    formula = y ~ x, data = data.frame(
+      x = 1:length(dtwAlign$index2),
+      y = normalizeData(dtwAlign$index2)
+    ))
+  warpLm_rel <- stats::lm(
+    formula = y ~ x, data = data.frame(
+      x = 1:length(min(indices):max(indices)),
+      y = normalizeData(
+        dtwAlign$index2[min(indices):max(indices)])
+    ))
+  
+  warp_res <- stats::residuals(warpLm)
+  warp_rel_res <- stats::residuals(warpLm_rel)
   
   return(list(
+    # We also are interested in the monotonicity or continuity of the
+    # reference and the signal. Ideally, all indices are in the previous
+    # list, indicating a strong monotonic behavior. For saddle points
+    # however, indices will be missing. With monotonicity we are measuring
+    # actually the continuity of the warping function.
     monotonicity = length(indices) / length(dtwAlign$index2),
-    monotonicity_rel = length(intersect(indices, indicies_x)) / length(indicies_x),
+    # Cut off flat start and end and measure again:
+    monotonicity_rel = length(indices) / (max(indices) - min(indices) + 1),
+    
+    warp_resid = list(
+      lm = warpLm,
+      score = 1 - (mean(abs(warp_res)) * 2),
+      sd = stats::sd(warp_res),
+      var = stats::var(warp_res),
+      mae = mean(abs(warp_res)),
+      rmse = sqrt(mean(warp_res^2))
+    ),
+    warp_rel_resid = list(
+      lm = warpLm_rel,
+      score = 1 - (mean(abs(warp_rel_res)) * 2),
+      sd = stats::sd(warp_rel_res),
+      var = stats::var(warp_rel_res),
+      mae = mean(abs(warp_rel_res)),
+      rmse = sqrt(mean(warp_rel_res^2))
+    ),
     
     indices = indices,
     start = min(indices),
@@ -276,6 +329,9 @@ area_diff_2_functions <- function(f1, f2) {
 There are probably many methods for comparing the query to the reference, and we want to suggest another one that uniformly samples from both functions (that were previously approximated to be in the unit-square), and then quantifies the difference using some function, e.g., correlation.
 
 ```{r}
+#' Samples from both function within [0,1] and returns the
+#' indices used and the values from either function. These
+#' two vectors can then be compared statistically.
 stat_diff_2_functions <- function(f1, f2, statFunc = stats::cor, numSamples = 1e4) {
   #indices <- sort(stats::runif(n = numSamples, min = 0, max = 1))
   indices <- seq(0, 1, by = 1 / numSamples)
@@ -342,6 +398,9 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
 }
 
 #' This is the symmetric KL-divergence
+#' Note that both functions must return strictly
+#' positive values because of their use in the
+#' logarithm.
 stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
   tol <- 1e-3
@@ -388,7 +447,7 @@ Let's do a full example using the match from above. We do not have a window, so 
 signal_org_f <- pattern_approxfun(org_signal$y)
 
 signal_ext3 <- extract_signal_from_window(
-  find_signal, window = stats::window(noisy_signal$y))
+  find_signal, window = noisy_signal$y)
 signal_mat3 <- signal_ext3$data
 signal_mat_f3 <- pattern_approxfun(signal_mat3, smooth = TRUE)
 
@@ -408,6 +467,8 @@ print(paste0("The reference is matched from ", signal_ext3$start_ref, " to ", si
 Try the same with a window that closer encapsulates the pattern (the pattern starts at 256 with a length of 256). Also, we are using `open.Begin` and `open.End`, so that `dtw` can match a subsequence of the reference:
 
 ```{r}
+# We get a non-plateau match if the we scale the query to fit into the reference (/2.5),
+# and by also constraining the window further (start = 250, end = 480)
 win <- stats::window(noisy_signal$y, start = 220, end = 594)
 plot(list(
   x = 1:length(win),
@@ -848,6 +909,55 @@ data.frame(
     stat_diff_2_functions_rmse(signal_org_f, signal_mat_f1)$value,
     stat_diff_2_functions_rmse(signal_mat_ref_f, signal_mat_query_f)$value,
     stat_diff_2_functions_rmse(signal_mat_ref_f2, signal_mat_query_f2)$value
+  ), 4)
+)
+```
+
+```{r warning=FALSE, echo=FALSE, results="show"}
+data.frame(
+  which = c(
+    "No window",
+    "With window",
+    "Partial window",
+    "Flat warping func.",
+    "Ex. from article",
+    "Ex. phase-shifted"
+  ),
+  
+  warp_score = round(c(
+    signal_ext3$warp_resid$score,
+    signal_ext$warp_resid$score,
+    signal_ext2$warp_resid$score,
+    signal_ext1$warp_resid$score,
+    signal_ex_query$warp_resid$score,
+    signal_ex_query2$warp_resid$score
+  ), 4),
+  
+  warp_rel_score = round(c(
+    signal_ext3$warp_rel_resid$score,
+    signal_ext$warp_rel_resid$score,
+    signal_ext2$warp_rel_resid$score,
+    signal_ext1$warp_rel_resid$score,
+    signal_ex_query$warp_rel_resid$score,
+    signal_ex_query2$warp_rel_resid$score
+  ), 4),
+  
+  warp_resid = round(c(
+    signal_ext3$warp_resid$mae,
+    signal_ext$warp_resid$mae,
+    signal_ext2$warp_resid$mae,
+    signal_ext1$warp_resid$mae,
+    signal_ex_query$warp_resid$mae,
+    signal_ex_query2$warp_resid$mae
+  ), 4),
+  
+  warp_rel_resid = round(c(
+    signal_ext3$warp_rel_resid$mae,
+    signal_ext$warp_rel_resid$mae,
+    signal_ext2$warp_rel_resid$mae,
+    signal_ext1$warp_rel_resid$mae,
+    signal_ex_query$warp_rel_resid$mae,
+    signal_ex_query2$warp_rel_resid$mae
   ), 4)
 )
 ```
