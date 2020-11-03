@@ -401,14 +401,30 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
 
 #' This is the symmetric KL-divergence
 #' Note that both functions must return strictly
-#' positive values because of their use in the
-#' logarithm.
+#' positive (including 0) values because of their
+#' use in the logarithm.
 stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-  tol <- 1e-3
+  tol <- 1e-8
   
-  PQ <- function(x) f1(x) * log(f1(x) / f2(x))
-  QP <- function(x) f2(x) * log(f2(x) / f1(x))
+  PQ <- function(x) {
+    f1x <- f1(x)
+    f2x <- f2(x)
+    if (all(f1x == 0) || all(f2x == 0)) {
+      return(rep(0, length(x)))
+    }
+    return(f1x * log(f1x / f2x))
+  }
+  QP <- function(x) {
+    f1x <- f1(x)
+    f2x <- f2(x)
+    if (all(f1x == 0) || all(f2x == 0)) {
+      return(rep(0, length(x)))
+    }
+    return(f2x * log(f2x / f1x))
+  }
+  
+  
   temp$value <- tryCatch({
     stats::integrate(f = PQ, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value +
     stats::integrate(f = QP, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
