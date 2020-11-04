@@ -1,0 +1,204 @@
+---
+title: "Multivariate and Multi-pattern Tests with DTW"
+bibliography: ../inst/REFERENCES.bib
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  word_document: default
+---
+
+In this notebook we want to conduct two different tests before we put it all together. First of all, we want to perform multivariate matching to see whether this has advantages over multiple univariate matches.
+
+Then, we want to find out how `dtw` matches a query if it contains the reference more than once -- it is interesting to us which match is picked by dtw.
+
+```{r warning=FALSE, message=FALSE}
+library(dtw)
+```
+
+```{r}
+getAggStats <- function(dtwAlign, name, ref, query) {
+  ex <- extract_signal_from_window(
+    dtwAlign = dtwAlign, window = query,
+    idxMethod = "smooth", smoothCnt = 3)
+  
+  f_ref <- pattern_approxfun(ref)
+  f_query <- pattern_approxfun(query)
+  
+  return(cbind(
+    data.frame(name = name),
+    round(data.frame(
+      area = area_diff_2_functions(f_ref, f_query)$value,
+      KL_symm = stat_diff_2_functions_symmetric_KL(f_ref, f_query)$value,
+      JSD = stat_diff_2_functions_symmetric_JSD(f_ref, f_query)$value,
+      JSD_score = 1 - (stat_diff_2_functions_symmetric_JSD(f_ref, f_query)$value / log(2)),
+      mono_rel = ex$monotonicity_rel,
+      corr = stat_diff_2_functions_cor(f_ref, f_query)$value,
+      sd = stat_diff_2_functions_sd(f_ref, f_query)$value,
+      mae = stat_diff_2_functions_mae(f_ref, f_query)$value
+    ), 5)
+  ))
+}
+```
+
+
+# Multiple scales
+
+We want to measure how well `dtw` performs if the the reference/query are distorted (clinched or distorted). We will try linear distortions. Horizontal and vertical distortions are hence anti-proportional to each other, so that we will only manipulate along one axis in the following examples.
+
+```{r}
+set.seed(2)
+
+ref1 <- density(rnorm(1000, mean = 3), n = 256)
+
+ref1_signal <- list(
+  x = 1:length(ref1$x),
+  y = d1$y / max(d1$y)
+)
+
+ref1_f <- pattern_approxfun(ref1_signal$y)
+
+plot(ref1_signal$y, ylim = c(0, 1))
+```
+
+Below is the "original query", which means that it is an example of how we would observe the signal in reality -- slightly different and probably with noise, also it is less stronger.
+
+```{r}
+set.seed(1)
+q1_len <- 400
+q1 <- sapply(seq(0, pi, len=q1_len), function(x) {
+  .5 * (sin(x) * (1 - 1/(x + 1)) + runif(1, 0, 1e-1))
+})
+
+q1_signal <- list(
+  x = 1:(q1_len + 2 * 106),
+  y = c(runif(106,0,0.05), q1, runif(106, 0, 0.05))
+)
+
+q1_f <- pattern_approxfun(q1_signal$y)
+
+plot(q1_signal, ylim = c(0,1))
+```
+In the following, we do some mostly linear scaling along the vertical axis.
+
+```{r}
+getAlign <- function(x){
+  dtw::dtw(x = x, y = ref1_signal$y
+           , step.pattern = dtw::asymmetric
+           , keep = TRUE
+           , open.begin = TRUE
+           , open.end = TRUE)
+}
+
+q_normalized <- q1_signal$y / max(q1_signal$y)
+q_times3 <-q1_signal$y * 3
+q_times10 <-q1_signal$y * 10
+q_half <- q1_signal$y / 2
+q_exp <- 2.5^(3 + q1_signal$y) - 2.5^3
+q_squared <- (q1_signal$y + 1)^3.5 - 1
+
+align <- getAlign(x = q1_signal$y)
+align_normalized <- getAlign(x = q_normalized)
+align_times3 <- getAlign(x = q_times3)
+align_times10 <- getAlign(x = q_times10)
+align_half <- getAlign(x = q_half)
+align_exp <- getAlign(x = q_exp)
+align_squared <- getAlign(x = q_squared)
+
+rbind(
+  getAggStats(align, "original", org_signal$y, q1_signal$y),
+  getAggStats(align_normalized, "normalized", org_signal$y, q_normalized),
+  getAggStats(align_times3, "times 3", org_signal$y, q_times3),
+  getAggStats(align_times10, "times 10", org_signal$y, q_times10),
+  getAggStats(align_half, "half", org_signal$y, q_half),
+  getAggStats(align_exp, "exp", org_signal$y, q_exp),
+  getAggStats(align_squared, "squared", org_signal$y, q_squared)
+)
+
+plot(align, main = "original", type = "three")
+plot(align_normalized, main = "normalized", type = "three")
+plot(align_times3, main = "times 3", type = "three")
+plot(align_times10, main = "times 10", type = "three")
+plot(align_half, main = "half", type = "three")
+plot(align_exp, main = "exp", type = "three")
+plot(align_squared, main = "squared", type = "three")
+```
+
+From the above plots we learn one important lesson. Apparently, `dtw` does not handle cases well, where reference and query do not have the same co-domain. More specifically, the query's range should always be within (greater or equal the reference's minimum, less than or equal its maximum) the reference's range -- otherwise, `dtw` introduces plateaus/jumps, where parts of a signal cannot be matched.
+
+We can see this in the first plot, the query is matched as long as it goes up. Then, however, there is a jump (not a plateau though) to where it starts decreasing, as the continued increase (or better: the values that are larger in the reference) cannot be matched in the query. Given how we perform matches of the curves, this case however is still good, as the its not a vertical jump, resulting in an extraction of the signal. The match would probably be good, too. However, the query is "smaller" than the reference, but still has a good resemblance -- monotonicity/continuity are good, as well as all stats based on the two function graphs (remember these are cut and scaled into the unit square).
+
+## Vertically stretch and clinch
+
+```{r}
+q1_signal_v <- list(
+  x = q1_signal$x,
+  y = q1_signal$y * 1.1
+)
+
+plot(q1_signal_v, ylim = c(0,1))
+```
+
+
+```{r}
+align_v <- dtw::dtw(
+  x = q1_signal_v$y, y = org_signal$y
+  , step.pattern = dtw::asymmetric
+  , keep = TRUE
+  , open.begin = TRUE
+  , open.end = TRUE
+)
+
+
+plot(align_v, type = "alignment")
+plot(align_v, type = "three")
+```
+
+## Horizontally stretch and clinch
+
+Since `dtw` align along _x-indices_, we cannot just scale the x-axis linearly, but rather have to change how we sample the query signal along the axis to achieve some distortion.
+
+```{r}
+# Shorten the signal, make it half as long.
+h_length <- .5
+q1_signal_h <- list(
+  x = 1:(1 + (q1_len * h_length)),
+  y = max(q1_signal$y) *
+    sapply(seq(0, 1, by = 1/(q1_len * h_length)), q1_f)
+)
+plot(q1_signal_h, ylim = c(0,1), xlim = c(0, 256))
+```
+
+```{r}
+align_h <- dtw::dtw(
+  x = q1_signal_h$y, y = org_signal$y
+  , step.pattern = dtw::asymmetric
+  , keep = TRUE
+  , open.begin = TRUE
+  , open.end = TRUE
+)
+
+
+plot(align_h, type = "alignment")
+plot(align_h, type = "three")
+```
+
+
+# Multivariate Tests
+
+
+# Multi-pattern Tests
+
+
