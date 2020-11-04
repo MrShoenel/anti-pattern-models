@@ -243,7 +243,7 @@ Now we need to transform both, the original pattern and the matched pattern to b
 After this, we want to approximate two functions. For the original pattern we use `approxfun`, and for the matched pattern we use a Loess-smoothed approximation.
 
 ```{r}
-pattern_approxfun <- function(yData, smooth = FALSE) {
+pattern_approxfun <- function(yData, smooth = FALSE, yLimits = range(yData)) {
   if (all(yData == 0)) {
     return(approxfun(
       x = c(0, 1),
@@ -268,7 +268,12 @@ pattern_approxfun <- function(yData, smooth = FALSE) {
   yData <- yData - min(yData)
   yData <- yData / max(yData)
   
-  return(approxfun(
+  if (!missing(yLimits)) {
+    # Scale Y into that range:
+    yData <- yData * (max(yLimits) - min(yLimits)) + min(yLimits)
+  }
+  
+  return(stats::approxfun(
     x = xData,
     y = yData
   ))
