@@ -290,13 +290,20 @@ And here is an example:
 ```{r}
 align_q2_warp <- pattern_approxfun_warp(align_q2)
 
-plot_2_functions(align_q2_warp$f_warp, align_q2_warp$f_lm)
+plot_2_functions(align_q2_warp$f_warp, align_q2_warp$f_lm) + ggplot2::ggtitle("Warping function and its linear regression", "Both functions were scaled together and then put into the unit-square.")
+plot_2_functions(align_q2_warp$f_warp_org, align_q2_warp$f_warp_np) + ggplot2::ggtitle("Warping function and its non-plateau version")
+plot_2_functions(align_q2_warp$f_warp_org, align_q2_warp$f_warp_np_opt) + ggplot2::ggtitle("Warping function and its optimized non-plateau version")
 
 area_diff_2_functions(align_q2_warp$f_warp, align_q2_warp$f_lm)$value
 stat_diff_2_functions_cor(align_q2_warp$f_warp, align_q2_warp$f_lm)$value
 stat_diff_2_functions_symmetric_JSD(align_q2_warp$f_warp, align_q2_warp$f_lm)$value
 ```
 
+For any set of the above pair of functions, we can compute our metrics/statistics (e.g., area, correlation, KLD etc.). We developed a few alternatives because there is no one right answer to what is the theoretical optimum warping function for any arbitrary warping function.
+
+In an ideal case, the whole query can be mapped to the reference, and it is mapped at a constant pace (i.e., no dilation or clinching). This would result in a perfect linear function with a slope in the range of $(0,\infty)$. However, we are using `dtw` and are expecting clinching and dilation -- in such a case, the optimal warping function is one that is strictly monotonically increasing (i.e., no plateaus), meaning that its intermittent slope may roam freely within $(0,\infty)$. In other words, a (full or partially non-)linear function that has a slope $\gt0\, \forall\, X$, can still be optimal, considering that we are expecting dilation and clinching of the query.
+
+Our solution to that is to extract those parts of the warping function that do in fact have a slope greater `0`. Then, we compare the original warping function to this one, as it one could argue that it represents the optimal warping function given the reference and the query. Also, by comparing we attempt to quantify the differences between the actual warping function, and a hypothetical optimum. One option is to compare against its linear regression. Another option is the one we just described. Also remember that we are already computing other metrics of the warping function, such as monotonicity/continuity, and the residuals of its linear regression (this is currently done in `extract_signal_from_window` but we may refactor this at a later point).
 
 
 
