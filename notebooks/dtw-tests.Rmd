@@ -184,12 +184,12 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
   
   warpLm <- stats::lm(
     formula = y ~ x, data = data.frame(
-      x = 1:length(dtwAlign$index2),
+      x = seq(0, 1, len = length(dtwAlign$index2)),
       y = normalizeData(dtwAlign$index2)
     ))
   warpLm_rel <- stats::lm(
     formula = y ~ x, data = data.frame(
-      x = 1:length(min(indices):max(indices)),
+      x = seq(0, 1, len = length(min(indices):max(indices))),
       y = normalizeData(
         dtwAlign$index2[min(indices):max(indices)])
     ))
@@ -203,12 +203,16 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
     # list, indicating a strong monotonic behavior. For saddle points
     # however, indices will be missing. With monotonicity we are measuring
     # actually the continuity of the warping function.
+    # Note also that the absolute monotonicity is equal to how much of the
+    # query could be mapped to the reference.
     monotonicity = length(indices) / length(dtwAlign$index2),
     # Cut off flat start and end and measure again:
     monotonicity_rel = length(indices) / (max(indices) - min(indices) + 1),
     
     warp_resid = list(
       lm = warpLm,
+      # times 2 because in the worst case, the difference between a
+      # linear regression and its data in the unit square is 1/2.
       score = 1 - (mean(abs(warp_res)) * 2),
       sd = stats::sd(warp_res),
       var = stats::var(warp_res),
@@ -285,9 +289,9 @@ Now that we can approximate both patterns as a function in the unit square, we w
 ```{r}
 area_diff_2_functions <- function(f1, f2) {
   # Find the intersections of both functions:
-  intersections <- rootSolve::uniroot.all(
+  intersections <- sort(rootSolve::uniroot.all(
     f = function(x) f1(x) - f2(x),
-    interval = c(0, 1))
+    interval = c(0, 1)))
   
   if (length(intersections) == 0) {
     # One function is complete below/above the other
