@@ -28,6 +28,13 @@ Then, we want to find out how `dtw` matches a query if it contains the reference
 library(dtw)
 ```
 
+Load our common functions:
+
+```{r}
+source("./common-funcs.R", echo = FALSE)
+```
+
+
 ```{r}
 getAggStats <- function(dtwAlign, name, ref, query) {
   ex <- extract_signal_from_window(
@@ -65,7 +72,7 @@ ref1 <- density(rnorm(1000, mean = 3), n = 256)
 
 ref1_signal <- list(
   x = 1:length(ref1$x),
-  y = d1$y / max(d1$y)
+  y = ref1$y / max(ref1$y)
 )
 
 ref1_f <- pattern_approxfun(ref1_signal$y)
@@ -118,13 +125,13 @@ align_exp <- getAlign(x = q_exp)
 align_squared <- getAlign(x = q_squared)
 
 rbind(
-  getAggStats(align, "original", org_signal$y, q1_signal$y),
-  getAggStats(align_normalized, "normalized", org_signal$y, q_normalized),
-  getAggStats(align_times3, "times 3", org_signal$y, q_times3),
-  getAggStats(align_times10, "times 10", org_signal$y, q_times10),
-  getAggStats(align_half, "half", org_signal$y, q_half),
-  getAggStats(align_exp, "exp", org_signal$y, q_exp),
-  getAggStats(align_squared, "squared", org_signal$y, q_squared)
+  getAggStats(align, "original", ref1_signal$y, q1_signal$y),
+  getAggStats(align_normalized, "normalized", ref1_signal$y, q_normalized),
+  getAggStats(align_times3, "times 3", ref1_signal$y, q_times3),
+  getAggStats(align_times10, "times 10", ref1_signal$y, q_times10),
+  getAggStats(align_half, "half", ref1_signal$y, q_half),
+  getAggStats(align_exp, "exp", ref1_signal$y, q_exp),
+  getAggStats(align_squared, "squared", ref1_signal$y, q_squared)
 )
 
 plot(align, main = "original", type = "three")
