@@ -40,16 +40,12 @@ for that.
 
     library(dtw)
 
+Also load our common functions:
+
+    source("./common-funcs.R", echo = FALSE)
+
     # Let's define a function to plot both patterns as functions:
-    plot_2_functions <- function(fReference, fQuery, interval = c(0, 1)) {
-      ggplot2::ggplot(data.frame(x = interval), ggplot2::aes(x)) +
-        ggplot2::stat_function(fun = fReference, ggplot2::aes(color="Reference")) +
-        ggplot2::stat_function(fun = fQuery, ggplot2::aes(color="Query")) +
-        ggplot2::scale_color_manual("Patterns", values = c("black", "red")) +
-        ggplot2::theme(
-          axis.title.x = ggplot2::element_blank(),
-          axis.title.y = ggplot2::element_blank())
-    }
+    # The function `plot_2_functions` has been moved to `common-funcs.R`.
 
 Create an Example Signal
 ========================
@@ -82,7 +78,7 @@ density is to be estimated over the sample.
 
     plot(noisy_signal)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-3-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-4-1.png)
 
 Create the Original Signal we want to find
 ==========================================
@@ -108,7 +104,7 @@ the query matches somewhere &gt;= start and &lt;= end.
 
     plot(org_signal)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-4-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-5-1.png)
 
 Define functions for assessing goodness-of-match
 ================================================
@@ -119,149 +115,7 @@ approximate functions for the original and the matched signal and then
 calculate the difference as the area between the curves in a unit
 square.
 
-    extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idxMethod = c("discrete", "smooth"), smoothCnt = 3) {
-      idxMethod <- if (missing(idxMethod)) idxMethod[1] else idxMethod
-      
-      # First, we check whether the warping function is flat. This
-      # test has two components: a linear regression, and a check
-      # of the vertical co-domain of that function.
-      tempLm <- stats::lm(
-        formula = y ~ x, data = data.frame(
-          x = 1:length(dtwAlign$index2),
-          y = dtwAlign$index2
-        )
-      )
-      if (tempLm$coefficients[2] < .1) {
-        # The slope is less than 0.1.
-        # It is very flat, let's check the values in the co-domain:
-        if (((max(dtwAlign$index2) - min(dtwAlign$index2)) / nrow(dtwAlign$reference)) < .1) {
-          # Also, the values in the co-domain cover less than 10%
-          # of the available range, indicating an actual flat line.
-          # We will return two values, both 0, so that a function
-          # can be approximated.
-          wMsg <- "DTW warping function is flat."
-          if (throwIfFlat) {
-            stop(wMsg)
-          }
-          warning(wMsg)
-          
-          return(list(
-            monotonicity = NA,
-            monotonicity_rel = NA,
-            warp_resid = list(
-              lm = NULL,
-              score = NA,
-              sd = NA,
-              var = NA,
-              mae = NA,
-              rmse = NA
-            ),
-            warp_rel_resid = list(
-              lm = NULL,
-              score = NA,
-              sd = NA,
-              var = NA,
-              mae = NA,
-              rmse = NA
-            ),
-            indices = c(0, 0),
-            start = NA,
-            start_ref = NA,
-            start_rel = NA,
-            start_rel_ref = NA,
-            end = NA,
-            end_ref = NA,
-            end_rel = NA,
-            end_rel_ref = NA,
-            data = c(0, 0)
-          ))
-        }
-      }
-      
-      if (idxMethod == "discrete") {
-        # Here we store all indices that have a next index that has a value
-        # greater than that of the current index. This means there is a slope
-        # with a value > 0. In such a case, we store the index and its next
-        # index in an array.
-        indices <- c()
-        for (idx in 1:(min(length(window), length(dtwAlign$index2)) - 1)) {
-          if (dtwAlign$index2[idx] < dtwAlign$index2[idx + 1]) {
-            indices <- c(indices, c(idx, idx + 1))
-          }
-        }
-        indices <- unique(indices)
-      } else if (idxMethod == "smooth") {
-        indices <- c()
-        for (idx in 1:(min(length(window), length(dtwAlign$index2)) - smoothCnt + 1)) {
-          temp <- dtwAlign$index2[idx:(idx + smoothCnt - 1)]
-          if (max(temp) > min(temp)) {
-            indices <- c(indices, idx:(idx + smoothCnt - 1))
-          }
-        }
-        indices <- unique(indices)
-      }
-      
-      # An additional metric is computed from the linear model of the warping
-      # function, where we measure the residuals of it. We do this twice, once
-      # for the entire function, once after cutting in and out.
-      normalizeData <- function(x) {
-        return((x - min(x)) / (max(x) - min(x)))
-      }
-      
-      warpLm <- stats::lm(
-        formula = y ~ x, data = data.frame(
-          x = 1:length(dtwAlign$index2),
-          y = normalizeData(dtwAlign$index2)
-        ))
-      warpLm_rel <- stats::lm(
-        formula = y ~ x, data = data.frame(
-          x = 1:length(min(indices):max(indices)),
-          y = normalizeData(
-            dtwAlign$index2[min(indices):max(indices)])
-        ))
-      
-      warp_res <- stats::residuals(warpLm)
-      warp_rel_res <- stats::residuals(warpLm_rel)
-      
-      return(list(
-        # We also are interested in the monotonicity or continuity of the
-        # reference and the signal. Ideally, all indices are in the previous
-        # list, indicating a strong monotonic behavior. For saddle points
-        # however, indices will be missing. With monotonicity we are measuring
-        # actually the continuity of the warping function.
-        monotonicity = length(indices) / length(dtwAlign$index2),
-        # Cut off flat start and end and measure again:
-        monotonicity_rel = length(indices) / (max(indices) - min(indices) + 1),
-        
-        warp_resid = list(
-          lm = warpLm,
-          score = 1 - (mean(abs(warp_res)) * 2),
-          sd = stats::sd(warp_res),
-          var = stats::var(warp_res),
-          mae = mean(abs(warp_res)),
-          rmse = sqrt(mean(warp_res^2))
-        ),
-        warp_rel_resid = list(
-          lm = warpLm_rel,
-          score = 1 - (mean(abs(warp_rel_res)) * 2),
-          sd = stats::sd(warp_rel_res),
-          var = stats::var(warp_rel_res),
-          mae = mean(abs(warp_rel_res)),
-          rmse = sqrt(mean(warp_rel_res^2))
-        ),
-        
-        indices = indices,
-        start = min(indices),
-        start_rel = min(indices) / dtwAlign$N,
-        end = max(indices),
-        end_rel = max(indices) / dtwAlign$N,
-        start_ref = min(dtwAlign$index2),
-        start_rel_ref = min(dtwAlign$index2) / dtwAlign$M,
-        end_ref = max(dtwAlign$index2),
-        end_rel_ref = max(dtwAlign$index2) / dtwAlign$M,
-        data = window[indices]
-      ))
-    }
+    # Function `extract_signal_from_window` has been moved into `common-funcs.R`.
 
 Now we need to transform both, the original pattern and the matched
 pattern to be in the \[0, 1\] range.
@@ -270,89 +124,13 @@ After this, we want to approximate two functions. For the original
 pattern we use `approxfun`, and for the matched pattern we use a
 Loess-smoothed approximation.
 
-    pattern_approxfun <- function(yData, smooth = FALSE) {
-      if (all(yData == 0)) {
-        return(approxfun(
-          x = c(0, 1),
-          y = c(0, 0)
-        ))
-      }
-      
-      if (smooth) {
-        temp <- loess.smooth(
-          x = 1:length(yData),
-          y = yData,
-          span = 0.15
-        )
-        
-        yData <- temp$y
-        xData <- temp$x - min(temp$x)
-        xData <- xData / max(xData)
-      } else {
-        xData <- seq(0, 1, by = 1 / (length(yData) - 1))
-      }
-      
-      yData <- yData - min(yData)
-      yData <- yData / max(yData)
-      
-      return(approxfun(
-        x = xData,
-        y = yData
-      ))
-    }
+    # The function `pattern_approxfun` has been moved into `common-funcs.R`.
 
 Now that we can approximate both patterns as a function in the unit
 square, we will look for intersections, so that we can integrate and sum
 up all differences between the two functions.
 
-    area_diff_2_functions <- function(f1, f2) {
-      # Find the intersections of both functions:
-      intersections <- rootSolve::uniroot.all(
-        f = function(x) f1(x) - f2(x),
-        interval = c(0, 1))
-      
-      if (length(intersections) == 0) {
-        # One function is complete below/above the other
-        intersections <- c(0, 1)
-      }
-      
-      # Check that lower/upper integration boundaries exist:
-      if (intersections[1] > 0) {
-        intersections <- c(0, intersections)
-      }
-      if (utils::tail(intersections, 1) < 1) {
-        intersections <- c(intersections, 1)
-      }
-      
-      
-      
-      # Now, for each pair of intersections, we integrate both
-      # functions and sum up the areas.
-      
-      areas <- c()
-      for (intsec in 1:(length(intersections) - 1)) {
-        temp <- abs(
-          stats::integrate(
-            f = f1,
-            lower = intersections[intsec],
-            upper = intersections[intsec + 1],
-            subdivisions = 1e5)$value
-          -
-          stats::integrate(
-            f = f2,
-            lower = intersections[intsec],
-            upper = intersections[intsec + 1],
-            subdivisions = 1e5)$value)
-        
-        areas <- c(areas, temp)
-      }
-      
-      return(list(
-        areas = areas,
-        value = sum(areas),
-        intersections = intersections
-      ))
-    }
+    # The function `area_diff_2_functions` has been moved to `common-funcs.R`.
 
 There are probably many methods for comparing the query to the
 reference, and we want to suggest another one that uniformly samples
@@ -360,146 +138,7 @@ from both functions (that were previously approximated to be in the
 unit-square), and then quantifies the difference using some function,
 e.g., correlation.
 
-    #' Samples from both function within [0,1] and returns the
-    #' indices used and the values from either function. These
-    #' two vectors can then be compared statistically.
-    stat_diff_2_functions <- function(f1, f2, statFunc = stats::cor, numSamples = 1e4) {
-      #indices <- sort(stats::runif(n = numSamples, min = 0, max = 1))
-      indices <- seq(0, 1, by = 1 / numSamples)
-      
-      d1 <- sapply(indices, f1)
-      d2 <- sapply(indices, f2)
-      
-      return(list(
-        dataF1 = d1,
-        dataF2 = d2,
-        indices = indices,
-        value = statFunc(d1, d2)
-      ))
-    }
-
-    stat_diff_2_functions_cov <- function(f1, f2, numSamples = 1e4) {
-      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-        return(stats::cov(x = x, y = y, use = "pairwise.complete.obs"))
-      }, numSamples = numSamples))
-    }
-
-    stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
-      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-        return(stats::cor(x = x, y = y, use = "pairwise.complete.obs"))
-      }, numSamples = numSamples))
-    }
-
-    stat_diff_2_functions_cor_kendall <- function(f1, f2, numSamples = 1e4) {
-      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-        return(stats::cor(x = x, y = y, use = "pairwise.complete.obs", method = "kendall"))
-      }, numSamples = numSamples))
-    }
-
-    stat_diff_2_functions_cor_spearman <- function(f1, f2, numSamples = 1e4) {
-      return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
-        return(stats::cor(x = x, y = y, use = "pairwise.complete.obs", method = "spearman"))
-      }, numSamples = numSamples))
-    }
-
-    stat_diff_2_functions_var <- function(f1, f2, numSamples = 1e4) {
-      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      temp$value <- stats::var(temp$dataF1 - temp$dataF2, na.rm = TRUE)
-      return(temp)
-    }
-
-    stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
-      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      temp$value <- stats::sd(temp$dataF1 - temp$dataF2, na.rm = TRUE)
-      return(temp)
-    }
-
-    stat_diff_2_functions_mae <- function(f1, f2, numSamples = 1e4) {
-      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
-      temp$value <- mean(abs(temp$dataF1[idx] - temp$dataF2[idx]))
-      return(temp)
-    }
-
-    stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
-      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
-      temp$value <- Metrics::rmse(temp$dataF1[idx], temp$dataF2[idx])
-      return(temp)
-    }
-
-    #' This is the symmetric KL-divergence
-    #' Note that both functions must return strictly
-    #' positive (including 0) values because of their
-    #' use in the logarithm.
-    stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
-      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      tol <- 1e-8
-      
-      PQ <- function(x) {
-        f1x <- f1(x)
-        f2x <- f2(x)
-        if (all(f1x == 0) || all(f2x == 0)) {
-          return(rep(0, length(x)))
-        }
-        return(f1x * log(f1x / f2x))
-      }
-      QP <- function(x) {
-        f1x <- f1(x)
-        f2x <- f2(x)
-        if (all(f1x == 0) || all(f2x == 0)) {
-          return(rep(0, length(x)))
-        }
-        return(f2x * log(f2x / f1x))
-      }
-      
-      
-      temp$value <- tryCatch({
-        stats::integrate(f = PQ, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value +
-        stats::integrate(f = QP, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
-      }, error = function(cond) {
-        warning(cond)
-        return(NA)
-      })
-      
-      return(temp)
-    }
-
-    #' https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
-    stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4) {
-      temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      tol <- 1e-8
-      
-      M <- function(x) 1/2 * (f1(x) + f2(x))
-      PM <- function(x) {
-        f1x <- f1(x)
-        mx <- M(x)
-        if (all(f1x == 0) || all(mx == 0)) {
-          return(rep(0, length(x)))
-        }
-        return(f1x * log(f1x / mx))
-      }
-      QM <- function(x) {
-        f2x <- f2(x)
-        mx <- M(x)
-        if (all(f2x == 0) || all(mx == 0)) {
-          return(rep(0, length(x)))
-        }
-        return(f2x * log(f2x / mx))
-      }
-      
-      JSD <- function(x) 1/2 * PM(x) + 1/2 * QM(x)
-      
-      temp$value <- tryCatch({
-        stats::integrate(
-          f = JSD, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
-      }, error = function(cond) {
-        warning(cond)
-        return(NA)
-      })
-      
-      return(temp)
-    }
+    # All the `stat_diff_*`-functions have been moved to `common-funcs.R`.
 
 Use Dynamic Time Warping to find the pattern
 ============================================
@@ -512,15 +151,15 @@ mappable to the entire noisy signal.
 
     plot(noisy_signal)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-9-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-10-1.png)
 
     plot(find_signal, type = "alignment")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-9-2.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-10-2.png)
 
     plot(find_signal, type = "three")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-9-3.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-10-3.png)
 
     print(c(find_signal$distance, find_signal$normalizedDistance))
 
@@ -556,7 +195,7 @@ sought-after pattern. We will use smoothing since no window is used:
 
     plot_2_functions(signal_org_f, signal_mat_f3)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-10-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-11-1.png)
 
     print(paste0("The window starts at ", signal_ext3$start, " and ends at ", signal_ext3$end))
 
@@ -582,7 +221,7 @@ the reference:
       y = win
     ))
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-11-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-12-1.png)
 
     # Note how we use a different step.pattern.
     # The default is 'symmetric2'.
@@ -597,15 +236,15 @@ the reference:
 
     plot(find_signal_w, type = "alignment")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-11-2.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-12-2.png)
 
     plot(find_signal_w, type = "two")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-11-3.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-12-3.png)
 
     plot(find_signal_w, type = "three")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-11-4.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-12-4.png)
 
     print(c(find_signal_w$distance, find_signal_w$normalizedDistance))
 
@@ -624,7 +263,7 @@ Let’s do a full example using the match from above:
 
     ## Warning: Removed 1 row(s) containing missing values (geom_path).
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-12-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-13-1.png)
 
     print(paste0("The window starts at ", signal_ext$start, " and ends at ", signal_ext$end))
 
@@ -651,7 +290,7 @@ Try the same with a window that only *partially* contains the pattern:
       y = win2
     ))
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-14-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-15-1.png)
 
     find_signal_w2 <- dtw::dtw(
       x = win2, y = org_signal$y, keep.internals = TRUE,
@@ -662,15 +301,15 @@ Try the same with a window that only *partially* contains the pattern:
 
     plot(find_signal_w2, type = "alignment")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-14-2.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-15-2.png)
 
     plot(find_signal_w2, type = "two")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-14-3.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-15-3.png)
 
     plot(find_signal_w2, type = "three")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-14-4.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-15-4.png)
 
     print(c(find_signal_w2$distance, find_signal_w2$normalizedDistance))
 
@@ -691,7 +330,7 @@ left in the original signal (the decline on the left).
 
     plot_2_functions(signal_org_2_f, signal_mat_f2)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-15-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-16-1.png)
 
     print(paste0("The window starts at ", signal_ext2$start, " and ends at ", signal_ext2$end))
 
@@ -712,7 +351,7 @@ Try the same with a window that does **not** contain the pattern:
       y = win1
     ))
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-16-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-17-1.png)
 
     find_signal_w1 <- dtw::dtw(
       x = win1, y = org_signal$y, keep.internals = TRUE,
@@ -723,15 +362,15 @@ Try the same with a window that does **not** contain the pattern:
 
     plot(find_signal_w1, type = "alignment")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-16-2.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-17-2.png)
 
     plot(find_signal_w1, type = "two")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-16-3.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-17-3.png)
 
     plot(find_signal_w1, type = "three")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-16-4.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-17-4.png)
 
     print(c(find_signal_w1$distance, find_signal_w1$normalizedDistance))
 
@@ -772,7 +411,7 @@ between (\[0, 0\], \[1, 0\]) in this case, so that
 
     plot_2_functions(signal_org_f, signal_mat_f1)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-18-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-19-1.png)
 
     print(paste0("The window starts at ", signal_ext1$start, " and ends at ", signal_ext1$end))
 
@@ -791,11 +430,11 @@ using a noisy and chopped-off sine-wave.
 
     dtw::dtwPlotTwoWay(alignment)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-19-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-20-1.png)
 
     dtw::dtwPlotThreeWay(alignment)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-19-2.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-20-2.png)
 
 Let’s use our methods to check how well the “query” matches the
 “reference”.
@@ -819,7 +458,7 @@ Let’s use our methods to check how well the “query” matches the
 
     plot_2_functions(signal_mat_ref_f, signal_mat_query_f)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-20-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-21-1.png)
 
     print(paste0("The enclosed areas are: ", paste(round(area_match$areas, 5), collapse = ", ")))
 
@@ -846,11 +485,11 @@ not be noise, only phase-shifted and stretched.
 
     dtw::dtwPlotTwoWay(alignment2)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-21-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-22-1.png)
 
     dtw::dtwPlotThreeWay(alignment2)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-21-2.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-22-2.png)
 
 Let’s use our methods to check how well the “query” matches the
 “reference”.
@@ -868,15 +507,15 @@ Let’s use our methods to check how well the “query” matches the
     area_match2 <- area_diff_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
     print(area_match2$value)
 
-    ## [1] 0.1162912
+    ## [1] 0.1162836
 
     plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-22-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-23-1.png)
 
     print(paste0("The enclosed area is: ", area_match2$value))
 
-    ## [1] "The enclosed area is: 0.116291190047748"
+    ## [1] "The enclosed area is: 0.116283566729189"
 
 Overview of the examples
 ------------------------
@@ -885,7 +524,7 @@ In this section we show again all overlaid patterns for each example,
 together with a tabular overview of the differences in area, as well as
 some statistical measurements.
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-23-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-24-1.png)
 
 ### Tabular overview of goodness-of-match
 
@@ -1266,7 +905,7 @@ looks compared to the reference signal.
       ggplot2::geom_point() +
       ggplot2::facet_wrap(series ~., scales = "free")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-27-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-28-1.png)
 
 The structural similarities of the query and the reference are obvious.
 
@@ -1283,7 +922,7 @@ The structural similarities of the query and the reference are obvious.
       ggplot2::facet_grid(series ~ isRe, scales = "free") +
       ggplot2::scale_x_log10()
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-28-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-29-1.png)
 
 Cleaning the Query / Visual comparison
 --------------------------------------
@@ -1341,7 +980,7 @@ to the real and imaginary parts that are also present in the reference:
       ggplot2::geom_line() +
       ggplot2::facet_grid(series ~ ., scales = "free")
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-29-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-30-1.png)
 
 Subjectively it appears that the signal with cleaned real parts is
 closest to the reference signal. However, let’s calculate distances with
@@ -1380,7 +1019,7 @@ And do some figures of these functions:
       ncol = 2
     )
 
-![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-31-1.png)
+![](dtw-tests_files/figure-markdown_strict/unnamed-chunk-32-1.png)
 
 ### Tabular overview of goodness-of-match
 
