@@ -461,14 +461,16 @@ clinching of the query.
 Our solution to that is to extract those parts of the warping function
 that do in fact have a slope greater `0`. Then, we compare the original
 warping function to this one, as it one could argue that it represents
-the optimal warping function given the reference and the query. Also, by
-comparing we attempt to quantify the differences between the actual
-warping function, and a hypothetical optimum. One option is to compare
-against its linear regression. Another option is the one we just
-described. Also remember that we are already computing other metrics of
-the warping function, such as monotonicity/continuity, and the residuals
-of its linear regression (this is currently done in
-`extract_signal_from_window` but we may refactor this at a later point).
+the optimal warping function given the reference and the query (or, at
+least more optimal than the linear regression, as it resembles the
+warping function in greater detail). Also, by comparing we attempt to
+quantify the differences between the actual warping function, and a
+hypothetical optimum. One option is to compare against its linear
+regression. Another option is the one we just described. Also remember
+that we are already computing other metrics of the warping function,
+such as monotonicity/continuity, and the residuals of its linear
+regression (this is currently done in `extract_signal_from_window` but
+we may refactor this at a later point).
 
 Multivariate Tests
 ==================
