@@ -57,22 +57,136 @@ optim(fn = co_fr, par = c(0, 2, .1), method = "BFGS")
 Let's try this constrained. Through the above result we know that the optimized parameters are very close to the actual optimum. However, let's constrain some of these parameters to less optimal extrema.
 
 ```{r}
-theta <- c(0, 2, .1) # in,out,stretch
+theta <- c(.1, 1.3, .1) # in,out,stretch
 ui <- rbind(
-  c(0, 0, -1)
+  c(0, 0, -1), # stretch
+  c(-1, 0, 0), # in
+  c(-1, -1, 0) # in+out <= 2  --  -in - out >= -2
 )
-ci <- c(-1.7) # stretch < 1.7
+ci <- c(
+  -1.8, # stretch <= 1.8
+  -.35, # cut_in <= .35
+  -2 - 1e-15
+)
 
 ui %*% theta - ci
 
-#constrOptim(theta = theta, f = co_fr, grad = NULL, ui = ui, ci = ci)
+constrOptim(theta = theta, f = co_fr, grad = NULL, ui = ui, ci = ci)
 ```
 
+Ok, we have now done a dummy example using constraints on multiple parameters. Let's do an actual example where we optimize the `dtw`. In particular, let's optimize the window we used for the very first example in the 'dtw-tests.Rmd' notebook. We will try to optimize the (relative) monotonicity of the warping function, as well as the cut-in/-out points (which correspond to the window size).
 
+```{r}
+co_dtw <- function(x) {
+  cut_in <- x[1]
+  cut_out <- x[2]
+  
+  # define the window using the cuts:
+  l <- length(noisy_signal$y)
+  comp_win <- noisy_signal$y[round(cut_in * l):round(cut_out * l)]
+  comp_dtw <- tryCatch({
+    dtw::dtw(
+      x = comp_win, y = org_signal$y, keep.internals = TRUE,
+      open.begin = FALSE, open.end = FALSE) # Forbid open begin/end
+  }, error=function(cond) -1)
+  
+  if (is.numeric(comp_dtw)) {
+    return(2) # A loss greater than the one of mono
+  }
+  
+  comp_ex <- extract_signal_from_window(
+    dtwAlign = comp_dtw, window = comp_win, throwIfFlat = FALSE)
+  
+  org_f <- pattern_approxfun(org_signal$y)
+  # We want to optimize the mapped function, not the one represented by the windown
+  comp_f <- pattern_approxfun(comp_ex$data, yLimits = range(org_signal$y))
+  
+  warp_dtw <- pattern_approxfun_warp(dtwAlign = comp_dtw)
+  warp_org_f <- warp_dtw$f_warp_org
+  warp_opt_f <- warp_dtw$f_warp_np_opt
+  
+  # Align scores:
+  score_jsd = 1 - (stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value / log(2))
+  score_area = 1 - area_diff_2_functions(org_f, comp_f)$value
+  score_corr = max(0, stat_diff_2_functions_cor(org_f, comp_f)$value)
+  
+  # DTW scores:
+  score_dtw_mono = comp_ex$monotonicity
+  # The following is neither reliable nor does it seem to improve 
+  # the fit, we skip it for now entirely!
+#  score_dtw_jsd = tryCatch({
+#    1 - (stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value / log(2))
+#  }, error = function(cond) {
+#    0 # score is 0 if fails
+#  })
+  score_dtw_area = 1 - area_diff_2_functions(warp_org_f, warp_opt_f)$value
+  score_dtw_corr = max(0, stat_diff_2_functions_cor(warp_org_f, warp_opt_f)$value)
+  
+  # Remove * score_dtw_jsd
+  1 - (score_jsd * score_area * score_corr * score_dtw_mono * score_dtw_area * score_dtw_corr)
+  
+  # We want a low diff_JSD
+  # and a high monotonicity
+  #diff_jsd #* (1 - comp_ex$monotonicity)
+  #diff_jsd #* area_diff_2_functions(org_f, comp_f)$value
+}
+```
 
+```{r}
+theta_dtw <- c(0 + 1e-15, 1 - 1e-15) # in,out
 
+# What we need:
+#  in >= 0
+# out <= 1
+# out - in > 0.1  ==  in - out < -.1   ==   -in + out > .1
+ui_dtw <- rbind(
+  c(1, 0),
+  c(0,-1),
+  c(-1,1)
+  #c(1,0),
+  #c(0,1),
+  #c(-1,1),
+  #c(-1,1)
+)
+ci_dtw <- c(
+  0,
+  -1,
+  .1
+  #-.9,
+  #.9,
+  #-.1,
+  #.4
+)
 
+ui_dtw %*% theta_dtw - ci_dtw
 
+co_dtw_res <- constrOptim(
+  theta = theta_dtw, f = co_dtw, grad = NULL, ui = ui_dtw, ci = ci_dtw)
+co_dtw_res$par
+co_dtw_res$value
+```
+
+```{r}
+l <- length(noisy_signal$y)
+use_win <- noisy_signal$y[
+  round(co_dtw_res$par[1] * l):round(co_dtw_res$par[2] * l)]
+comp_dtw <- dtw::dtw(
+  x = use_win, y = org_signal$y, keep.internals = TRUE,
+  open.begin = FALSE, open.end = FALSE)
+comp_ex <- extract_signal_from_window(
+  dtwAlign = comp_dtw, window = use_win, throwIfFlat = FALSE)
+plot(comp_dtw, type = "threeway")
+tempEx <- extract_signal_from_window(comp_dtw, use_win)
+tempEx$monotonicity
+
+org_f <- pattern_approxfun(org_signal$y[comp_ex$start_ref:comp_ex$end_ref])
+comp_f <- pattern_approxfun(comp_ex$data, smooth = TRUE)
+#comp_f <- pattern_approxfun(yData = use_win, yLimits = range(org_signal$y))
+area_diff_2_functions(org_f, comp_f)$value
+plot_2_functions(org_f, comp_f)
+```
+
+The plot above should be compared to the second of the initial dtw-tests (matching with a window). However, it is a much better fit!
 
 
 
