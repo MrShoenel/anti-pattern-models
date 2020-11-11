@@ -1,0 +1,124 @@
+---
+title: "Analysis of 1st student project"
+bibliography: ../inst/REFERENCES.bib
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  word_document: default
+---
+
+```{r}
+source("../helpers.R")
+```
+
+Now that we have modeled our first best guess, we can take a look at the first (and currently only) student project we have. So let's load it!
+
+```{r}
+spFile <- "../data/student-project-1.csv"
+sp <- read.csv(spFile)
+
+dateFormat <- "%Y-%m-%d %H:%M:%S"
+
+sp$CommitterTimeObj <- as.POSIXct(strptime(
+  sp$CommitterTime, format = dateFormat))
+sp$AuthorTimeObj <- as.POSIXct(strptime(
+  sp$AuthorTime, format = dateFormat))
+```
+
+Let's show some overview of the activities performed and plot the densities of each activity in a common graph (note we already have added labels and probabilities to the data):
+
+```{r}
+library(ggplot2)
+
+table(sp$label)
+table(sp$label) / sum(table(sp$label))
+
+ggplot(data = sp, aes(AuthorTimeObj, color=label, fill=label)) +
+  geom_density(alpha = .5)
+```
+
+Note how we also show the ratios for each activity, those are important for when we plot the densities together, as those need to be scaled according to the ratios (this is not taken care of in the previous plot).
+
+On the x-axis we have the authoring time of each commit, as unix-timestamp or date. It appears there was some more activity after the project's end (there should be nothing after mid August), and we will go ahead and discard that.
+
+```{r}
+#sp <- sp[sp$AuthorTimeUnixEpochSecs < 1.597e9, ]
+sp <- sp[sp$AuthorTimeObj < as.POSIXct(strptime("2020-08-31", format = "%Y-%m-%d")), ]
+```
+
+
+```{r}
+densitySafe <- function(data, ratio = 1) {
+  d <- stats::density(data)
+  f <- stats::approxfun(x = d$x, y = d$y)
+  r <- range(d$x)
+  f1 <- Vectorize(function(x) {
+    if (x < r[1] || x > r[2]) 0 else f(x) * ratio
+  })
+  attributes(f1) <- list(
+    min = r[1], max = r[2], ratio = ratio, ymax = max(d$y) * ratio)
+  f1
+}
+```
+
+Let's estimate the safe densities for each activity separately and show them together in one plot:
+
+```{r}
+acp_ratios <- table(sp$label) / sum(table(sp$label))
+
+dens_a <- densitySafe(sp[sp$label == "a", ]$AuthorTimeUnixEpochSecs, acp_ratios[["a"]])
+dens_c <- densitySafe(sp[sp$label == "c", ]$AuthorTimeUnixEpochSecs, acp_ratios[["c"]])
+dens_p <- densitySafe(sp[sp$label == "p", ]$AuthorTimeUnixEpochSecs, acp_ratios[["p"]])
+
+curve(dens_a, from = attributes(dens_a)$min, to = attributes(dens_a)$max)
+curve(dens_c, from = attributes(dens_c)$min, to = attributes(dens_c)$max, add = TRUE)
+curve(dens_p, from = attributes(dens_p)$min, to = attributes(dens_p)$max, add = TRUE)
+```
+```{r}
+acp_attr <- rbind(
+  data.frame(attributes(dens_a)),
+  data.frame(attributes(dens_c)),
+  data.frame(attributes(dens_p)))
+
+# Aggregate corrective+perfective:
+dens_cp <- function(x) dens_c(x) + dens_p(x)
+dens_acp <- densitySafe(sp$AuthorTimeUnixEpochSecs, ratio = 1)
+
+ggplot(data.frame(x = range(acp_attr)), aes(x)) +
+  stat_function(fun = dens_a, aes(color="A"), size = 1, n = 1e3) +
+  stat_function(fun = dens_acp, aes(color="A+C+P"), size = 1, n = 1e3) +
+  stat_function(fun = dens_c, aes(color="C"), size = 1, n = 1e3) +
+  stat_function(fun = dens_p, aes(color="P"), size = 1, n = 1e3) +
+  scale_color_brewer("Patterns", palette = "Dark2") +
+  #scale_color_manual("Patterns", values = c("black", "red", "blue", "green")) +
+  theme_light() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "bottom")
+```
+
+
+
+
+
+
+
+
+
+
+
+
