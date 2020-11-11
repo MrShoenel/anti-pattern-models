@@ -1,0 +1,85 @@
+---
+title: "DTW Optimization tests"
+bibliography: ../inst/REFERENCES.bib
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  word_document: default
+---
+
+```{r}
+source("../helpers.R")
+```
+
+In this notebook, we want to test whether we can find optimal parameters for `dtw` using optimization, so that we maximize the scores extracted from the warp. We want to also impose some linear inequality constraints.
+
+
+# Constrained Optimization test
+
+We want to make some tests with `stats::constrOptim()` to better understand how it works and how we have to specify our problem.
+
+```{r}
+# The reference is defined in this interval.
+# Also, we are allowed to move the shorter query
+# within it (1st degree of freedom)
+co_interval <- seq(0, 2*pi, len=200)
+co_range <- range(co_interval)
+
+co_ref <- sin(seq(0, 2*pi, len=200))
+# We design it to have the corresponding length
+co_query <- 2*sin(seq(.4*pi, 1.6*pi, len=1.2/2 * 200))
+
+
+co_fr <- function(x) {
+  cut_in <- x[1]
+  cut_out <- x[2]
+  stretch <- x[3]
+  
+  sum((co_query - (stretch * sin(seq(cut_in * pi, cut_out * pi, len=120))))^2)
+}
+
+optim(fn = co_fr, par = c(0, 2, .1), method = "BFGS")
+```
+
+Let's try this constrained. Through the above result we know that the optimized parameters are very close to the actual optimum. However, let's constrain some of these parameters to less optimal extrema.
+
+```{r}
+theta <- c(0, 2, .1) # in,out,stretch
+ui <- rbind(
+  c(0, 0, -1)
+)
+ci <- c(-1.7) # stretch < 1.7
+
+ui %*% theta - ci
+
+#constrOptim(theta = theta, f = co_fr, grad = NULL, ui = ui, ci = ci)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
