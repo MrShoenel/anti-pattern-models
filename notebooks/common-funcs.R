@@ -370,8 +370,8 @@ stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
 }
 
 #' https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
-stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4) {
-  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sampleOnError = TRUE) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   tol <- 1e-8
   
   M <- function(x) 1/2 * (f1(x) + f2(x))
@@ -398,7 +398,18 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4) {
     stats::integrate(
       f = JSD, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
   }, error = function(cond) {
-    warning(cond)
+    c1 <- cond
+    if (sampleOnError) {
+      return(tryCatch({
+        mean(abs(stats::na.exclude(
+          sapply(seq(0, 1, len=numSamples), JSD))))
+      }, error = function(cond) {
+        warning(c1)
+        warning(cond)
+        return(NA)
+      }))
+    }
+    warning(c1)
     return(NA)
   })
   
