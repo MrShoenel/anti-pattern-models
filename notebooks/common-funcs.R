@@ -59,7 +59,8 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       y = dtwAlign$index2
     )
   )
-  if (tempLm$coefficients[2] < .1) {
+  # Note the slope of the warping function is never negative..
+  if (stats::coef(tempLm)["x"] < .1) {
     # The slope is less than 0.1.
     # It is very flat, let's check the values in the co-domain:
     if (((max(dtwAlign$index2) - min(dtwAlign$index2)) / nrow(dtwAlign$reference)) < .1) {
@@ -105,6 +106,16 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       ))
     }
   }
+  
+  # Also, we want to do a simple linear regression over the entire window.
+  # This is often needed to, e.g., check the slope of the signal within it.
+  windowLm <- stats::lm(
+    formula = y ~ x, data = data.frame(
+      x = 1:length(window),
+      y = window
+    )
+  )
+  windowLmCoef <- stats::coef(windowLm)
   
   if (idxMethod == "discrete") {
     # Here we store all indices that have a next index that has a value
@@ -180,6 +191,13 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       var = stats::var(warp_rel_res),
       mae = mean(abs(warp_rel_res)),
       rmse = sqrt(mean(warp_rel_res^2))
+    ),
+    
+    window_info = list(
+      lm = windowLm,
+      mean = mean(window),
+      slope = windowLmCoef["x"],
+      intercept = windowLmCoef["(Intercept)"]
     ),
     
     indices = indices,
