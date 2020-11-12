@@ -98,37 +98,50 @@ co_dtw <- function(x) {
     dtwAlign = comp_dtw, window = comp_win, throwIfFlat = FALSE)
   
   org_f <- pattern_approxfun(org_signal$y)
-  # We want to optimize the mapped function, not the one represented by the windown
+  # We want to optimize the mapped function, not the one represented by the window
   comp_f <- pattern_approxfun(comp_ex$data, yLimits = range(org_signal$y))
   
   warp_dtw <- pattern_approxfun_warp(dtwAlign = comp_dtw)
   warp_org_f <- warp_dtw$f_warp_org
   warp_opt_f <- warp_dtw$f_warp_np_opt
+  # Turns out using these instead does not work as good (slightly worse).
+  #warp_org_f <- warp_dtw$f_warp
+  #warp_opt_f <- warp_dtw$f_lm
   
   # Align scores:
-  score_jsd = 1 - (stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value / log(2))
-  score_area = 1 - area_diff_2_functions(org_f, comp_f)$value
-  score_corr = max(0, stat_diff_2_functions_cor(org_f, comp_f)$value)
+  #score_jsd <- (1 - stat_diff_2_functions_symmetric_JSD(
+  #  org_f, comp_f)$value / log(2))^.3
+  score_area <- 1 - area_diff_2_functions(org_f, comp_f)$value
+  score_corr <- abs(stat_diff_2_functions_cor(org_f, comp_f)$value)
   
   # DTW scores:
-  score_dtw_mono = comp_ex$monotonicity
-  # The following is neither reliable nor does it seem to improve 
-  # the fit, we skip it for now entirely!
-#  score_dtw_jsd = tryCatch({
-#    1 - (stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value / log(2))
-#  }, error = function(cond) {
-#    0 # score is 0 if fails
-#  })
-  score_dtw_area = 1 - area_diff_2_functions(warp_org_f, warp_opt_f)$value
-  score_dtw_corr = max(0, stat_diff_2_functions_cor(warp_org_f, warp_opt_f)$value)
+  #score_dtw_jsd <- 1 - (stat_diff_2_functions_symmetric_JSD(
+  #  warp_org_f, warp_opt_f)$value / log(2))^.3
+  score_dtw_mono <- comp_ex$monotonicity
+  score_dtw_area <- 1 - area_diff_2_functions(warp_org_f, warp_opt_f)$value
+  score_dtw_corr <- abs(stat_diff_2_functions_cor(warp_org_f, warp_opt_f)$value)
   
-  # Remove * score_dtw_jsd
-  1 - (score_jsd * score_area * score_corr * score_dtw_mono * score_dtw_area * score_dtw_corr)
+  # This can be returned directly (should not be used with other scores).
+  jsd_ONLY_LOG_SCORE <- -1 *
+    log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
+    log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
+  return(jsd_ONLY_LOG_SCORE)
   
-  # We want a low diff_JSD
-  # and a high monotonicity
-  #diff_jsd #* (1 - comp_ex$monotonicity)
-  #diff_jsd #* area_diff_2_functions(org_f, comp_f)$value
+  # For testing, each score can be disabled here:
+  return(1 - (
+    1 *
+    # curve:
+    #score_jsd *
+    score_area *
+    score_corr *
+    # dtw:
+    #score_dtw_jsd *
+    score_dtw_mono *
+    score_dtw_area *
+    score_dtw_corr *
+    #comp_ex$warp_rel_resid$score *
+    1 
+  ))
 }
 ```
 
@@ -188,7 +201,9 @@ plot_2_functions(org_f, comp_f)
 
 The plot above should be compared to the second of the initial dtw-tests (matching with a window). However, it is a much better fit!
 
+After some tests, our suspicions are confirmed. Optimization can be performed using a combination of available low-level metrics. As low-level count all the statistical sampling metrics (area, correlation etc.). Combining these with the high-level JSD metric does not usually improve the fit. This probably also due to the JSD's score's low sensitivity. Pulling the 10th or 5th root improves this a bit.
 
+Using the JSD alone however also works, but then the score computation needs to be changed. It appears we get the most optimal fit when using the logarithm of the JSD (without log(2) normalization). The (not nomalized) JSD is always < 1, so the logarithm is always negative. When using minimization and both the JSDs of the curve and warp-function, one needs to multiply with -1 to maintain negativity.
 
 
 
