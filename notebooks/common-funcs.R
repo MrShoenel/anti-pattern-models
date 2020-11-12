@@ -336,13 +336,17 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
 #' Note that both functions must return strictly
 #' positive (including 0) values because of their
 #' use in the logarithm.
-stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
+stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4, sampleOnError = TRUE) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
   tol <- 1e-8
   
   PQ <- function(x) {
     f1x <- f1(x)
     f2x <- f2(x)
+    
+    f1x[is.na(f1x) | f1x < 0] <- 0
+    f2x[is.na(f2x) | f2x < 0] <- 0
+    
     if (all(f1x == 0) || all(f2x == 0)) {
       return(rep(0, length(x)))
     }
@@ -351,6 +355,10 @@ stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
   QP <- function(x) {
     f1x <- f1(x)
     f2x <- f2(x)
+    
+    f1x[is.na(f1x) | f1x < 0] <- 0
+    f2x[is.na(f2x) | f2x < 0] <- 0
+    
     if (all(f1x == 0) || all(f2x == 0)) {
       return(rep(0, length(x)))
     }
@@ -359,9 +367,22 @@ stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4) {
   
   
   temp$value <- tryCatch({
-    stats::integrate(f = PQ, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples), stop.on.error = FALSE)$value +
-      stats::integrate(f = QP, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples), stop.on.error = FALSE)$value
+    stats::integrate(f = PQ, lower = tol, upper = 1 - tol,
+                     subdivisions = 10^log10(numSamples),
+                     stop.on.error = FALSE)$value +
+    stats::integrate(f = QP, lower = tol, upper = 1 - tol,
+                     subdivisions = 10^log10(numSamples),
+                     stop.on.error = FALSE)$value
   }, error = function(cond) {
+    if (sampleOnError) {
+      s <- seq(0, 1, len=numSamples)
+      useVals <- sapply(s, PQ) - sapply(s, QP)
+      
+      if ((sum(is.na(useVals)) / numSamples) > (1 / (numSamples / 10))) {
+        stop("Cannot sample sufficient amount of values for KL-divergence.")
+      }
+      return(mean(abs(stats::na.exclude(useVals))))
+    }
     warning(cond)
     return(NA)
   })
