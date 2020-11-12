@@ -378,17 +378,30 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sample
   PM <- function(x) {
     f1x <- f1(x)
     mx <- M(x)
+    
+    f1x[is.na(f1x) | f1x < 0] <- 0
+    mx[is.na(mx) | mx < 0] <- 0
+    
+    # Note that log(0) is -Inf!
+    # Also, we must not divide by 0..
+    # We must not pass values < 0 to log either..
     if (all(f1x == 0) || all(mx == 0)) {
       return(rep(0, length(x)))
     }
+    
     return(f1x * log(f1x / mx))
   }
   QM <- function(x) {
     f2x <- f2(x)
     mx <- M(x)
+    
+    f2x[is.na(f2x) | f2x < 0] <- 0
+    mx[is.na(mx) | mx < 0] <- 0
+    
     if (all(f2x == 0) || all(mx == 0)) {
       return(rep(0, length(x)))
     }
+    
     return(f2x * log(f2x / mx))
   }
   
@@ -398,18 +411,14 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sample
     stats::integrate(
       f = JSD, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
   }, error = function(cond) {
-    c1 <- cond
     if (sampleOnError) {
-      return(tryCatch({
-        mean(abs(stats::na.exclude(
-          sapply(seq(0, 1, len=numSamples), JSD))))
-      }, error = function(cond) {
-        warning(c1)
-        warning(cond)
-        return(NA)
-      }))
+      useVals <- sapply(seq(0, 1, len=numSamples), JSD)
+      if ((sum(is.na(useVals)) / numSamples) > (1 / (numSamples / 10))) {
+        stop("Cannot sample sufficient amount of values from JSD.")
+      }
+      return(mean(abs(stats::na.exclude(useVals))))
     }
-    warning(c1)
+    warning(cond)
     return(NA)
   })
   
