@@ -2,12 +2,12 @@
 title: "DTW Optimization tests"
 bibliography: ../inst/REFERENCES.bib
 output:
-  pdf_document:
-    number_sections: true
+  md_document:
     toc: true
     toc_depth: 6
     df_print: kable
-  md_document:
+  pdf_document:
+    number_sections: true
     toc: true
     toc_depth: 6
     df_print: kable
@@ -22,6 +22,7 @@ output:
 
 ```{r}
 source("../helpers.R")
+source("./common-funcs.R", echo = FALSE)
 ```
 
 In this notebook, we want to test whether we can find optimal parameters for `dtw` using optimization, so that we maximize the scores extracted from the warp. We want to also impose some linear inequality constraints.
@@ -76,10 +77,48 @@ constrOptim(theta = theta, f = co_fr, grad = NULL, ui = ui, ci = ci)
 
 Ok, we have now done a dummy example using constraints on multiple parameters. Let's do an actual example where we optimize the `dtw`. In particular, let's optimize the window we used for the very first example in the 'dtw-tests.Rmd' notebook. We will try to optimize the (relative) monotonicity of the warping function, as well as the cut-in/-out points (which correspond to the window size).
 
+The noisy- and org-signal:
+
+```{r}
+set.seed(1)
+
+d <- density(rnorm(500), n = 256)
+
+noisy_signal <- list(
+  x = 1:(length(d$x) + 768),
+  y = c(
+    # Add random noise before:
+    rnorm(n = 256, sd = 0.05) + (0.05 * rexp(n = 256)),
+    # Add the actual signal with some noise:
+    d$y + rnorm(n = length(d$x), sd = 0.05),
+    # Add random noise after:
+    rnorm(n = 512, sd = 0.05) + (0.15 * runif(n = 512))
+  )
+)
+
+if (min(noisy_signal$y) < 0) {
+  noisy_signal$y <- noisy_signal$y + abs(min(noisy_signal$y))
+}
+
+set.seed(2)
+
+d1 <- density(rnorm(500, mean = 3), n = 256)
+
+org_signal <- list(
+  x = 1:length(d1$x),
+  y = d1$y
+)
+```
+
+
 ```{r}
 co_dtw <- function(x) {
   cut_in <- x[1]
   cut_out <- x[2]
+  
+  if (cut_in > cut_out) {
+    return(0)
+  }
   
   # define the window using the cuts:
   l <- length(noisy_signal$y)
@@ -205,6 +244,58 @@ After some tests, our suspicions are confirmed. Optimization can be performed us
 
 Using the JSD alone however also works, but then the score computation needs to be changed. It appears we get the most optimal fit when using the logarithm of the JSD (without log(2) normalization). The (not nomalized) JSD is always < 1, so the logarithm is always negative. When using minimization and both the JSDs of the curve and warp-function, one needs to multiply with -1 to maintain negativity.
 
+
+```{r}
+library(foreach)
+
+z <- loadResultsOrCompute("../results/dtw-optim.rds", computeExpr = {
+  doWithParallelCluster({
+    g <- matrix(nrow = 100, ncol = 100)
+    g_rows <- expand.grid(
+      row = 1:nrow(g),
+      col = 1:ncol(g)
+    )
+    val_range <- seq(0, 1, len=nrow(g))
+    g_rows$r <- 0
+    
+    temp <- foreach::foreach(
+      gIdx = rownames(g_rows),
+      .packages = c("dtw")
+    ) %dopar% {
+      r <- g_rows[gIdx, ]
+      x_param <- c(val_range[r$row], val_range[r$col])
+      res <- tryCatch({
+        co_dtw(x_param)
+      }, error=function(cond) 0)
+      
+      list(
+        idx = gIdx,
+        res = res
+      )
+    }
+    
+    for (k in 1:length(temp)) {
+      r <- g_rows[temp[[k]]$idx, ]
+      g[r$row, r$col] <- temp[[k]]$res
+    }
+    
+    g
+  })
+})
+```
+
+Let's show the results' search space. Remember our optimal solution is at `r co_dtw_res$par` (cut-in/-out). Also, the graph below will show better results located on the diagonal, which are invalid, because we have imposed constraints to guarantee a minimum distance between in/out, which invalidates all these results.
+
+```{r}
+z[z < -1e10 | is.na(z)] <- 0 
+
+cut_out <- seq(0, 1, len=nrow(z))
+cut_in <- seq(0, 1, len=ncol(z))
+suppressWarnings({
+  image(cut_out, cut_in, log(-1 * t(z)), xlim = c(0.2, .7), ylim = c(0.1, .5))
+  contour(cut_out, cut_in, log(-1 * t(z)), add = TRUE)
+})
+```
 
 
 
