@@ -147,6 +147,15 @@ co_dtw <- function(x) {
   #warp_org_f <- warp_dtw$f_warp
   #warp_opt_f <- warp_dtw$f_lm
   
+  
+  ############## TEST with only KL-div
+  #temp1 <- stat_diff_2_functions_symmetric_KL(org_f, comp_f)$value^.2
+  #temp2 <- stat_diff_2_functions_symmetric_KL(warp_org_f, warp_opt_f)$value^.2
+  #kl_ONLY_SCORE <- temp1 * temp2
+  #return(kl_ONLY_SCORE)
+  ############## /TEST
+  
+  
   # Align scores:
   #score_jsd <- (1 - stat_diff_2_functions_symmetric_JSD(
   #  org_f, comp_f)$value / log(2))^.3
@@ -165,7 +174,8 @@ co_dtw <- function(x) {
     log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
     log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
   return(jsd_ONLY_LOG_SCORE)
-  
+
+  ######## GETS HERE ONLY IF THE PREVIOUS RETURN IS NOT COMMENTED OUT  
   # For testing, each score can be disabled here:
   return(1 - (
     1 *
@@ -243,6 +253,8 @@ The plot above should be compared to the second of the initial dtw-tests (matchi
 After some tests, our suspicions are confirmed. Optimization can be performed using a combination of available low-level metrics. As low-level count all the statistical sampling metrics (area, correlation etc.). Combining these with the high-level JSD metric does not usually improve the fit. This probably also due to the JSD's score's low sensitivity. Pulling the 10th or 5th root improves this a bit.
 
 Using the JSD alone however also works, but then the score computation needs to be changed. It appears we get the most optimal fit when using the logarithm of the JSD (without log(2) normalization). The (not nomalized) JSD is always < 1, so the logarithm is always negative. When using minimization and both the JSDs of the curve and warp-function, one needs to multiply with -1 to maintain negativity.
+
+Using only the symmetric KL-divergence does seem to only converge to a near local minimum. It may be the case that it cannot cover enough properties of the functions or that the objective is not sensitive enough.
 
 
 ```{r}
