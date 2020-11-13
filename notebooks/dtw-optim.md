@@ -1,4 +1,6 @@
 -   [Constrained Optimization test](#constrained-optimization-test)
+-   [Constrained optimization of a
+    DTW](#constrained-optimization-of-a-dtw)
 
     source("../helpers.R")
     source("./common-funcs.R", echo = FALSE)
@@ -12,7 +14,9 @@ Constrained Optimization test
 =============================
 
 We want to make some tests with `stats::constrOptim()` to better
-understand how it works and how we have to specify our problem.
+understand how it works and how we have to specify our problem. Let’s
+find the optimal parameters first by using *unconstrained* optimization
+using `optim()`.
 
     # The reference is defined in this interval.
     # Also, we are allowed to move the shorter query
@@ -98,6 +102,9 @@ let’s constrain some of these parameters to less optimal extrema.
     ## $barrier.value
     ## [1] -0.0004127808
 
+Constrained optimization of a DTW
+=================================
+
 Ok, we have now done a dummy example using constraints on multiple
 parameters. Let’s do an actual example where we optimize the `dtw`. In
 particular, let’s optimize the window we used for the very first example
@@ -136,7 +143,12 @@ The noisy- and org-signal:
       y = d1$y
     )
 
-    co_dtw <- function(x) {
+Let’s define the objective function that computes scores and then
+aggregates them to one result. This method is designed with an
+experimental background, such that we can enable or disable specific
+scores, or use arguments to change the computation entirely.
+
+    co_dtw <- function(x, useOnlyKL = FALSE, useOnlyJSD = FALSE) {
       cut_in <- x[1]
       cut_out <- x[2]
       
@@ -171,6 +183,23 @@ The noisy- and org-signal:
       #warp_org_f <- warp_dtw$f_warp
       #warp_opt_f <- warp_dtw$f_lm
       
+      
+      if (useOnlyKL) {
+        temp1 <- stat_diff_2_functions_symmetric_KL(org_f, comp_f)$value^.2
+        temp2 <- stat_diff_2_functions_symmetric_KL(warp_org_f, warp_opt_f)$value^.2
+        kl_ONLY_SCORE <- temp1 * temp2
+        return(kl_ONLY_SCORE)
+      }
+      
+      # This can be returned directly (should not be used with other scores).
+      if (useOnlyJSD) {
+        jsd_ONLY_LOG_SCORE <- -1 *
+          log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
+          log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
+        return(jsd_ONLY_LOG_SCORE)
+      }
+      
+      
       # Align scores:
       #score_jsd <- (1 - stat_diff_2_functions_symmetric_JSD(
       #  org_f, comp_f)$value / log(2))^.3
@@ -183,14 +212,8 @@ The noisy- and org-signal:
       score_dtw_mono <- comp_ex$monotonicity
       score_dtw_area <- 1 - area_diff_2_functions(warp_org_f, warp_opt_f)$value
       score_dtw_corr <- abs(stat_diff_2_functions_cor(warp_org_f, warp_opt_f)$value)
-      
-      # This can be returned directly (should not be used with other scores).
-      jsd_ONLY_LOG_SCORE <- -1 *
-        log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
-        log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
-      return(jsd_ONLY_LOG_SCORE)
-      
-      # For testing, each score can be disabled here:
+
+      # For testing, each score may be disabled here:
       return(1 - (
         1 *
         # curve:
@@ -206,6 +229,12 @@ The noisy- and org-signal:
         1 
       ))
     }
+
+The constraints for optimizing the DTW are rather straightforward.
+First, we want to make sure that the window has a minimum size and that
+the cut-out is therefore always larger by a small constant value than
+the cut-in. Then, we need to specify the cut-in to greater than (or
+equal to) 0, and the cut-out to be less than (or equal to) 1.
 
     theta_dtw <- c(0 + 1e-15, 1 - 1e-15) # in,out
 
@@ -239,8 +268,10 @@ The noisy- and org-signal:
     ## [2,] 9.992007e-16
     ## [3,] 9.000000e-01
 
-    co_dtw_res <- constrOptim(
-      theta = theta_dtw, f = co_dtw, grad = NULL, ui = ui_dtw, ci = ci_dtw)
+    co_dtw_res <- loadResultsOrCompute("../results/dtw-constr-optim.rds", computeExpr = {
+      constrOptim(
+        theta = theta_dtw, f = co_dtw, grad = NULL, ui = ui_dtw, ci = ci_dtw, useOnlyJSD = TRUE)
+    })
     co_dtw_res$par
 
     ## [1] 0.2939301 0.4875219
@@ -248,6 +279,12 @@ The noisy- and org-signal:
     co_dtw_res$value
 
     ## [1] -27.96735
+
+Note that `co_dtw_res$par` holds the optimized parameters for which the
+objective function returned the minimum value (since we are doing
+minimization). Also note, depending on what we minimize, these values
+may have different meaning (for example, when using scores, the range is
+\[0, 1\], and when using `useOnlyJSD = TRUE` it is \[ − ∞, 0\]).
 
     l <- length(noisy_signal$y)
     use_win <- noisy_signal$y[
@@ -290,6 +327,11 @@ the logarithm of the JSD (without log(2) normalization). The (not
 nomalized) JSD is always &lt; 1, so the logarithm is always negative.
 When using minimization and both the JSDs of the curve and
 warp-function, one needs to multiply with -1 to maintain negativity.
+
+Using only the symmetric KL-divergence does seem to only converge to a
+near local minimum. It may be the case that it cannot cover enough
+properties of the functions or that the objective is not sensitive
+enough.
 
     library(foreach)
 
@@ -344,3 +386,19 @@ which invalidates all these results.
     })
 
 ![](dtw-optim_files/figure-markdown_strict/unnamed-chunk-9-1.png)
+
+Since the KL-divergence was not able to converge to the same optimum,
+let’s plot the heatmap for it, too.
+
+    # We have computed this previously
+    z_KL <- readRDS("../results/dtw-optim-onlyKL.rds")
+    z_KL[z_KL < -1e10 | is.na(z_KL)] <- 0 
+
+    cut_out <- seq(0, 1, len=nrow(z_KL))
+    cut_in <- seq(0, 1, len=ncol(z_KL))
+    suppressWarnings({
+      image(cut_out, cut_in, log(1+t(z_KL)))#, xlim = c(0.5, 1), ylim = c(0, .5))
+      contour(cut_out, cut_in, log(1+t(z_KL)), add = TRUE)
+    })
+
+![](dtw-optim_files/figure-markdown_strict/unnamed-chunk-10-1.png)
