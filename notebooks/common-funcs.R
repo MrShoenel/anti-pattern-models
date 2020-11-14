@@ -332,6 +332,54 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
   return(temp)
 }
 
+
+#' Performs linear regression on both functions. Returns
+#' everything and already contains some additional properties:
+#' - angle: the angle between the two LMs in radians. It
+#'   is in the range [pi,-pi]. It is positive if f1 has a
+#'   steeper slope than f2; negative, otherwise.
+#' - intersect: NA if the two LMs do not intersect in the
+#'   unit square. Otherwise, the x-coordinate of it.
+#' - lm1, lm2: the LMs for f1 and f2. Those can be used
+#'   for, e.g., extracting the residuals.
+stat_diff_2_functions_lm <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  itv <- seq(0, 1, len = sum(idx))
+  
+  lm1 <- stats::lm(
+    formula = y ~ x, data = list(x = itv, y = temp$dataF1[idx]))
+  lm2 <- stats::lm(
+    formula = y ~ x, data = list(x = itv, y = temp$dataF2[idx]))
+  
+  vec1 <- c(1,
+            stats::predict(lm1, newdata = list(x = c(1))) -
+            stats::predict(lm1, newdata = list(x = c(0))))
+  vec2 <- c(1,
+            stats::predict(lm2, newdata = list(x = c(1))) -
+            stats::predict(lm2, newdata = list(x = c(0))))
+  
+  # This would always be positive. However, we want to return
+  # a negative value if slope(f1) < slope(f2)
+  isNeg <- if (stats::coef(lm1)[["x"]] < stats::coef(lm2)[["x"]]) -1 else 1
+  
+  # Also include if the two models cross over (their lines intersect).
+  # stats::uniroot() throws an error if 
+  int <- rootSolve::uniroot.all(function(z) {
+    stats::predict(lm1, newdata = list(x = z)) - stats::predict(lm2, newdata = list(x = z))
+  }, interval = c(0, 1))
+  
+  temp$value <- list(
+    lm1 = lm1,
+    lm2 = lm2,
+    angle = isNeg * acos(sum(vec1 * vec2) / (sqrt(sum(vec1^2)) * sqrt(sum(vec2^2)))),
+    intersect = if (length(int) == 0) NA else int
+  )
+  
+  return(temp)
+}
+
+
 #' This is the symmetric KL-divergence
 #' Note that both functions must return strictly
 #' positive (including 0) values because of their
