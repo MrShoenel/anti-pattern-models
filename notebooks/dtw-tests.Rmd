@@ -1011,6 +1011,47 @@ A two-paper/article approach that potentially allows both groups to focus on the
 
 
 
+# Further thoughts
+
+From signal processing, we get more potential low-levels metrics that can quantify the differences between two functions, if we view them as signals. Below there are also some implementations and more references.
+
+We found the work from [@xi2000bearing], [@rauber2010pattern] useful for these. Especially in the latter they offer some descriptions of what these low-level metrics measure. We could probably implement some of these for comparing two signals, by measuring how different the values are (because these metrics are calculated on each signal separately).
+
+The paper by [@efrat2007curve] is dedicated to curve matching and discusses in detail metrics that we should definitely look at (and partially already have).
+
+I have only skimmed [@maldonado2002similarity], but it seems they have developed some feasible practical solutions to comparing curves -- needs further checking.
+
+The Nash-Sutcliffe efficiency (NSE) could be used as a metric directly[^1]. While it has no lower bound, it has an upper. 1 is a perfect match, and 0 means that the resemblance of the query to the reference is as good as the mean of the reference would be. Negative values mean that the query is a worse resemblance than the mean.
+
+[^1]: https://agrimetsoft.com/calculators/Nash%20Sutcliffe%20model%20Efficiency%20coefficient#
+
+```{r}
+# The following functions were implemented from [@xi2000bearing].
+
+RMS <- function(vec) {
+  l <- length(vec)
+  m <- mean(vec)
+  sqrt(1 / l * sum((vec - m)^2))
+}
+
+Kurtosis <- function(vec) {
+  l <- length(vec)
+  m <- mean(vec)
+  (1 / l * sum((vec - m)^4)) / RMS(vec)
+}
+
+Peak <- function(vec) {
+  .5 * (max(vec) - min(vec))
+}
+
+ImpulseFactor <- function(vec) {
+  l <- length(vec)
+  Peak(vec) / (1 / l * sum(abs(vec)))
+}
+```
+
+
+
 
 # References {-}
 

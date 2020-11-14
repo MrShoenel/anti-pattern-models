@@ -32,6 +32,7 @@
 -   [Ideas for Publication](#ideas-for-publication)
     -   [One larger article](#one-larger-article)
     -   [Making two articles/papers](#making-two-articlespapers)
+-   [Further thoughts](#further-thoughts)
 -   [References](#references)
 
 In this notebook we want to test whether we can detect patterns in noisy
@@ -1291,12 +1292,79 @@ collaboration.
     -   Part of UWB’s evaluation could also focus on which anti-patterns
         LNU’s model can support detecting.
 
+Further thoughts
+================
+
+From signal processing, we get more potential low-levels metrics that
+can quantify the differences between two functions, if we view them as
+signals. Below there are also some implementations and more references.
+
+We found the work from (Xi, Sun, and Krishnappa 2000), (Rauber et al.
+2010) useful for these. Especially in the latter they offer some
+descriptions of what these low-level metrics measure. We could probably
+implement some of these for comparing two signals, by measuring how
+different the values are (because these metrics are calculated on each
+signal separately).
+
+The paper by (Efrat, Fan, and Venkatasubramanian 2007) is dedicated to
+curve matching and discusses in detail metrics that we should definitely
+look at (and partially already have).
+
+I have only skimmed (Maldonado et al. 2002), but it seems they have
+developed some feasible practical solutions to comparing curves – needs
+further checking.
+
+The Nash-Sutcliffe efficiency (NSE) could be used as a metric
+directly[1]. While it has no lower bound, it has an upper. 1 is a
+perfect match, and 0 means that the resemblance of the query to the
+reference is as good as the mean of the reference would be. Negative
+values mean that the query is a worse resemblance than the mean.
+
+    # The following functions were implemented from [@xi2000bearing].
+
+    RMS <- function(vec) {
+      l <- length(vec)
+      m <- mean(vec)
+      sqrt(1 / l * sum((vec - m)^2))
+    }
+
+    Kurtosis <- function(vec) {
+      l <- length(vec)
+      m <- mean(vec)
+      (1 / l * sum((vec - m)^4)) / RMS(vec)
+    }
+
+    Peak <- function(vec) {
+      .5 * (max(vec) - min(vec))
+    }
+
+    ImpulseFactor <- function(vec) {
+      l <- length(vec)
+      Peak(vec) / (1 / l * sum(abs(vec)))
+    }
+
 References
 ==========
+
+Efrat, Alon, Quanfu Fan, and Suresh Venkatasubramanian. 2007. “Curve
+Matching, Time Warping, and Light Fields: New Algorithms for Computing
+Similarity Between Curves.” *Journal of Mathematical Imaging and Vision*
+27 (3): 203–16.
+<http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.118.5078&rep=rep1&type=pdf>.
 
 Giorgino, Toni. 2009. “Computing and Visualizing Dynamic Time Warping
 Alignments in R: The dtw Package.” *Journal of Statistical Software* 31
 (7): 1–24. <https://doi.org/10.18637/jss.v031.i07>.
+
+Maldonado, Yolanda MuÑoz, Joan G Staniswalis, Louis N Irwin, and Donna
+Byers. 2002. “A Similarity Analysis of Curves.” *Canadian Journal of
+Statistics* 30 (3): 373–81. <https://doi.org/10.2307/3316142>.
+
+Rauber, Thomas W, Eduardo Mendel do Nascimento, Estefhan D Wandekokem,
+Flavio M Varejao, and A Herout. 2010. “Pattern Recognition Based Fault
+Diagnosis in Industrial Processes: Review and Application.” *Pattern
+Recognition Recent Advances*, 483–508.
+<https://cdn.intechopen.com/pdfs-wm/10675.pdf>.
 
 Silva, Jorge, and Shrikanth Narayanan. 2006. “Upper Bound
 Kullback-Leibler Divergence for Hidden Markov Models with Application as
@@ -1308,3 +1376,10 @@ Longitudinal Study of Static Analysis Warning Evolution and the Effects
 of Pmd on Software Quality in Apache Open Source Projects.” *Empirical
 Software Engineering*, 1–56.
 <https://doi.org/10.1007/s10664-020-09880-1>.
+
+Xi, Fengfeng, Qiao Sun, and Govindappa Krishnappa. 2000. “Bearing
+Diagnostics Based on Pattern Recognition of Statistical Parameters.”
+*Journal of Vibration and Control* 6 (3): 375–92.
+<http://www.acoustics.asn.au/conference_proceedings/ICSVS-1997/pdf/scan/sv970356.pdf>.
+
+[1] <a href="https://agrimetsoft.com/calculators/Nash%20Sutcliffe%20model%20Efficiency%20coefficient#" class="uri">https://agrimetsoft.com/calculators/Nash%20Sutcliffe%20model%20Efficiency%20coefficient#</a>
