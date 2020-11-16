@@ -190,7 +190,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       sd = stats::sd(warp_res),
       var = stats::var(warp_res),
       mae = mean(abs(warp_res)),
-      rmse = sqrt(mean(warp_res^2))
+      rmse = sqrt(mean(sum(warp_res^2)))
     ),
     warp_rel_resid = list(
       lm = warpLm_rel,
@@ -198,7 +198,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       sd = stats::sd(warp_rel_res),
       var = stats::var(warp_rel_res),
       mae = mean(abs(warp_rel_res)),
-      rmse = sqrt(mean(warp_rel_res^2))
+      rmse = sqrt(mean(sum(warp_rel_res^2)))
     ),
     
     window_info = list(
@@ -315,26 +315,26 @@ stat_diff_2_functions_cor_spearman <- function(f1, f2, numSamples = 1e4) {
 }
 
 stat_diff_2_functions_var <- function(f1, f2, numSamples = 1e4) {
-  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   temp$value <- stats::var(temp$dataF1 - temp$dataF2, na.rm = TRUE)
   return(temp)
 }
 
 stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
-  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   temp$value <- stats::sd(temp$dataF1 - temp$dataF2, na.rm = TRUE)
   return(temp)
 }
 
 stat_diff_2_functions_mae <- function(f1, f2, numSamples = 1e4) {
-  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
   temp$value <- mean(abs(temp$dataF1[idx] - temp$dataF2[idx]))
   return(temp)
 }
 
 stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
-  temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
   temp$value <- Metrics::rmse(temp$dataF1[idx], temp$dataF2[idx])
   return(temp)
