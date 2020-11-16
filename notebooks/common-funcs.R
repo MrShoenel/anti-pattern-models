@@ -190,7 +190,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       sd = stats::sd(warp_res),
       var = stats::var(warp_res),
       mae = mean(abs(warp_res)),
-      rmse = sqrt(mean(sum(warp_res^2)))
+      rmse = sqrt(sum(mean(warp_res^2)))
     ),
     warp_rel_resid = list(
       lm = warpLm_rel,
@@ -198,7 +198,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       sd = stats::sd(warp_rel_res),
       var = stats::var(warp_rel_res),
       mae = mean(abs(warp_rel_res)),
-      rmse = sqrt(mean(sum(warp_rel_res^2)))
+      rmse = sqrt(sum(mean(warp_rel_res^2)))
     ),
     
     window_info = list(
