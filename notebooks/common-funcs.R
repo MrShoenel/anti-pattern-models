@@ -1,4 +1,4 @@
-pattern_approxfun <- function(yData, smooth = FALSE, yLimits = range(yData)) {
+pattern_approxfun <- function(yData, smooth = FALSE, yLimits = c(0, 1), smoothSpan = .15) {
   if (all(yData == 0)) {
     return(approxfun(
       x = c(0, 1),
@@ -7,10 +7,10 @@ pattern_approxfun <- function(yData, smooth = FALSE, yLimits = range(yData)) {
   }
   
   if (smooth) {
-    temp <- loess.smooth(
+    temp <- stats::loess.smooth(
       x = 1:length(yData),
       y = yData,
-      span = 0.15
+      span = smoothSpan
     )
     
     yData <- temp$y
@@ -24,14 +24,22 @@ pattern_approxfun <- function(yData, smooth = FALSE, yLimits = range(yData)) {
   yData <- yData / max(yData)
   
   if (!missing(yLimits)) {
-    # Scale Y into that range:
+    # Scale Y into the requested range:
     yData <- yData * (max(yLimits) - min(yLimits)) + min(yLimits)
   }
   
-  return(stats::approxfun(
+  f <- stats::approxfun(
     x = xData,
     y = yData
-  ))
+  )
+  
+  return(function(x) {
+    if (x < 0 || x > 1) {
+      warning("Function used out of bounds [0,1], returning 0.")
+      return(0)
+    }
+    return(f(x))
+  })
 }
 
 
