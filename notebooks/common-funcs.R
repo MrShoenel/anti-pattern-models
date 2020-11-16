@@ -340,6 +340,66 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
   return(temp)
 }
 
+#' Conveniently, this function's co-domain is [0,1] for f1,f2
+#' defined in the unit-square.
+stat_diff_2_functions_frechet <- function(f1, f2, numSamples = 1e2) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples, statFunc = function(x, y) {
+    
+  })
+  temp$value <- SimilarityMeasures::Frechet(
+    traj1 = matrix(data = stats::na.exclude(temp$dataF1), ncol = 1),
+    traj2 = matrix(data = stats::na.exclude(temp$dataF2), ncol = 1))
+  return(temp)
+}
+
+#' Calculates the approximate arc-length of both functions using
+#' @seealso {pracma::poly_length()}. Returns both lengths as well
+#' as the ratio between f1's and f2's length. The ratio is < 1 if
+#' f1's length is shorter than f2's; > 1, otherwise. Ideally, the
+#' value hence is 1. The arc-length itself has no upper bound.
+#' 
+#' Note that numSamples should ideally be >= 1e5!
+stat_diff_2_functions_arclen <- function(f1, f2, numSamples = 1e5) {
+  temp <- stat_diff_2_functions(f1, f2, numSamples = numSamples)
+  x <- seq(0, 1, len = numSamples)
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  
+  arcLen1 <- pracma::poly_length(x = x, y = temp$dataF1[idx])
+  arcLen2 <- pracma::poly_length(x = x, y = temp$dataF2[idx])
+  
+  temp$arcLen1 <- arcLen1
+  temp$arcLen2 <- arcLen2
+  temp$value <- arcLen1 / arcLen2
+  return(temp)
+}
+
+#' Numerically approximates the gradient for both functions
+#' over the sampled interval. The result is one vector for
+#' each function with the slope at each evaluated x.
+stat_diff_2_functions_grad <- function(f1, f2, numSamples = 1e4) {
+  m <- matrix(ncol = 2, nrow = numSamples)
+  s <- seq(0, 1, len = numSamples)
+  
+  for (i in 1:numSamples) {
+    m[i, ] <- tryCatch({
+      c(
+        numDeriv::grad(f1, x = s[i]),
+        numDeriv::grad(f2, x = s[i])
+      )
+    }, error = function(cond) c(NA, NA))
+  }
+  
+  useRows <- stats::complete.cases(m)
+  if ((1 - (sum(useRows) / numSamples)) > (1 / (numSamples / 10))) {
+    stop("Cannot obtain sufficiently enough gradients.")
+  }
+  
+  list(
+    dataF1 = m[useRows, 1],
+    dataF2 = m[useRows, 2]
+  )
+}
+
 
 #' Performs linear regression on both functions. Returns
 #' everything and already contains some additional properties:
@@ -562,7 +622,7 @@ pattern_approxfun_warp <- function(dtwAlign, includeOptimizedAlign = TRUE) {
   
   return(list(
     # These two functions have been scaled and translated together, as the
-    # linear regression of the warping function is ALWAYS either larger or
+    # linear regression of the warping function may be either larger or
     # smaller than the warping function, and therefore the limits for the
     # warping function have to be adjusted. Only both functions together
     # have a domain of [0,1] and co-domain of [0,1].
