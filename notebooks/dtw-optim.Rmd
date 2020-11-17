@@ -152,18 +152,28 @@ co_dtw <- function(x, useOnlyKL = FALSE, useOnlyJSD = FALSE) {
   
   
   if (useOnlyKL) {
-    temp1 <- stat_diff_2_functions_symmetric_KL(org_f, comp_f)$value^.2
-    temp2 <- stat_diff_2_functions_symmetric_KL(warp_org_f, warp_opt_f)$value^.2
-    kl_ONLY_SCORE <- temp1 * temp2
-    return(kl_ONLY_SCORE)
+    return(
+      stat_diff_2_functions_symmetric_KL_sampled(org_f, comp_f)$value^.2 *
+      stat_diff_2_functions_symmetric_KL_sampled(warp_org_f, warp_opt_f)$value^.2
+    )
+#    temp1 <- stat_diff_2_functions_symmetric_KL(org_f, comp_f)$value^.2
+#    temp2 <- stat_diff_2_functions_symmetric_KL(warp_org_f, warp_opt_f)$value^.2
+#    kl_ONLY_SCORE <- temp1 * temp2
+#    return(kl_ONLY_SCORE)
   }
   
   # This can be returned directly (should not be used with other scores).
   if (useOnlyJSD) {
-    jsd_ONLY_LOG_SCORE <- -1 *
-      log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
-      log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
-    return(jsd_ONLY_LOG_SCORE)
+    # Note: It appears we can leave out scoring the warping function
+    # as we do it below, if the function comp_f was approximated over comp_win.
+    return(-1 *
+      log(stat_diff_2_functions_symmetric_JSD_sampled(org_f, comp_f)$value) *
+      log(stat_diff_2_functions_symmetric_JSD_sampled(warp_org_f, warp_opt_f)$value)
+    )
+#    jsd_ONLY_LOG_SCORE <- -1 *
+#      log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
+#      log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
+#    return(jsd_ONLY_LOG_SCORE)
   }
   
   
