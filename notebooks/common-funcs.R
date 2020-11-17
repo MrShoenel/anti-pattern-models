@@ -744,3 +744,35 @@ pattern_approxfun_warp <- function(dtwAlign, includeOptimizedAlign = TRUE) {
   ))
 }
 
+
+#' Uses 'warpTransRef' and 'warpTransQuery' from @seealso {extract_warping_from_dtw()}
+#' to generate functions in the unit-square. Generates two pairs of functions, one
+#' pair for the reference and one for the query. These pairs can be used to assess the
+#' goodness of match.
+get_dtw_scorable_functions <- function(dtwAlign, signalRef = NULL, signalQuery = NULL) {
+  ex <- extract_warping_from_dtw(
+    dtwAlign = dtwAlign, signalRef = signalRef, signalQuery = signalQuery)
+  
+  
+  range_ref <- range(signalRef, ex$warpTransRef)
+  extent_ref <- range_ref[2] - range_ref[1]
+  data_ref <- (signalRef - range_ref[1]) / extent_ref
+  data_ref_warp <- (ex$warpTransRef - range_ref[1]) / extent_ref
+  f_ref <- pattern_approxfun(yData = data_ref, yLimits = c(0, 1))
+  f_ref_warp <- pattern_approxfun(yData = data_ref_warp, yLimits = c(0, 1))
+  
+  range_q <- range(signalQuery, ex$warpTransQuery)
+  extent_q <- range_q[2] - range_q[1]
+  data_q <- (signalQuery - range_q[1]) / extent_q
+  data_q_warp <- (ex$warpTransQuery - range_q[1]) / extent_q
+  f_q <- pattern_approxfun(yData = data_q, yLimits = c(0, 1))
+  f_q_warp <- pattern_approxfun(yData = data_q_warp, yLimits = c(0, 1))
+  
+  return(list(
+    f_ref = f_ref,
+    f_ref_warp = f_ref_warp,
+    
+    f_query = f_q,
+    f_query_warp = f_q_warp
+  ))
+}
