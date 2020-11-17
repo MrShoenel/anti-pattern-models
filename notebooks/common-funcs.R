@@ -354,22 +354,22 @@ stat_diff_2_functions_frechet <- function(f1, f2, numSamples = 1e2) {
 
 #' Calculates the approximate arc-length of both functions using
 #' @seealso {pracma::poly_length()}. Returns both lengths as well
-#' as the ratio between f1's and f2's length. The ratio is < 1 if
-#' f1's length is shorter than f2's; > 1, otherwise. Ideally, the
-#' value hence is 1. The arc-length itself has no upper bound.
+#' as the ratio between f1's and f2's length. The ratio is < 0 if
+#' f1's length is shorter than f2's; > 0, otherwise. Ideally, the
+#' value hence is 0. The arc-length itself has no upper bound.
 #' 
 #' Note that numSamples should ideally be >= 1e5!
 stat_diff_2_functions_arclen <- function(f1, f2, numSamples = 1e5) {
   temp <- stat_diff_2_functions(f1, f2, numSamples = numSamples)
-  x <- seq(0, 1, len = numSamples)
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  x <- seq(0, 1, len = length(idx))
   
   arcLen1 <- pracma::poly_length(x = x, y = temp$dataF1[idx])
   arcLen2 <- pracma::poly_length(x = x, y = temp$dataF2[idx])
   
   temp$arcLen1 <- arcLen1
   temp$arcLen2 <- arcLen2
-  temp$value <- arcLen1 / arcLen2
+  temp$value <- 1 - (arcLen1 / arcLen2)
   return(temp)
 }
 
