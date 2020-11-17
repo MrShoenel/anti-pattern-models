@@ -448,6 +448,29 @@ stat_diff_2_functions_lm <- function(f1, f2, numSamples = 1e4) {
 }
 
 
+#' This function should be preferred over the other one,
+#' whenever there is doubt that the given functions f1,f2
+#' do not integrate to exactly one over the support [0,1].
+stat_diff_2_functions_symmetric_KL_sampled <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  
+  vec1 <- temp$dataF1[idx]
+  vec1 <- vec1 / sum(vec1)
+  vec2 <- temp$dataF2[idx]
+  vec2 <- vec2 / sum(vec2)
+  
+  temp$value <- suppressMessages({
+    philentropy::KL(
+      x = rbind(vec1, vec2), test.na = FALSE, unit = "log") +
+    philentropy::KL(
+      x = rbind(vec2, vec1), test.na = FALSE, unit = "log")
+  })
+  
+  return(temp)
+}
+
+
 #' This is the symmetric KL-divergence
 #' Note that both functions must return strictly
 #' positive (including 0) values because of their
@@ -505,6 +528,16 @@ stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4, sampleO
   
   return(temp)
 }
+
+
+#' This function should be preferred over the other one,
+#' whenever there is doubt that the given functions f1,f2
+#' do not integrate to exactly one over the support [0,1].
+stat_diff_2_functions_symmetric_JSD_sampled <- function(f1, f2, numSamples = 1e4) {
+  return(stat_diff_2_functions_philentropy_sampled(
+    f1 = f1, f2 = f2, numSamples = numSamples, method = "jensen-shannon"))
+}
+
 
 #' https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
 stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sampleOnError = TRUE) {
