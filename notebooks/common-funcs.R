@@ -673,15 +673,19 @@ extract_warping_from_dtw <- function(dtwAlign, signalRef, signalQuery) {
 #' removed.
 #'
 #' You may request an optimized align between the original warping
-#' function and its
-pattern_approxfun_warp <- function(dtwAlign, includeOptimizedAlign = TRUE) {
-  len <- length(dtwAlign$index2)
+#' function and its non-plateau version. The optimization moves the
+#' non-plateau version on the y-axis to minimize the residual sum of squares.
+#' 
+#' If given the reference- and query-signal, also returns the two warping-
+#' functions (one for reference, one for query) as known from the 3-way plot.
+pattern_approxfun_warp <- function(dtwAlign, includeOptimizedAlign = TRUE, signalRef = NULL, signalQuery = NULL) {
+  warpData <- dtwAlign$index2
+  len <- length(warpData)
   
   warpLm <- stats::lm(
     formula = y ~ x, data = data.frame(
-      x = 1:len, y = dtwAlign$index2))
+      x = 1:len, y = warpData))
   
-  warpData <- dtwAlign$index2
   linData <- stats::predict(warpLm, newdata = data.frame(x = 1:len))
   
   # The two vectors 'warpData' and 'linData' need to be scaled together.
@@ -701,7 +705,6 @@ pattern_approxfun_warp <- function(dtwAlign, includeOptimizedAlign = TRUE) {
   f_warp_np_opt <- NULL
   
   if (includeOptimizedAlign) {
-    
     optFunc <- function(offsetLm) {
       tempFunc <- function(x) f_warp_np(x) + offsetLm
       area_diff_2_functions(f_warp_org, tempFunc)$value
@@ -721,7 +724,7 @@ pattern_approxfun_warp <- function(dtwAlign, includeOptimizedAlign = TRUE) {
     })
   }
   
-  return(list(
+  res <- list(
     # These two functions have been scaled and translated together, as the
     # linear regression of the warping function may be either larger or
     # smaller than the warping function, and therefore the limits for the
@@ -740,8 +743,23 @@ pattern_approxfun_warp <- function(dtwAlign, includeOptimizedAlign = TRUE) {
     # The warping function w/o plateaus, and adjusted on the y-axis to
     # minimize the residual sum of squares between it and the original
     # warping function.
-    f_warp_np_opt = f_warp_np_opt
-  ))
+    f_warp_np_opt = f_warp_np_opt,
+    
+    # These two represent the warping functions as known from 3-way plot,
+    # both for the reference and the query.
+    f_warp_ref = NULL,
+    f_warp_query = NULL
+  )
+  
+  if (!missing(signalRef) && !missing(signalQuery)) {
+    ex_dtw <- extract_warping_from_dtw(
+      dtwAlign = dtwAlign, signalRef = signalRef, signalQuery = signalQuery)
+    
+    res$f_warp_ref <- pattern_approxfun(yData = ex_dtw$warpRef)
+    res$f_warp_query <- pattern_approxfun(yData = ex_dtw$warpQuery)
+  }
+  
+  return(res)
 }
 
 
