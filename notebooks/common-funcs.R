@@ -619,6 +619,22 @@ stat_diff_2_functions_philentropy_sampled <- function(f1, f2, numSamples = 1e4, 
   return(temp)
 }
 
+
+#' Calculates the discrete Cross-Entropy H(P,Q) by sampling from
+#' f1,f2, then normalizing the sampled data to sum up to 1.
+stat_diff_2_functions_cross_entropy <- function(f1, f2, numSamples = 1e4) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2) & temp$dataF1 > 0 & temp$dataF2 > 0
+  
+  vec1 <- temp$dataF1[idx]
+  vec1 <- vec1 / sum(vec1)
+  vec2 <- temp$dataF2[idx]
+  vec2 <- vec2 / sum(vec2)
+  
+  temp$value <- -sum(vec1 * log(vec2))
+  return(temp)
+}
+
 #' Estimates the warping function and overlays its linear regression.
 #' Then scales both function together to be in the unit square. These
 #' two functions can then be used with metrics such as stat_diff_2_functions_cor.
