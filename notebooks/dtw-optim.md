@@ -1,6 +1,7 @@
 -   [Constrained Optimization test](#constrained-optimization-test)
 -   [Constrained optimization of a
     DTW](#constrained-optimization-of-a-dtw)
+-   [Rectifying the warped query](#rectifying-the-warped-query)
 
     source("../helpers.R")
     source("./common-funcs.R", echo = FALSE)
@@ -174,7 +175,8 @@ scores, or use arguments to change the computation entirely.
       
       org_f <- pattern_approxfun(org_signal$y)
       # We want to optimize the mapped function, not the one represented by the window
-      comp_f <- pattern_approxfun(comp_ex$data, yLimits = range(org_signal$y))
+      #comp_f <- pattern_approxfun(comp_ex$data, yLimits = range(org_signal$y))
+      comp_f <- pattern_approxfun(comp_win)
       
       warp_dtw <- pattern_approxfun_warp(dtwAlign = comp_dtw)
       warp_org_f <- warp_dtw$f_warp_org
@@ -185,18 +187,28 @@ scores, or use arguments to change the computation entirely.
       
       
       if (useOnlyKL) {
-        temp1 <- stat_diff_2_functions_symmetric_KL(org_f, comp_f)$value^.2
-        temp2 <- stat_diff_2_functions_symmetric_KL(warp_org_f, warp_opt_f)$value^.2
-        kl_ONLY_SCORE <- temp1 * temp2
-        return(kl_ONLY_SCORE)
+        return(
+          stat_diff_2_functions_symmetric_KL_sampled(org_f, comp_f)$value^.2 *
+          stat_diff_2_functions_symmetric_KL_sampled(warp_org_f, warp_opt_f)$value^.2
+        )
+    #    temp1 <- stat_diff_2_functions_symmetric_KL(org_f, comp_f)$value^.2
+    #    temp2 <- stat_diff_2_functions_symmetric_KL(warp_org_f, warp_opt_f)$value^.2
+    #    kl_ONLY_SCORE <- temp1 * temp2
+    #    return(kl_ONLY_SCORE)
       }
       
       # This can be returned directly (should not be used with other scores).
       if (useOnlyJSD) {
-        jsd_ONLY_LOG_SCORE <- -1 *
-          log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
-          log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
-        return(jsd_ONLY_LOG_SCORE)
+        # Note: It appears we can leave out scoring the warping function
+        # as we do it below, if the function comp_f was approximated over comp_win.
+        return(-1 *
+          log(stat_diff_2_functions_symmetric_JSD_sampled(org_f, comp_f)$value) *
+          log(stat_diff_2_functions_symmetric_JSD_sampled(warp_org_f, warp_opt_f)$value)
+        )
+    #    jsd_ONLY_LOG_SCORE <- -1 *
+    #      log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
+    #      log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
+    #    return(jsd_ONLY_LOG_SCORE)
       }
       
       
@@ -274,11 +286,12 @@ equal to) 0, and the cut-out to be less than (or equal to) 1.
     })
     co_dtw_res$par
 
-    ## [1] 0.2939301 0.4875219
+    ## [1] 0.2603748 0.4661656
 
     co_dtw_res$value
 
-    ## [1] -27.96735
+    ## jensen-shannon 
+    ##      -24.07713
 
 Note that `co_dtw_res$par` holds the optimized parameters for which the
 objective function returned the minimum value (since we are doing
@@ -298,14 +311,14 @@ may have different meaning (for example, when using scores, the range is
     tempEx <- extract_signal_from_window(comp_dtw, use_win)
     tempEx$monotonicity
 
-    ## [1] 0.3205742
+    ## [1] 0.3185012
 
     org_f <- pattern_approxfun(org_signal$y[comp_ex$start_ref:comp_ex$end_ref])
-    comp_f <- pattern_approxfun(comp_ex$data, smooth = TRUE)
-    #comp_f <- pattern_approxfun(yData = use_win, yLimits = range(org_signal$y))
+    #comp_f <- pattern_approxfun(comp_ex$data, smooth = TRUE)
+    comp_f <- pattern_approxfun(yData = use_win)#, yLimits = range(org_signal$y))
     area_diff_2_functions(org_f, comp_f)$value
 
-    ## [1] 0.06645404
+    ## [1] 0.1333452
 
     plot_2_functions(org_f, comp_f)
 
@@ -371,7 +384,7 @@ enough.
     })
 
 Let’s show the results’ search space. Remember our optimal solution is
-at 0.2939301, 0.4875219 (cut-in/-out). Also, the graph below will show
+at 0.2603748, 0.4661656 (cut-in/-out). Also, the graph below will show
 better results located on the diagonal, which are invalid, because we
 have imposed constraints to guarantee a minimum distance between in/out,
 which invalidates all these results.
@@ -388,7 +401,11 @@ which invalidates all these results.
 ![](dtw-optim_files/figure-markdown_strict/unnamed-chunk-9-1.png)
 
 Since the KL-divergence was not able to converge to the same optimum,
-let’s plot the heatmap for it, too.
+let’s plot the heatmap for it, too. *(Note: The below results were not
+computed with the new `KL_sampled`-function and may deviate from those!
+A quick test showed that the `KL_sampled`-function finds a slightly
+better result for the example above; however, it still cannot be any of
+the `JSD`-functions.)*
 
     # We have computed this previously
     z_KL <- readRDS("../results/dtw-optim-onlyKL.rds")
@@ -402,3 +419,108 @@ let’s plot the heatmap for it, too.
     })
 
 ![](dtw-optim_files/figure-markdown_strict/unnamed-chunk-10-1.png)
+
+Rectifying the warped query
+===========================
+
+*(Note: The following is an unfinished test and not entirely working as
+expected! In the meantime, we have achieved what we were after, and
+there are new functions, such as `extract_warping_from_dtw()` and
+`get_dtw_scorable_functions()` that deliver rectified reference and
+query signals.)*
+
+*(Note: These new functions allow us to get closer to the pursued
+optimization goal of quantifying the costs for the patch.)*
+
+We want to make an attempt at rectifying the query signal, according to
+the warping function. We will use the warping function’s derivative to
+find sections of constant slope, and then sample (interpolate, actually)
+from the query according to the slope. Finally, we compose all rectified
+fragments into a new query that we can use for DTW again, or for
+assessing the goodness of fit using some metrics or scores.
+
+    wl <- length(comp_dtw$index2)
+    warp_x <- seq(0, 1, length.out = wl)
+    warp_f_ <- stats::approxfun(x = warp_x, y = comp_dtw$index2 / max(comp_dtw$index2))
+    warp_f <- base::Vectorize(function(x) {
+      if (x < 0) {
+        return(0)
+      } else if (x > 1) {
+        return(comp_dtw$index2[wl])
+      }
+      return(warp_f_(x))
+    })
+    warp_grad_ <- numDeriv::grad(func = warp_f, x = warp_x)
+    # Sometimes, numDeriv::grad outputs extreme gradients, and we need to cut them off
+    warp_grad_ <- warp_grad_[warp_grad_ < 1e2] # I guess a slope larger than that is quite unusual
+    #warp_grad_[warp_grad_ > 1e2] <- max(warp_grad_[warp_grad_ <= 1e2])
+    warp_grad_f <- stats::approxfun(
+      x = seq(0, 1, length.out = length(warp_grad_)), y = warp_grad_)
+    plot_2_functions(warp_f, warp_grad_f)
+
+![](dtw-optim_files/figure-markdown_strict/unnamed-chunk-11-1.png) Now
+we need to find segments in the gradient, where the slope is constant.
+
+    find_constant_slopes <- function(vec, eps = 1e-5) {
+      res <- NULL
+      
+      i <- 1
+      while (i <= length(vec)) {
+        s <- vec[i]
+        segm <- c()
+        j <- i
+        while (j <= length(vec)) {
+          if (abs(s - vec[j]) < eps) {
+            segm <- c(segm, vec[j])
+            j <- j + 1
+          } else {
+            break
+          }
+        }
+        
+        res <- rbind(res, data.frame(
+          slope = segm[1],
+          start = i,
+          stop = j,
+          start_rel = (i - 1) / length(vec),
+          stop_rel = j / length(vec),
+          len_rel = ((j / length(vec)) - ((i - 1) / length(vec))),
+          len_rel_corr = ((j / length(vec)) - ((i - 1) / length(vec))) * segm[1]
+        ))
+        
+        i <- j + 1 # start after current segment
+      }
+      
+      res
+    }
+
+    res <- find_constant_slopes(warp_grad_)
+
+    query_unwarp <- c()
+    for (rn in rownames(res)) {
+      r <- res[rn, ]
+      if (r$slope == 0) {
+        next
+      }
+      
+      # That's the data we have to unwarp!
+      startQ <- round(1 + r$start_rel * length(use_win))
+      stopQ <- round(r$stop_rel * length(use_win))
+      useY <- c(use_win[startQ:stopQ])
+      
+      if (length(useY) == 0) {
+        next
+      } else if (length(useY) < 2) {
+        useY <- c(useY, useY)
+      }
+      
+      query_unwarp <- c(
+        query_unwarp,
+        stats::approx(x = 1:length(useY),
+                      y = useY, n = round(r$len_rel_corr * 1e4))$y
+      )
+    }
+
+    plot(query_unwarp, type = "l")
+
+![](dtw-optim_files/figure-markdown_strict/unnamed-chunk-13-1.png)
