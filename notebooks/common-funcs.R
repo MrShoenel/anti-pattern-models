@@ -635,6 +635,35 @@ stat_diff_2_functions_cross_entropy <- function(f1, f2, numSamples = 1e4) {
   return(temp)
 }
 
+
+#' Extract four paths from a DTW-alignment: The two warping-functions;
+#' one for the reference, one for the query. Also extracts paths for
+#' the warping function applied to the reference and to the query. These
+#' last two can be compared to the original reference or query to assess
+#' the goodness of match/fit.
+#' 
+#' Note that this function does not alter any data or ranges thereof, so
+#' that if the data is transformed into functions or patterns, it is
+#' recommended that it is scaled together, before it is put into a common
+#' range.
+extract_warping_from_dtw <- function(dtwAlign, signalRef, signalQuery) {
+  return(list(
+    # The warping function for the Reference.
+    warpRef = suppressWarnings({
+      dtw::warp(d = dtwAlign, index.reference = TRUE)
+    }),
+    # The warping function for the Query.
+    warpQuery = suppressWarnings({
+      dtw::warp(d = dtwAlign, index.reference = FALSE)
+    }),
+    # The Reference after warping the query to it.
+    warpTransRef = signalRef[dtwAlign$index2],
+    # The Query after warping the reference to it.
+    warpTransQuery = signalQuery[dtwAlign$index1]
+  ))
+}
+
+
 #' Estimates the warping function and overlays its linear regression.
 #' Then scales both function together to be in the unit square. These
 #' two functions can then be used with metrics such as stat_diff_2_functions_cor.
