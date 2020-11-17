@@ -331,6 +331,7 @@ suppressWarnings({
 ```
 
 Since the KL-divergence was not able to converge to the same optimum, let's plot the heatmap for it, too.
+_(Note: The below results were not computed with the new `KL_sampled`-function and may deviate from those! A quick test showed that the `KL_sampled`-function finds a slightly better result for the example above; however, it still cannot be any of the `JSD`-functions.)_
 
 ```{r}
 # We have computed this previously
@@ -345,8 +346,98 @@ suppressWarnings({
 })
 ```
 
+# Rectifying the warped query
 
+_(Note: The following is an unfinished test and not entirely working as expected! In the meantime, we have achieved what we were after, and there are new functions, such as `extract_warping_from_dtw()` and `get_dtw_scorable_functions()` that deliver rectified reference and query signals.)_
 
+_(Note: These new functions allow us to get closer to the pursued optimization goal of quantifying the costs for the patch.)_
 
+We want to make an attempt at rectifying the query signal, according to the warping function. We will use the warping function's derivative to find sections of constant slope, and then sample (interpolate, actually) from the query according to the slope. Finally, we compose all rectified fragments into a new query that we can use for DTW again, or for assessing the goodness of fit using some metrics or scores.
 
+```{r}
+wl <- length(comp_dtw$index2)
+warp_x <- seq(0, 1, length.out = wl)
+warp_f_ <- stats::approxfun(x = warp_x, y = comp_dtw$index2 / max(comp_dtw$index2))
+warp_f <- base::Vectorize(function(x) {
+  if (x < 0) {
+    return(0)
+  } else if (x > 1) {
+    return(comp_dtw$index2[wl])
+  }
+  return(warp_f_(x))
+})
+warp_grad_ <- numDeriv::grad(func = warp_f, x = warp_x)
+# Sometimes, numDeriv::grad outputs extreme gradients, and we need to cut them off
+warp_grad_ <- warp_grad_[warp_grad_ < 1e2] # I guess a slope larger than that is quite unusual
+#warp_grad_[warp_grad_ > 1e2] <- max(warp_grad_[warp_grad_ <= 1e2])
+warp_grad_f <- stats::approxfun(
+  x = seq(0, 1, length.out = length(warp_grad_)), y = warp_grad_)
+plot_2_functions(warp_f, warp_grad_f)
+```
+Now we need to find segments in the gradient, where the slope is constant.
 
+```{r}
+find_constant_slopes <- function(vec, eps = 1e-5) {
+  res <- NULL
+  
+  i <- 1
+  while (i <= length(vec)) {
+    s <- vec[i]
+    segm <- c()
+    j <- i
+    while (j <= length(vec)) {
+      if (abs(s - vec[j]) < eps) {
+        segm <- c(segm, vec[j])
+        j <- j + 1
+      } else {
+        break
+      }
+    }
+    
+    res <- rbind(res, data.frame(
+      slope = segm[1],
+      start = i,
+      stop = j,
+      start_rel = (i - 1) / length(vec),
+      stop_rel = j / length(vec),
+      len_rel = ((j / length(vec)) - ((i - 1) / length(vec))),
+      len_rel_corr = ((j / length(vec)) - ((i - 1) / length(vec))) * segm[1]
+    ))
+    
+    i <- j + 1 # start after current segment
+  }
+  
+  res
+}
+```
+
+```{r}
+res <- find_constant_slopes(warp_grad_)
+
+query_unwarp <- c()
+for (rn in rownames(res)) {
+  r <- res[rn, ]
+  if (r$slope == 0) {
+    next
+  }
+  
+  # That's the data we have to unwarp!
+  startQ <- round(1 + r$start_rel * length(use_win))
+  stopQ <- round(r$stop_rel * length(use_win))
+  useY <- c(use_win[startQ:stopQ])
+  
+  if (length(useY) == 0) {
+    next
+  } else if (length(useY) < 2) {
+    useY <- c(useY, useY)
+  }
+  
+  query_unwarp <- c(
+    query_unwarp,
+    stats::approx(x = 1:length(useY),
+                  y = useY, n = round(r$len_rel_corr * 1e4))$y
+  )
+}
+
+plot(query_unwarp, type = "l")
+```
