@@ -563,6 +563,29 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sample
 }
 
 
+#' Samples the same values (range) from both f1,f2 and then normalizes
+#' the obtained vectors to sum up to 1. If f1,f2 are proper PDFs, that
+#' should be the case anyway (i.e., this function, like the others,
+#' assumes that the given functions represent proper PDFs with the support
+#' of [0,1]). It always uses the log-unit (ln).
+stat_diff_2_functions_philentropy_sampled <- function(f1, f2, numSamples = 1e4, method = philentropy::getDistMethods()[1]) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  
+  vec1 <- temp$dataF1[idx]
+  vec1 <- vec1 / sum(vec1)
+  vec2 <- temp$dataF2[idx]
+  vec2 <- vec2 / sum(vec2)
+  
+  temp$value <- suppressMessages({
+    philentropy::distance(
+      x = matrix(data = c(vec1, vec2), nrow = 2, byrow = TRUE),
+      method = method, unit = "log")
+  })
+  
+  return(temp)
+}
+
 #' Estimates the warping function and overlays its linear regression.
 #' Then scales both function together to be in the unit square. These
 #' two functions can then be used with metrics such as stat_diff_2_functions_cor.
