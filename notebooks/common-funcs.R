@@ -515,7 +515,7 @@ stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4, sampleO
   }, error = function(cond) {
     if (sampleOnError) {
       s <- seq(0, 1, len=numSamples)
-      useVals <- sapply(s, PQ) - sapply(s, QP)
+      useVals <- sapply(s, PQ) + sapply(s, QP)
       
       if ((sum(is.na(useVals)) / numSamples) > (1 / (numSamples / 10))) {
         stop("Cannot sample sufficient amount of values for KL-divergence.")
