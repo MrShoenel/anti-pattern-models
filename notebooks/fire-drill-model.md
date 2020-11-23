@@ -111,7 +111,7 @@ four phases:
 4.  Aftermath – Everything after the apex. We should see even steeper
     declines.
 
-(Brown et al. 1998) describe a typical scenario where about six months
+Brown et al. (1998) describe a typical scenario where about six months
 are spent on non-developmental activities, and the actual software is
 then developed in less than four weeks. If we were to include some of
 the aftermath, the above first guess would describe a project of about
