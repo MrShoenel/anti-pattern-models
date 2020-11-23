@@ -138,7 +138,7 @@ ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
     ymax = c(1, .95, 1),
     boundary = c("b1", "b2", "b3"),
     fill = c("green", "red", "blue")
-  ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, label = boundary, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE)
+  ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE)
 ```
 
 
@@ -150,8 +150,6 @@ ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
 
 
 
+# References {-}
 
-
-
-
-
+<div id="refs"></div>
