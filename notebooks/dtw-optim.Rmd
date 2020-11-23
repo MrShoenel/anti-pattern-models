@@ -141,8 +141,8 @@ co_dtw <- function(x, useOnlyKL = FALSE, useOnlyJSD = FALSE) {
   
   org_f <- pattern_approxfun(org_signal$y)
   # We want to optimize the mapped function, not the one represented by the window
-  #comp_f <- pattern_approxfun(comp_ex$data, yLimits = range(org_signal$y))
-  comp_f <- pattern_approxfun(comp_win)
+  comp_f <- pattern_approxfun(comp_ex$data, yLimits = range(org_signal$y))
+  #comp_f <- pattern_approxfun(comp_win)
   
   warp_dtw <- pattern_approxfun_warp(dtwAlign = comp_dtw)
   warp_org_f <- warp_dtw$f_warp_org
@@ -167,14 +167,14 @@ co_dtw <- function(x, useOnlyKL = FALSE, useOnlyJSD = FALSE) {
   if (useOnlyJSD) {
     # Note: It appears we can leave out scoring the warping function
     # as we do it below, if the function comp_f was approximated over comp_win.
-    return(-1 *
-      log(stat_diff_2_functions_symmetric_JSD_sampled(org_f, comp_f)$value) *
-      log(stat_diff_2_functions_symmetric_JSD_sampled(warp_org_f, warp_opt_f)$value)
-    )
-#    jsd_ONLY_LOG_SCORE <- -1 *
-#      log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
-#      log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
-#    return(jsd_ONLY_LOG_SCORE)
+#    return(-1 *
+#      log(stat_diff_2_functions_symmetric_JSD_sampled(org_f, comp_f)$value) *
+#      log(stat_diff_2_functions_symmetric_JSD_sampled(warp_org_f, warp_opt_f)$value)
+#    )
+    jsd_ONLY_LOG_SCORE <- -1 *
+      log(stat_diff_2_functions_symmetric_JSD(org_f, comp_f)$value) *
+      log(stat_diff_2_functions_symmetric_JSD(warp_org_f, warp_opt_f)$value)
+    return(jsd_ONLY_LOG_SCORE)
   }
   
   
@@ -263,8 +263,8 @@ tempEx <- extract_signal_from_window(comp_dtw, use_win)
 tempEx$monotonicity
 
 org_f <- pattern_approxfun(org_signal$y[comp_ex$start_ref:comp_ex$end_ref])
-#comp_f <- pattern_approxfun(comp_ex$data, smooth = TRUE)
-comp_f <- pattern_approxfun(yData = use_win)#, yLimits = range(org_signal$y))
+comp_f <- pattern_approxfun(comp_ex$data, smooth = TRUE)
+#comp_f <- pattern_approxfun(yData = use_win)#, yLimits = range(org_signal$y))
 area_diff_2_functions(org_f, comp_f)$value
 plot_2_functions(org_f, comp_f)
 ```
