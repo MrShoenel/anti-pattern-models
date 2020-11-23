@@ -1,0 +1,157 @@
+---
+title: "Modeling the Fire Drill"
+bibliography: ../inst/REFERENCES.bib
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  word_document: default
+---
+
+```{r}
+source("../helpers.R")
+source("./common-funcs.R", echo = FALSE)
+```
+
+# Importing the pattern from file
+
+We have previously designed our initial best guess as a vector graphic, and then rasterized it and exported each path with x/y coordinates in CSV. There are a few caveats:
+
+* Not all paths have the same length -- this is due to the amount of detail of each path. However, the x/y coordinates of each path cover the same co-domain.
+* The SVG coordinate system starts with 0,0 in the top left corner, so y-values should be flipped.
+* The pattern is hence not in the unit square, and neither do we want to present it there as of now. However, we will scale its y-values into `[0,1]` and preserve its aspect ratio, so that we can define the intervals in the next step more easily.
+* The paths in the modeled SVG have color names: Gold is adaptive, green is corrective+perfective, indigo is the commit frequency, and coral is the source code density.
+
+```{r}
+fd_data <- read.csv("../data/Fire-Drill_first-best-guess.csv", sep = ";")
+fd_data <- list(
+  adaptive = stats::na.exclude(data.frame(
+    x = fd_data$gold_x,
+    y = fd_data$gold_y,
+    t = "adaptive"
+  )),
+  
+  corrPerf = stats::na.exclude(data.frame(
+    x = fd_data$green_x,
+    y = fd_data$green_y,
+    t = "corrPerf"
+  )),
+  
+  commFreq = stats::na.exclude(data.frame(
+    x = fd_data$indigo_x,
+    y = fd_data$indigo_y,
+    t = "commFreq"
+  )),
+  
+  codeDens = stats::na.exclude(data.frame(
+    x = fd_data$coral_x,
+    y = fd_data$coral_y,
+    t = "codeDens"
+  ))
+)
+
+fd_data_concat <- rbind(
+  fd_data$adaptive,
+  fd_data$corrPerf,
+  fd_data$commFreq,
+  fd_data$codeDens
+)
+
+# Also, let's already correct the x-axis a bit:
+fd_data_concat$x <- fd_data_concat$x - min(fd_data_concat$x)
+fd_data_concat$x <- fd_data_concat$x / max(fd_data_concat$x)
+
+# .. and since we're at it, let's do y:
+fd_data_concat$y <- -1 * fd_data_concat$y - min(-1 * fd_data_concat$y)
+fd_data_concat$y <- fd_data_concat$y / max(fd_data_concat$y)
+```
+
+Let's plot the original data (note that we take the negative y-values to conform to our coordinate system where `[0,0]` is in the __lower__ right corner):
+
+```{r}
+library(ggplot2)
+
+ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
+  geom_line() +
+  labs(color = "Data series") +
+  scale_x_continuous(
+    breaks = seq(0, 1, by = .05)
+  ) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0))
+```
+Now the pattern is already in the unit-square (`[0,1]`). This is OK, as some variables in the pattern are defined to reach their absolute minimum or maximum. The other variables are designed relative to it, resulting in some space above or below.
+
+
+# Defining Intervals and sub-models
+
+In this section, we define the intervals' boundaries and decide for models to use for each variable in each interval. __The boundaries are our primary optimization goal__, as we want to minimize the loss of the models fit over the variables in between. We will defined initial boundaries, as well as valid ranges for them, according to the literature. As of our discussions and current definition, we define the four phases:
+
+
+1. Begin -- Short project warm-up phase
+2. Long Stretch -- The longest phase in the project, about which we do not know much about, except for that there should be a rather constant amount of activities over time.
+3. Fire Drill -- Characteristic is a sudden and steep increase of adaptive activities. This phase is over once these activities reached their apex.
+4. Aftermath -- Everything after the apex. We should see even steeper declines.
+
+
+[@brown1998refactoring] describe a typical scenario where about six months are spent on non-developmental activities, and the actual software is then developed in less than four weeks. If we were to include some of the aftermath, the above first guess would describe a project of about eight weeks.
+
+We define the boundaries and their leeway as follows (there are three boundaries to split the pattern into four intervals):
+
+
+* `b1` -- start at `0.085` and allow ranges of `[0.025, 0.25]`
+* `b2` -- start at `0.650` and allow ranges of `[0.5, 0.9]`
+* `b3` -- start at `0.875` and allow ranges of `[0.5, 0.975]`
+
+
+Also, we need to define additional inequality constraints between the boundaries, so that we guarantee a minimum distance between boundaries. In general, we only want to impose the rather loose constraint of having at least `0.05` between any two boundaries. While `b1` and `b2` cannot cross and can never undercut this threshold, `b2` and `b3` can. The inequality constraint hence is `b3 - b2 >= 0.05`.
+
+
+The following plot includes the initial boundaries and their allowed ranges:
+
+```{r}
+ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
+  geom_line() +
+  labs(color = "Data series") +
+  scale_x_continuous(
+    breaks = seq(0, 1, by = .05)
+  ) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
+  geom_vline(xintercept = .085, color = "blue", size = .5) +
+  geom_vline(xintercept = .65, color = "blue", size = .5) +
+  geom_vline(xintercept = .875, color = "blue", size = .5) +
+  geom_rect(data = data.frame(
+    xmin = c(.025, .5, .5),
+    xmax = c(.25, .9, .975),
+    ymin = c(0, .05, 0),
+    ymax = c(1, .95, 1),
+    boundary = c("b1", "b2", "b3"),
+    fill = c("green", "red", "blue")
+  ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, label = boundary, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
