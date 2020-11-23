@@ -1023,6 +1023,8 @@ I have only skimmed [@maldonado2002similarity], but it seems they have developed
 
 The Nash-Sutcliffe efficiency (NSE) could be used as a metric directly[^1]. While it has no lower bound, it has an upper. 1 is a perfect match, and 0 means that the resemblance of the query to the reference is as good as the mean of the reference would be. Negative values mean that the query is a worse resemblance than the mean.
 
+In their paper, [@assfalg2006similarity] describe how timeseries can be queried. While this is not directly to what we do here, we need to examine overlaps.
+
 [^1]: https://agrimetsoft.com/calculators/Nash%20Sutcliffe%20model%20Efficiency%20coefficient#
 
 ```{r}
