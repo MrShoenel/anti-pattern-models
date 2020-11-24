@@ -109,10 +109,18 @@ In this section, we define the intervals' boundaries and decide for models to us
 
 We define the boundaries and their leeway as follows (there are three boundaries to split the pattern into four intervals):
 
+```{r echo=FALSE}
+fd_data_boundaries <- c(
+  "b1" = 0.085,
+  "b2" = 0.625,
+  "b3" = 0.875
+)
+```
 
-* `b1` -- start at `0.085` and allow ranges of `[0.025, 0.25]`
-* `b2` -- start at `0.650` and allow ranges of `[0.5, 0.9]`
-* `b3` -- start at `0.875` and allow ranges of `[0.5, 0.975]`
+
+* `b1` -- start at `r round(fd_data_boundaries["b1"], 3)` and allow ranges of `[0.025, 0.25]`
+* `b2` -- start at `r round(fd_data_boundaries["b2"], 3)` and allow ranges of `[0.5, 0.9]`
+* `b3` -- start at `r round(fd_data_boundaries["b3"], 3)` and allow ranges of `[0.5, 0.975]`
 
 
 Also, we need to define additional inequality constraints between the boundaries, so that we guarantee a minimum distance between boundaries. In general, we only want to impose the rather loose constraint of having at least `0.05` between any two boundaries. While `b1` and `b2` cannot cross and can never undercut this threshold, `b2` and `b3` can. The inequality constraint hence is `b3 - b2 >= 0.05`.
