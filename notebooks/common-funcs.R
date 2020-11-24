@@ -1,4 +1,4 @@
-pattern_approxfun <- function(yData, smooth = FALSE, yLimits = c(0, 1), smoothSpan = .15) {
+pattern_approxfun <- function(yData, smooth = FALSE, yLimits = c(0, 1), smoothSpan = .15, xData = NULL) {
   if (all(yData == 0)) {
     return(approxfun(
       x = c(0, 1),
@@ -6,18 +6,27 @@ pattern_approxfun <- function(yData, smooth = FALSE, yLimits = c(0, 1), smoothSp
     ))
   }
   
+  if (!missing(xData)) {
+    # There is xData, probably because yData was not uniformly sampled.
+    # Or maybe yData is ordered according to xData..
+    # It's fine, but we need to scale it to [0,1]
+    xData <- xData - min(xData)
+    xData <- xData / max(xData)
+  }
+  
   if (smooth) {
     temp <- stats::loess.smooth(
-      x = 1:length(yData),
+      x = if (missing(xData)) 1:length(yData) else xData,
       y = yData,
-      span = smoothSpan
+      span = smoothSpan,
+      evaluation = length(yData)
     )
     
     yData <- temp$y
     xData <- temp$x - min(temp$x)
     xData <- xData / max(xData)
   } else {
-    xData <- seq(0, 1, by = 1 / (length(yData) - 1))
+    xData <- if (missing(xData)) seq(0, 1, by = 1 / (length(yData) - 1)) else xData
   }
   
   yData <- yData - min(yData)
