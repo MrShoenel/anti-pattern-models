@@ -188,6 +188,192 @@ Note that in the above plot, every column of plots has the same width. However, 
 The split was made according to the initial boundaries. What is important to remember, is that each sub-plot in the above grid __is a reference pattern__, that is, each of these above represents the reference we want to fit the data (the query extracted according to the boundaries given during the optimization) against using some model later.
 
 
+# Load real-world project
+
+We load the same project as in the notebook `student-project-1.Rmd`.
+
+```{r}
+spFile <- "../data/student-project-1.csv"
+sp <- read.csv(spFile)
+
+dateFormat <- "%Y-%m-%d %H:%M:%S"
+
+sp$CommitterTimeObj <- as.POSIXct(strptime(
+  sp$CommitterTime, format = dateFormat))
+sp$AuthorTimeObj <- as.POSIXct(strptime(
+  sp$AuthorTime, format = dateFormat))
+
+# Cut off data way after project end:
+sp <- sp[sp$AuthorTimeObj <= as.POSIXct(strptime("2020-08-31", format = "%Y-%m-%d")), ]
+
+# Create normalized timestamps:
+sp$AuthorTimeNormalized <- sp$AuthorTimeUnixEpochSecs - min(sp$AuthorTimeUnixEpochSecs)
+sp$AuthorTimeNormalized <- sp$AuthorTimeNormalized / max(sp$AuthorTimeNormalized)
+```
+
+Now we define each variable as a function:
+
+```{r}
+# passed to stats::density
+use_kernel <- "gauss" # "rect"
+
+# We'll need these for the densities:
+acp_ratios <- table(sp$label) / sum(table(sp$label))
+
+dens_a <- densitySafe(
+  sp[sp$label == "a", ]$AuthorTimeNormalized, acp_ratios[["a"]], kernel = use_kernel)
+dens_c <- densitySafe(
+  sp[sp$label == "c", ]$AuthorTimeNormalized, acp_ratios[["c"]], kernel = use_kernel)
+dens_p <- densitySafe(
+  sp[sp$label == "p", ]$AuthorTimeNormalized, acp_ratios[["p"]], kernel = use_kernel)
+
+# Also compute a combined density for corr+perf:
+dens_cp <- densitySafe(
+  sp[sp$label == "c" | sp$label == "p", ]$AuthorTimeNormalized,
+  acp_ratios[["c"]] + acp_ratios[["p"]], kernel = use_kernel)
+# .. and the overall frequency:
+dens_acp <- densitySafe(
+  sp$AuthorTimeNormalized, kernel = use_kernel)
+
+use_acp_attr <- c("min", "max", "ratio", "ymax")
+acp_attr <- rbind(
+  data.frame(attributes(dens_a)[use_acp_attr]),
+  data.frame(attributes(dens_c)[use_acp_attr]),
+  data.frame(attributes(dens_p)[use_acp_attr]))
+```
+
+## Add Source Code density
+
+The source code density is a different kind of variable. Like any other metric, its sampling frequency has no effect on the density, but rather its value. Sampling more frequently will only increase precision. So while we estimated a Kernel for the activities, for all other variables that are metrics, the density (or curve) depends on the observed value, not on the frequency of observations.
+
+```{r}
+# scd is source code density
+dens_scd_data <- data.frame(
+  x = sp$AuthorTimeNormalized,
+  y = sp$Density
+)
+
+# We want to smooth the density data a little:
+temp <- stats::loess.smooth(
+  x = dens_scd_data$x, y = dens_scd_data$y, span = .07, family = "sym", degree = 1, evaluation = nrow(dens_scd_data))
+dens_scd_data$x <- temp$x
+dens_scd_data$y <- temp$y - min(temp$y)
+dens_scd_data$y <- dens_scd_data$y / max(dens_scd_data$y)
+
+dens_scd <- (function() {
+  r <- range(dens_scd_data$x)
+  temp <- stats::approxfun(x = dens_scd_data$x, y = dens_scd_data$y, ties = "ordered")
+  f1 <- Vectorize(function(x) {
+    if (x < r[1] || x > r[2]) {
+      return(NaN)
+    }
+    return(temp(x))
+  })
+  
+  attributes(f1) <- list(
+    min = r[1], max = r[2], x = dens_scd_data$x, y = dens_scd_data$y
+  )
+  
+  f1
+})()
+```
+
+
+
+This is how the project looks. Please note that we have already cut off all activity after August 31 2020.
+
+```{r}
+ggplot(data.frame(x = range(acp_attr$min, acp_attr$max)), aes(x)) +
+  stat_function(fun = dens_a, aes(color="A"), size = 1, n = 2^11) +
+  #stat_function(fun = dens_c, aes(color="C"), size = 1, n = 2^11) +
+  #stat_function(fun = dens_p, aes(color="P"), size = 1, n = 2^11) +
+  stat_function(fun = dens_cp, aes(color="C+P"), size = 1, n = 2^11) +
+  stat_function(fun = dens_acp, aes(color="Freq"), size = 1, n = 2^11) +
+  stat_function(fun = dens_scd, aes(color="SCD"), size = 1, n = 2^11) +
+  theme_light() +
+  labs(color = "Activity") +
+  scale_color_brewer(palette = "Set1")
+```
+
+In the above plot, it appears that the initial perfective activities (in the approximate range of `[~-0..5, 0.2]`) may or may not belong to the project's actual work range. For example, it seems plausible that the project manager made some initial commit(s) with directions for the students. In a real-world analysis, one would need to decide whether to cut this off or not, based on the knowledge of what was going on. We allow the remainder of this notebook to make the switch using a variable. This will allow us to examine model-fits under different configurations.
+
+_Note_: As of our suspicion, the very first commit is not the project's start, and the right decision for this project would to cut it off.
+
+```{r}
+# Use this obvious variable to control cutting off initial perfective commits.
+CUT_OFF_PERFECTIVE_COMMITS_IN_BEGIN <- TRUE
+
+dens_acp_x_min <- min(acp_attr$min)
+if (CUT_OFF_PERFECTIVE_COMMITS_IN_BEGIN) {
+  dens_acp_x_min <- min(acp_attr[1:2,]$min) # 1:2 are a,c; see above
+}
+dens_acp_x_max <- max(acp_attr$max) # we're not cutting off at end
+
+dens_a_x_idx <- attributes(dens_a)$x >= dens_acp_x_min
+dens_c_x_idx <- attributes(dens_c)$x >= dens_acp_x_min
+dens_p_x_idx <- attributes(dens_p)$x >= dens_acp_x_min
+dens_cp_x_idx <- attributes(dens_cp)$x >= dens_acp_x_min
+dens_scd_x_idx <- attributes(dens_scd)$x >= dens_acp_x_min
+dens_acp_x_idx <- attributes(dens_acp)$x >= dens_acp_x_min
+
+dens_acp_data <- rbind(
+  data.frame(
+    x = attributes(dens_a)$x[dens_a_x_idx],
+    y = attributes(dens_a)$y[dens_a_x_idx] * attributes(dens_a)$ratio,
+    t = rep("A", sum(dens_a_x_idx))
+  ),
+#  data.frame(
+#    x = attributes(dens_c)$x[dens_c_x_idx],
+#    y = attributes(dens_c)$y[dens_c_x_idx] * attributes(dens_c)$ratio,
+#    t = rep("C", sum(dens_c_x_idx))
+#  ),
+#  data.frame(
+#    x = attributes(dens_p)$x[dens_p_x_idx],
+#    y = attributes(dens_p)$y[dens_p_x_idx] * attributes(dens_p)$ratio,
+#    t = rep("P", sum(dens_p_x_idx))
+#  ),
+  data.frame(
+    x = attributes(dens_cp)$x[dens_cp_x_idx],
+    y = attributes(dens_cp)$y[dens_cp_x_idx] * attributes(dens_cp)$ratio,
+    t = rep("CP", sum(dens_cp_x_idx))
+  ),
+  data.frame(
+    x = attributes(dens_acp)$x[dens_acp_x_idx],
+    y = attributes(dens_acp)$y[dens_acp_x_idx],
+    t = rep("FREQ", sum(dens_acp_x_idx))
+  ),
+  data.frame(
+    x = attributes(dens_scd)$x[dens_scd_x_idx],
+    y = attributes(dens_scd)$y[dens_scd_x_idx],
+    t = rep("SCD", sum(dens_scd_x_idx))
+  )
+)
+dens_acp_data$t <- factor(x = dens_acp_data$t, levels = unique(dens_acp_data$t), ordered = TRUE)
+
+
+# Now it is important to scale the densities for a,c,p on the x-axis together,
+# so that we get all three within [0,1].
+dens_acp_data$x <- dens_acp_data$x - min(dens_acp_data$x)
+dens_acp_data$x <- dens_acp_data$x / max(dens_acp_data$x)
+```
+
+## The Final project
+
+Let's plot how that looks:
+
+```{r}
+ggplot(dens_acp_data, aes(x = x, y = y)) +
+  geom_line(aes(color = t), size = .75) +
+  theme_light() +
+  labs(color = "Activity") +
+  scale_color_brewer(palette = "Set1")
+```
+
+The above plot represents now the final project that we will fit our entire pattern to:
+
+* The domain is now `[0,1]` -- note that the source code density was not estimated using KDE, so that we do not have an estimation for the bandwidth, which leads to initial inclines and declines at the end for such variables.
+* The integral of the frequency is roughly `1` -- the sum of the three integrals for each of the three activities is also `1`. It is important that each activity has a density that is proportional to the amount of the other activities, and that in sum everything should become `1` again.
+
 
 
 
