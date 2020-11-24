@@ -672,14 +672,20 @@ $$
 
 Penalize small scores:
 
-    penalizeThreshold <- .3
-    penalizeExponent <- 3
+    # I suppose that ideally the threshold should be the median
+    # of the scores one wants to penalize.
+    penalizeThreshold <- .4
+    penalizeExponent <- 2.2
 
     penalizeScore <- (function(t, k) {
       return(Vectorize(function(x) {
         if (x <= t) x * t^(k - 1) else x^k
       }))
     })(penalizeThreshold, penalizeExponent)
+
+    round(penalizeScore(c(.4,.5,.6,.7,.8,.9)), 3)
+
+    ## [1] 0.133 0.218 0.325 0.456 0.612 0.793
 
     curve(penalizeScore)
 
