@@ -61,17 +61,7 @@ sp <- sp[sp$AuthorTimeObj < as.POSIXct(strptime("2020-08-31", format = "%Y-%m-%d
 
 
 ```{r}
-densitySafe <- function(data, ratio = 1) {
-  d <- stats::density(data)
-  f <- stats::approxfun(x = d$x, y = d$y)
-  r <- range(d$x)
-  f1 <- Vectorize(function(x) {
-    if (x < r[1] || x > r[2]) 0 else f(x) * ratio
-  })
-  attributes(f1) <- list(
-    min = r[1], max = r[2], ratio = ratio, ymax = max(d$y) * ratio)
-  f1
-}
+# Function 'debsitySafe' has been moved to 'common-funcs.R'.
 ```
 
 Let's estimate the safe densities for each activity separately and show them together in one plot:
