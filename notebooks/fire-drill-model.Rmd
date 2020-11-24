@@ -375,6 +375,99 @@ The above plot represents now the final project that we will fit our entire patt
 * The integral of the frequency is roughly `1` -- the sum of the three integrals for each of the three activities is also `1`. It is important that each activity has a density that is proportional to the amount of the other activities, and that in sum everything should become `1` again.
 
 
+# Defining the objective function
+
+Now we can finally start to define an objective function. Before that, we need to decide how to score each variable (i.e., what kind of model) in each interval. For each step of the fitting process, we will get a vector of scores that needs to be aggregated.
+
+
+## Scoring per variable and interval
+
+We want to choose an adequate model for each variable in each interval, and then optimize the boundaries to maximize the fit of each model. We will only use two different models (if any), and these are described below:
+
+Models:
+
+__No Score__: If there is no or nearly no information available for a variable in an interval, we should choose not to score it.
+
+__Linear Model__: A linear model (regression) can be used for when we do not know much about the course of a variable in an interval. We use this model when our best expectation is a linear course of the variable, and that is what we extract from the model. We may have an expectation for the intercept, slope or the residuals. When using this model, we usually choose a lower weight for it.
+
+__Rectifier__: A model to match shapes of curves, that uses _DTW_ to __rectify__ a signal and then computes the goodness-of-fit using one or more of the previously developed scores. This is the most sophisticated method we currently have. The underlying DTW is computed with either closed or open begin/end. In the later case, the score of the rectifier model also reflects how much of the query was matched.
+
+__No Model__ (approximate function): We can choose to just extract the data from the current interval, to approximate a function for its data, and then compute a score in the same way the Rectifier does, by comparing two functions. Skipping the rectification seems to work well in most cases; however, we assume that the data from the interval has linear time and no time dilations exist.
+
+__Polynomial__: Similar to __No Model__, we fit a 2nd- or 3rd-order polynomial over the data (currently, 3rd order should suffice given the peculiarities of our defined Fire Drill) and then compare the resulting function against the reference. Again, this approach assumes no distortions in time.
+
+
+
+
+| Interval     | Variable    | Model                            | Weight | Model notes    |
+| :-           | :-          | :----                            | :-:    | :------------- |
+| Begin        | A           | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
+| Begin        | C+P         | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
+| Begin        | FREQ        | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
+| Begin        | SCD        | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
+| ---------    | ----------- | -------------------------        | -------- | ---------------------------------------------------- |
+| Long Stretch | A           | LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
+| Long Stretch | C+P         | LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
+| Long Stretch | FREQ        | LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
+| Long Stretch | SCD         | LM ($\mathop{{}\mathbb{E}}[\text{slope}<0^{\circ}]$), Rectifier, No Model, Poly(2) | `0.5`  | Use of non-LM may be applicable, considering the somewhat smooth decline in the beginning of this phase. |
+| ---------    | ----------- | -------------------------        | -------- | ---------------------------------------------------- |
+| Fire Drill   | A           | LM ($\mathop{{}\mathbb{E}}[\text{slope}\geq 45^{\circ}]$), Rectifier, No Model, Poly(3) | `1.0`  | LM may be applicable as we know nothing about _how_ the variable rises, just that it will. It is however the least-preferred option. Usage of LM is probably a bit sketchy, as we need to make assumptions about its slope. |
+| Fire Drill   | C+P         | LM ($\mathop{{}\mathbb{E}}[\text{slope} \approx -45^{\circ}]$), Rectifier, No Model, Poly(3) | `1.0`  | Like adaptive (A), an LM may be worth checking out, as this variable is almost linear in our model. Also, when using an LM for any variable in this interval, we should use a smaller weight. |
+| Fire Drill   | FREQ        | LM ($\mathop{{}\mathbb{E}}[\text{slope}\geq 45^{\circ}]$), Rectifier, No Model, Poly(3) | `1.0`  | Like the previous two. |
+| Fire Drill   | S           | Rectifier, No Model, Poly(3)     | `1.0`  | -              |
+| ---------    | ----------- | -------------------------        | -------- | ---------------------------------------------------- |
+| Aftermath    | A           | Rectifier, No Model, Poly(3)     | `1.0`  | -              |
+| Aftermath    | C+P         | LM ($\mathop{{}\mathbb{E}}[\text{slope} \approx -45^{\circ}]$), Rectifier, No Model, Poly(3) | `1.0`  | This is basically a slightly less steep continuation of the previous interval |
+| Aftermath    | FREQ        | Rectifier, No Model, Poly(3)     | `1.0`  | -              |
+| Aftermath    | SCD         | Rectifier, No Model, Poly(3)     | `1.0`  | -              |
+
+
+Notes:
+
+* If not noted otherwise, when using an LM, we expect a slope of `0`, and any (positive or negative) slope will decrease the score.
+* When using an LM, we currently do not score the residuals, as we cannot make assumptions about how the data is distributed in an interval. If we were to score lower residuals better, then the LM would fit towards data with less noise better, but we do not know anything about the noise. That's why we skip it.
+* I do not see a reason for mixing non-linear models within the entire model, i.e., all variables that use a non-linear model should use the same kind of model, otherwise it will be also more difficult to compare approaches.
+  * The only thing we can compare is whether all non-linear models converge to the same interval boundaries. Different models will result in different scores, so there is no way to say which model is best, at least not until we have all the ground truth. Until then the only conclusions we may draw are those from models that result in obviously erroneous fits.
+
+
+
+## Score weights and aggregation
+
+Given a weight-vector $\boldsymbol w$ and a score-vector $\boldsymbol s$ of same length, we want to aggregate all scores using this expression:
+
+$$
+\displaystyle \prod^{\Vert \boldsymbol s \Vert}_{i=1}1+ \boldsymbol w_i * f_{t,k}(\boldsymbol s_i),\;\; \forall \boldsymbol w_i \; 0 < \boldsymbol w_i \leq 1 \; \wedge \; \forall \boldsymbol s_i \; 0 \leq \boldsymbol s_i \leq 1,
+$$
+
+where $f_{t,k}:\mathbb R \to \mathbb R$ is a non-linear scaling function (see below). The advantages of the above expression are these:
+
+* We can introduce weights to linearly scale each score and thus alter its importance.
+* Instead of diminishing the product, low scores will rather not increase it.
+* We know the lower and upper bound (remember, scores are in range `[0,1]`) for this expression.
+
+Furthermore, we want to use a non-linear scaling function, $f_{t,k}$, that penalizes low scores and exponentially rewards higher scores. That function will be linear until some threshold $t$ (typically $0.1 \leq t \leq 0.5$), and exponential afterwards (with typical exponent $2 \leq k \leq 5$).
+
+$$
+f_{t,k}(x) = \begin{cases}
+  x * t^{k-1}, & \text{for } 0 \leq x \leq t, \\
+  x^k, & \text{for } x > t.
+\end{cases}
+$$
+
+Penalize small scores:
+```{r}
+penalizeThreshold <- .3
+penalizeExponent <- 3
+
+penalizeScore <- (function(t, k) {
+  return(Vectorize(function(x) {
+    if (x <= t) x * t^(k - 1) else x^k
+  }))
+})(penalizeThreshold, penalizeExponent)
+
+curve(penalizeScore)
+```
+
 
 
 
