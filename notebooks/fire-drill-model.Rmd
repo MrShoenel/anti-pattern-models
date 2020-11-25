@@ -495,7 +495,51 @@ penalizeScore <- (function(t, k) {
 })(penalizeThreshold, penalizeExponent)
 
 round(penalizeScore(c(.4,.5,.6,.7,.8,.9)), 3)
+
 curve(penalizeScore)
+tempf <- function(x) x * penalizeThreshold^(penalizeExponent - 1)
+curve(tempf, from = penalizeThreshold, add = TRUE, type = "l", lty = "dotted", lwd = 2.5)
+```
+
+
+## Selecting sub-models for each variable
+
+Now we are ready to select a sub-model for each variable in each interval. Note that all sub-models, as well as the objective function are defined in the file `models.R`.
+
+Let's make the list and create the Fire Drill model!
+
+```{r}
+source("../models/models.R", echo = FALSE)
+
+listOfSubModels <- list(
+  A_Begin = sub_model_no_model,
+  A_LongStretch = sub_model_no_model,
+  A_FireDrill = sub_model_no_model,
+  A_Aftermath = sub_model_no_model
+)
+
+subModelWeights <- c(
+    "A_Begin" = 1,
+    "A_LongStretch" = 1,
+    "A_FireDrill" = 1,
+    "A_Aftermath" = 1
+  )
+
+fdm <- create_fire_drill_model(
+  fireDrillPattern = fd_data_concat,
+  fireDrillProject = dens_acp_data,
+  listOfSubModels = listOfSubModels,
+  subModelWeights = subModelWeights
+)
+
+# Upper bound would be:
+prod(1 + subModelWeights)
+
+# and a dummy-test!
+temp <- fdm(c(.3, .38, .85), returnAllScores = TRUE)
+temp
+prod(temp)
+prod(temp) / prod(1 + subModelWeights) # relative score in [0,1]
 ```
 
 
