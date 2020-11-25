@@ -861,3 +861,43 @@ densitySafe <- function(data, ratio = 1, kernel = "gauss", bw = "SJ") {
 }
 
 
+poly_autofit <- function(yData, xData = 1:length(yData), maxDegree = 5, method = c("AIC", "BIC", "Radj")[1], selectBy = c("findBest", "stopEarly")[1]) {
+  
+  # We want to minimize the cost, and while a higher
+  # R.adjusted is better, lower AIC/BIC are better.
+  minimizeMult <- if (method == "Radj") -1 else 1
+  methodFunc <- function(model) {
+    if (method == "Radj") {
+      return(stats::summary.lm(model)$adj.r.squared)
+    } else if (method == "AIC") {
+      return(stats::AIC(model))
+    } else {
+      return(stats::BIC(model))
+    }
+  }
+  
+  startVal <- .Machine$double.xmax
+  degree <- 1
+  degreeBest <- 1
+  tempModel <- NULL
+  
+  while (TRUE && degree <= maxDegree) {
+    tempModel <- stats::lm(
+      formula = data ~ stats::poly(xData, degree = degree))
+    
+    newVal <- methodFunc(tempModel) * minimizeMult
+    if (newVal < startVal) {
+      startVal <- newVal
+      degreeBest <- degree
+    } else if (selectBy == "stopEarly") {
+      return(tempModel)
+    }
+    
+    degree <- degree + 1
+  }
+  
+  # We tested all, so let's return the best:
+  stats::lm(
+    formula = data ~ stats::poly(xData, degree = degreeBest))
+}
+
