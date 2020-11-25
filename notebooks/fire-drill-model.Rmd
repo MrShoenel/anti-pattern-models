@@ -194,6 +194,18 @@ Note that in the above plot, every column of plots has the same width. However, 
 The split was made according to the initial boundaries. What is important to remember, is that each sub-plot in the above grid __is a reference pattern__, that is, each of these above represents the reference we want to fit the data (the query extracted according to the boundaries given during the optimization) against using some model later.
 
 
+## Events and Metrics
+
+We need to make an important distinction between events and metrics. An event does not carry other information, other than that it occurred. One could thus say that such an event is _nulli_-variate. If an event were to carry extra information, such as a measurement that was taken, it would be _uni_-variate. That is the case for many metrics in software: the time of their measurement coincides with an event, such as a commit that was made. On the time-axis we thus know __when__ it occurred and __what__ was its value. Such a metric could be easily understood as a _bi-variate x/y_ variable and be plotted.
+
+An event however does not have any associated y-value we could plot. Given a time-axis, we could make a mark whenever it occurred. Some of the markers would probably be closer to each other or be more or less accumulated. The y-value could express these accumulations relative to each other. These are called __densities__. This is exactly what _Kernel Density Estimation_ (KDE) does: it expresses the relative accumulations of data on the x-axis as density on the y-axis. For KDE, the actual values on the x-axis have another meaning, and that is to compare the relative likelihoods of the values on it, since the axis is ordered. For our case however, the axis is linear time and carries no such meaning.
+
+The project data we analyze is a kind of sampling over the project's events. We subdivide the gathered project data hence into these two types of data series:
+
+* __Events__: They do not carry any extra information or measurements. As for the projects we analyze, events usually are occurrences of specific types of commits, for example. The time of occurrence is the x-value on the time-axis, and the y-value is obtained through KDE.
+* __Metrics__: Extracted from the project at specific times, for example at every commit. We can extract any number or type of metric, but each becomes its own variable, where the x-value is on the time-axis, and the y-value is the metric's value.
+
+
 # Load real-world project
 
 We load the same project as in the notebook `student-project-1.Rmd`.
