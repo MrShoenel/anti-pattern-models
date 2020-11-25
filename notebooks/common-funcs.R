@@ -284,7 +284,11 @@ area_diff_2_functions <- function(f1, f2) {
 #' Samples from both function within [0,1] and returns the
 #' indices used and the values from either function. These
 #' two vectors can then be compared statistically.
-stat_diff_2_functions <- function(f1, f2, statFunc = stats::cor, numSamples = 1e4) {
+stat_diff_2_functions <- function(f1, f2, statFunc = function(a, b) {
+  suppressWarnings({
+    stats::cor
+  })
+}, numSamples = 1e4) {
   #indices <- sort(stats::runif(n = numSamples, min = 0, max = 1))
   indices <- seq(0, 1, by = 1 / numSamples)
   
