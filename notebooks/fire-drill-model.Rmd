@@ -21,7 +21,7 @@ output:
 ---
 
 ```{r}
-source("../helpers.R")
+source("../helpers.R", echo = FALSE)
 source("./common-funcs.R", echo = FALSE)
 ```
 
@@ -35,30 +35,31 @@ We have previously designed our initial best guess as a vector graphic, and then
 * The paths in the modeled SVG have color names: Gold is adaptive, green is corrective+perfective, indigo is the commit frequency, and coral is the source code density.
 
 ```{r}
+# scd is source code density
 fd_data <- read.csv("../data/Fire-Drill_first-best-guess.csv", sep = ";")
 fd_data <- list(
   adaptive = stats::na.exclude(data.frame(
     x = fd_data$gold_x,
     y = fd_data$gold_y,
-    t = "adaptive"
+    t = "A"
   )),
   
   corrPerf = stats::na.exclude(data.frame(
     x = fd_data$green_x,
     y = fd_data$green_y,
-    t = "corrPerf"
+    t = "CP"
   )),
   
   commFreq = stats::na.exclude(data.frame(
     x = fd_data$indigo_x,
     y = fd_data$indigo_y,
-    t = "commFreq"
+    t = "FREQ"
   )),
   
   codeDens = stats::na.exclude(data.frame(
     x = fd_data$coral_x,
     y = fd_data$coral_y,
-    t = "codeDens"
+    t = "SCD"
   ))
 )
 
@@ -68,6 +69,8 @@ fd_data_concat <- rbind(
   fd_data$commFreq,
   fd_data$codeDens
 )
+
+fd_data_concat$t <- factor(fd_data_concat$t, levels = unique(fd_data_concat$t), ordered = TRUE)
 
 # Also, let's already correct the x-axis a bit:
 fd_data_concat$x <- fd_data_concat$x - min(fd_data_concat$x)
@@ -89,7 +92,8 @@ ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
   scale_x_continuous(
     breaks = seq(0, 1, by = .05)
   ) +
-  theme(axis.text.x = element_text(angle = -45, vjust = 0))
+  theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
+  scale_color_brewer(palette = "Set1")
 ```
 Now the pattern is already in the unit-square (`[0,1]`). This is OK, as some variables in the pattern are defined to reach their absolute minimum or maximum. The other variables are designed relative to it, resulting in some space above or below.
 
@@ -147,7 +151,8 @@ ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
     ymax = c(1, .95, 1),
     boundary = c("b1", "b2", "b3"),
     fill = c("green", "red", "blue")
-  ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE)
+  ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE) +
+  scale_color_brewer(palette = "Set1")
 ```
 
 ## Extracting all sub-patterns
@@ -180,7 +185,8 @@ ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
   scale_x_continuous(
     breaks = seq(0, 1, by = .1)
   ) +
-  facet_grid(t ~ interval, scales = "free_x")
+  facet_grid(t ~ interval, scales = "free_x") +
+  scale_color_brewer(palette = "Set1")
 ```
 
 Note that in the above plot, every column of plots has the same width. However, this becomes obvious when looking at the x-axis for each column. While we could adjust the widths to the actual interval lengths, we keep it like this for two reasons: first, it allows us better insight into shorter intervals. Second, models that do transformation into the unit-square will "see" the pattern very similar to how it looks above.
@@ -247,7 +253,6 @@ acp_attr <- rbind(
 The source code density is a different kind of variable. Like any other metric, its sampling frequency has no effect on the density, but rather its value. Sampling more frequently will only increase precision. So while we estimated a Kernel for the activities, for all other variables that are metrics, the density (or curve) depends on the observed value, not on the frequency of observations.
 
 ```{r}
-# scd is source code density
 dens_scd_data <- data.frame(
   x = sp$AuthorTimeNormalized,
   y = sp$Density
