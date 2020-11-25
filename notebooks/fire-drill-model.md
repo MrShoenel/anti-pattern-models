@@ -2,6 +2,7 @@
 -   [Defining Intervals and
     sub-models](#defining-intervals-and-sub-models)
     -   [Extracting all sub-patterns](#extracting-all-sub-patterns)
+    -   [Events and Metrics](#events-and-metrics)
 -   [Load real-world project](#load-real-world-project)
     -   [Add Source Code density](#add-source-code-density)
     -   [The Final project](#the-final-project)
@@ -9,9 +10,11 @@
     -   [Scoring per variable and
         interval](#scoring-per-variable-and-interval)
     -   [Score weights and aggregation](#score-weights-and-aggregation)
+    -   [Selecting sub-models for each
+        variable](#selecting-sub-models-for-each-variable)
 -   [References](#references)
 
-    source("../helpers.R")
+    source("../helpers.R", echo = FALSE)
     source("./common-funcs.R", echo = FALSE)
 
 Importing the pattern from file
@@ -36,30 +39,31 @@ CSV. There are a few caveats:
 
 <!-- -->
 
+    # scd is source code density
     fd_data <- read.csv("../data/Fire-Drill_first-best-guess.csv", sep = ";")
     fd_data <- list(
       adaptive = stats::na.exclude(data.frame(
         x = fd_data$gold_x,
         y = fd_data$gold_y,
-        t = "adaptive"
+        t = "A"
       )),
       
       corrPerf = stats::na.exclude(data.frame(
         x = fd_data$green_x,
         y = fd_data$green_y,
-        t = "corrPerf"
+        t = "CP"
       )),
       
       commFreq = stats::na.exclude(data.frame(
         x = fd_data$indigo_x,
         y = fd_data$indigo_y,
-        t = "commFreq"
+        t = "FREQ"
       )),
       
       codeDens = stats::na.exclude(data.frame(
         x = fd_data$coral_x,
         y = fd_data$coral_y,
-        t = "codeDens"
+        t = "SCD"
       ))
     )
 
@@ -69,6 +73,8 @@ CSV. There are a few caveats:
       fd_data$commFreq,
       fd_data$codeDens
     )
+
+    fd_data_concat$t <- factor(fd_data_concat$t, levels = unique(fd_data_concat$t), ordered = TRUE)
 
     # Also, let's already correct the x-axis a bit:
     fd_data_concat$x <- fd_data_concat$x - min(fd_data_concat$x)
@@ -90,7 +96,8 @@ corner):
       scale_x_continuous(
         breaks = seq(0, 1, by = .05)
       ) +
-      theme(axis.text.x = element_text(angle = -45, vjust = 0))
+      theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
+      scale_color_brewer(palette = "Set1")
 
 ![](fire-drill-model_files/figure-markdown_strict/unnamed-chunk-3-1.png)
 Now the pattern is already in the unit-square (`[0,1]`). This is OK, as
@@ -160,7 +167,8 @@ ranges:
         ymax = c(1, .95, 1),
         boundary = c("b1", "b2", "b3"),
         fill = c("green", "red", "blue")
-      ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE)
+      ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE) +
+      scale_color_brewer(palette = "Set1")
 
 ![](fire-drill-model_files/figure-markdown_strict/unnamed-chunk-5-1.png)
 
@@ -193,7 +201,8 @@ Now show a faceted plot:
       scale_x_continuous(
         breaks = seq(0, 1, by = .1)
       ) +
-      facet_grid(t ~ interval, scales = "free_x")
+      facet_grid(t ~ interval, scales = "free_x") +
+      scale_color_brewer(palette = "Set1")
 
 ![](fire-drill-model_files/figure-markdown_strict/unnamed-chunk-7-1.png)
 
@@ -210,6 +219,44 @@ reference pattern**, that is, each of these above represents the
 reference we want to fit the data (the query extracted according to the
 boundaries given during the optimization) against using some model
 later.
+
+Events and Metrics
+------------------
+
+We need to make an important distinction between events and metrics. An
+event does not carry other information, other than that it occurred. One
+could thus say that such an event is *nulli*-variate. If an event were
+to carry extra information, such as a measurement that was taken, it
+would be *uni*-variate. That is the case for many metrics in software:
+the time of their measurement coincides with an event, such as a commit
+that was made. On the time-axis we thus know **when** it occurred and
+**what** was its value. Such a metric could be easily understood as a
+*bi-variate x/y* variable and be plotted.
+
+An event however does not have any associated y-value we could plot.
+Given a time-axis, we could make a mark whenever it occurred. Some of
+the markers would probably be closer to each other or be more or less
+accumulated. The y-value could express these accumulations relative to
+each other. These are called **densities**. This is exactly what *Kernel
+Density Estimation* (KDE) does: it expresses the relative accumulations
+of data on the x-axis as density on the y-axis. For KDE, the actual
+values on the x-axis have another meaning, and that is to compare the
+relative likelihoods of the values on it, since the axis is ordered. For
+our case however, the axis is linear time and carries no such meaning.
+
+The project data we analyze is a kind of sampling over the project’s
+events. We subdivide the gathered project data hence into these two
+types of data series:
+
+-   **Events**: They do not carry any extra information or measurements.
+    As for the projects we analyze, events usually are occurrences of
+    specific types of commits, for example. The time of occurrence is
+    the x-value on the time-axis, and the y-value is obtained through
+    KDE.
+-   **Metrics**: Extracted from the project at specific times, for
+    example at every commit. We can extract any number or type of
+    metric, but each becomes its own variable, where the x-value is on
+    the time-axis, and the y-value is the metric’s value.
 
 Load real-world project
 =======================
@@ -272,7 +319,6 @@ while we estimated a Kernel for the activities, for all other variables
 that are metrics, the density (or curve) depends on the observed value,
 not on the frequency of observations.
 
-    # scd is source code density
     dens_scd_data <- data.frame(
       x = sp$AuthorTimeNormalized,
       y = sp$Density
@@ -309,8 +355,8 @@ all activity after August 31 2020.
       stat_function(fun = dens_a, aes(color="A"), size = 1, n = 2^11) +
       #stat_function(fun = dens_c, aes(color="C"), size = 1, n = 2^11) +
       #stat_function(fun = dens_p, aes(color="P"), size = 1, n = 2^11) +
-      stat_function(fun = dens_cp, aes(color="C+P"), size = 1, n = 2^11) +
-      stat_function(fun = dens_acp, aes(color="Freq"), size = 1, n = 2^11) +
+      stat_function(fun = dens_cp, aes(color="CP"), size = 1, n = 2^11) +
+      stat_function(fun = dens_acp, aes(color="FREQ"), size = 1, n = 2^11) +
       stat_function(fun = dens_scd, aes(color="SCD"), size = 1, n = 2^11) +
       theme_light() +
       labs(color = "Activity") +
@@ -427,11 +473,46 @@ Scoring per variable and interval
 ---------------------------------
 
 We want to choose an adequate model for each variable in each interval,
-and then optimize the boundaries to maximize the fit of each model. We
-will only use two different models (if any), and these are described
-below:
+and then optimize the boundaries to maximize the fit of each model.
 
-Models:
+A model consists of two stages. First, any signal transformations are
+formulated. We have a reference- (**A**) and query-signal (**B**). These
+transformations could be, e.g., smoothing the query-signal, fitting a
+polynomial to it, applying DTW to rectify it etc. While some
+transformations are applied only to the query-signal, some are applied
+to the reference signal, and some can be applied to both (e.g., taking
+the `ecdf()` of either signal). Furthermore, a model may choose to
+output an entire new function in this step, such as the DTW’s warping
+function. Lastly, it is also possible not to apply any transformations.
+While less robust for further processing due to the assumption of
+linearly-scaled time, this is computationally much less costly while
+also giving acceptable results.
+
+The second stage of a model is the definition of what is scored, and
+how. Depending on the output of the first stage, there are a large
+number of options. Usually the output is a pair of functions for which
+we have implemented plenty of measures that can quantify the
+differences. It may also be the case that we can directly extract final
+values or coefficients after the first stage, e.g., information about
+linear models. The first stage can also loop, meaning that arbitrary
+many transformation in series and of different kind are possible.
+
+The two stages were joined together and are represented in this image,
+the “Metrics Pipeline”:
+
+![The Metrics Pipeline](../diagrams/Metrics.png)
+
+Now it is apparent that we almost have infinitely many choices on how to
+compose a model for a variable in an interval. It would probably be
+worth conduction a larger-scale experiment with extensive grid-searches
+to find what works best under which circumstances. However, not only
+does this extend way beyond the purpose of this work and should be moved
+into the other, more technical paper. It also would cost too much time
+now, and during some of the earlier tests we have already observed a few
+things that appeared to work well. We hence limit ourselves to choosing
+one of the below, pre-configured models.
+
+These are:
 
 **No Score**: If there is no or nearly no information available for a
 variable in an interval, we should choose not to score it.
@@ -439,16 +520,23 @@ variable in an interval, we should choose not to score it.
 **Linear Model**: A linear model (regression) can be used for when we do
 not know much about the course of a variable in an interval. We use this
 model when our best expectation is a linear course of the variable, and
-that is what we extract from the model. We may have an expectation for
-the intercept, slope or the residuals. When using this model, we usually
-choose a lower weight for it.
+that is what we extract from the model (stage 1). We may have an
+expectation for the intercept, slope or the residuals (stage 2). When
+using this model, we usually choose a lower weight for it. Of course, we
+could compare functions, too, but using the mentioned parameters of the
+LM is more straightforward here.
 
 **Rectifier**: A model to match shapes of curves, that uses *DTW* to
 **rectify** a signal and then computes the goodness-of-fit using one or
-more of the previously developed scores. This is the most sophisticated
-method we currently have. The underlying DTW is computed with either
-closed or open begin/end. In the later case, the score of the rectifier
-model also reflects how much of the query was matched.
+more of the previously developed scores. Also, the best results were
+obtained by scoring the differences of the two signals *and* the
+warping-curve (stage 1). We should probably use a combination of some of
+the low-level metrics (e.g., correlation, area, arc-length, .., etc.),
+or one of the mid-level metrics (e.g., JSD or MI) that capture more than
+one property (stage 2). This is the most sophisticated method we
+currently have. The underlying DTW is computed with either closed or
+open begin/end. In the later case, the score of the rectifier model also
+reflects how much of the query was matched.
 
 **No Model** (approximate function): We can choose to just extract the
 data from the current interval, to approximate a function for its data,
@@ -458,7 +546,8 @@ in most cases; however, we assume that the data from the interval has
 linear time and no time dilations exist.
 
 **Polynomial**: Similar to **No Model**, we fit a 2nd- or 3rd-order
-polynomial over the data (currently, 3rd order should suffice given the
+polynomial (or we may use the new function `poly_autofit()` to find the
+best model) over the data (currently, 3rd order should suffice given the
 peculiarities of our defined Fire Drill) and then compare the resulting
 function against the reference. Again, this approach assumes no
 distortions in time.
@@ -519,28 +608,28 @@ distortions in time.
 <tr class="even">
 <td style="text-align: left;">Long Stretch</td>
 <td style="text-align: left;">A</td>
-<td style="text-align: left;">LM (<span class="math inline">𝔼 [0<sup>∘</sup>]</span>)</td>
+<td style="text-align: left;">No Score, LM (<span class="math inline">𝔼 [0<sup>∘</sup>]</span>)</td>
 <td style="text-align: center;"><code>0.5</code></td>
 <td style="text-align: left;">-</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Long Stretch</td>
 <td style="text-align: left;">C+P</td>
-<td style="text-align: left;">LM (<span class="math inline">𝔼 [0<sup>∘</sup>]</span>)</td>
+<td style="text-align: left;">No Score, LM (<span class="math inline">𝔼 [0<sup>∘</sup>]</span>)</td>
 <td style="text-align: center;"><code>0.5</code></td>
 <td style="text-align: left;">-</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">Long Stretch</td>
 <td style="text-align: left;">FREQ</td>
-<td style="text-align: left;">LM (<span class="math inline">𝔼 [0<sup>∘</sup>]</span>)</td>
+<td style="text-align: left;">No Score, LM (<span class="math inline">𝔼 [0<sup>∘</sup>]</span>)</td>
 <td style="text-align: center;"><code>0.5</code></td>
 <td style="text-align: left;">-</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Long Stretch</td>
 <td style="text-align: left;">SCD</td>
-<td style="text-align: left;">LM (<span class="math inline">𝔼 [slope &lt; 0<sup>∘</sup>]</span>), Rectifier, No Model, Poly(2)</td>
+<td style="text-align: left;">No Score, LM (<span class="math inline">𝔼 [slope &lt; 0<sup>∘</sup>]</span>), Rectifier, No Model, Poly(2)</td>
 <td style="text-align: center;"><code>0.5</code></td>
 <td style="text-align: left;">Use of non-LM may be applicable, considering the somewhat smooth decline in the beginning of this phase.</td>
 </tr>
@@ -688,8 +777,100 @@ Penalize small scores:
     ## [1] 0.133 0.218 0.325 0.456 0.612 0.793
 
     curve(penalizeScore)
+    tempf <- function(x) x * penalizeThreshold^(penalizeExponent - 1)
+    curve(tempf, from = penalizeThreshold, add = TRUE, type = "l", lty = "dotted", lwd = 2.5)
 
 ![](fire-drill-model_files/figure-markdown_strict/unnamed-chunk-14-1.png)
+
+Selecting sub-models for each variable
+--------------------------------------
+
+Now we are ready to select a sub-model for each variable in each
+interval. Note that all sub-models, as well as the objective function
+are defined in the file `models.R`.
+
+Let’s make the list and create the Fire Drill model!
+
+    source("../models/models.R", echo = FALSE)
+
+    listOfSubModels <- list(
+      A_Begin = sub_model_no_model,
+      A_LongStretch = sub_model_no_model,
+      A_FireDrill = sub_model_no_model,
+      A_Aftermath = sub_model_no_model
+    )
+
+    subModelWeights <- c(
+        "A_Begin" = 1,
+        "A_LongStretch" = 1,
+        "A_FireDrill" = 1,
+        "A_Aftermath" = 1
+      )
+
+    fdm <- create_fire_drill_model(
+      fireDrillPattern = fd_data_concat,
+      fireDrillProject = dens_acp_data,
+      listOfSubModels = listOfSubModels,
+      subModelWeights = subModelWeights
+    )
+
+    # Upper bound would be:
+    prod(1 + subModelWeights)
+
+    ## [1] 16
+
+    # and a dummy-test!
+    temp <- fdm(c(.3, .38, .85), returnAllScores = TRUE)
+
+    ## Warning: executing %dopar% sequentially: no parallel backend registered
+
+    ## Loading required package: proxy
+
+    ## 
+    ## Attaching package: 'proxy'
+
+    ## The following objects are masked from 'package:stats':
+    ## 
+    ##     as.dist, dist
+
+    ## The following object is masked from 'package:base':
+    ## 
+    ##     as.matrix
+
+    ## Loaded dtw v1.22-3. See ?dtw for help, citation("dtw") for use in publication.
+
+    ## 
+    ## Attaching package: 'pracma'
+
+    ## The following objects are masked from 'package:numDeriv':
+    ## 
+    ##     grad, hessian, jacobian
+
+    ## 
+    ## Attaching package: 'rootSolve'
+
+    ## The following objects are masked from 'package:pracma':
+    ## 
+    ##     gradient, hessian
+
+    ## The following object is masked from 'package:numDeriv':
+    ## 
+    ##     hessian
+
+    ## Warning: package 'SimilarityMeasures' was built under R version 4.0.3
+
+    temp
+
+    ##       A_Begin A_LongStretch   A_FireDrill   A_Aftermath 
+    ##      1.289821      1.513252      1.257024      1.367831
+
+    prod(temp)
+
+    ## [1] 3.355957
+
+    prod(temp) / prod(1 + subModelWeights) # relative score in [0,1]
+
+    ## [1] 0.2097473
 
 References
 ==========
