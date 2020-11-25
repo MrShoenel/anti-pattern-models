@@ -304,8 +304,8 @@ ggplot(data.frame(x = range(acp_attr$min, acp_attr$max)), aes(x)) +
   stat_function(fun = dens_a, aes(color="A"), size = 1, n = 2^11) +
   #stat_function(fun = dens_c, aes(color="C"), size = 1, n = 2^11) +
   #stat_function(fun = dens_p, aes(color="P"), size = 1, n = 2^11) +
-  stat_function(fun = dens_cp, aes(color="C+P"), size = 1, n = 2^11) +
-  stat_function(fun = dens_acp, aes(color="Freq"), size = 1, n = 2^11) +
+  stat_function(fun = dens_cp, aes(color="CP"), size = 1, n = 2^11) +
+  stat_function(fun = dens_acp, aes(color="FREQ"), size = 1, n = 2^11) +
   stat_function(fun = dens_scd, aes(color="SCD"), size = 1, n = 2^11) +
   theme_light() +
   labs(color = "Activity") +
@@ -399,19 +399,29 @@ Now we can finally start to define an objective function. Before that, we need t
 
 ## Scoring per variable and interval
 
-We want to choose an adequate model for each variable in each interval, and then optimize the boundaries to maximize the fit of each model. We will only use two different models (if any), and these are described below:
+We want to choose an adequate model for each variable in each interval, and then optimize the boundaries to maximize the fit of each model.
 
-Models:
+A model consists of two stages. First, any signal transformations are formulated. We have a reference- (__A__) and query-signal (__B__). These transformations could be, e.g., smoothing the query-signal, fitting a polynomial to it, applying DTW to rectify it etc. While some transformations are applied only to the query-signal, some are applied to the reference signal, and some can be applied to both (e.g., taking the `ecdf()` of either signal). Furthermore, a model may choose to output an entire new function in this step, such as the DTW's warping function. Lastly, it is also possible not to apply any transformations. While less robust for further processing due to the assumption of linearly-scaled time, this is computationally much less costly while also giving acceptable results.
+
+The second stage of a model is the definition of what is scored, and how. Depending on the output of the first stage, there are a large number of options. Usually the output is a pair of functions for which we have implemented plenty of measures that can quantify the differences. It may also be the case that we can directly extract final values or coefficients after the first stage, e.g., information about linear models. The first stage can also loop, meaning that arbitrary many transformation in series and of different kind are possible.
+
+The two stages were joined together and are represented in this image, the "Metrics Pipeline":
+
+![The Metrics Pipeline](../diagrams/Metrics.png)
+
+Now it is apparent that we almost have infinitely many choices on how to compose a model for a variable in an interval. It would probably be worth conduction a larger-scale experiment with extensive grid-searches to find what works best under which circumstances. However, not only does this extend way beyond the purpose of this work and should be moved into the other, more technical paper. It also would cost too much time now, and during some of the earlier tests we have already observed a few things that appeared to work well. We hence limit ourselves to choosing one of the below, pre-configured models.
+
+These are:
 
 __No Score__: If there is no or nearly no information available for a variable in an interval, we should choose not to score it.
 
-__Linear Model__: A linear model (regression) can be used for when we do not know much about the course of a variable in an interval. We use this model when our best expectation is a linear course of the variable, and that is what we extract from the model. We may have an expectation for the intercept, slope or the residuals. When using this model, we usually choose a lower weight for it.
+__Linear Model__: A linear model (regression) can be used for when we do not know much about the course of a variable in an interval. We use this model when our best expectation is a linear course of the variable, and that is what we extract from the model (stage 1). We may have an expectation for the intercept, slope or the residuals (stage 2). When using this model, we usually choose a lower weight for it. Of course, we could compare functions, too, but using the mentioned parameters of the LM is more straightforward here.
 
-__Rectifier__: A model to match shapes of curves, that uses _DTW_ to __rectify__ a signal and then computes the goodness-of-fit using one or more of the previously developed scores. This is the most sophisticated method we currently have. The underlying DTW is computed with either closed or open begin/end. In the later case, the score of the rectifier model also reflects how much of the query was matched.
+__Rectifier__: A model to match shapes of curves, that uses _DTW_ to __rectify__ a signal and then computes the goodness-of-fit using one or more of the previously developed scores. Also, the best results were obtained by scoring the differences of the two signals _and_ the warping-curve (stage 1). We should probably use a combination of some of the low-level metrics (e.g., correlation, area, arc-length, .., etc.), or one of the mid-level metrics (e.g., JSD or MI) that capture more than one property (stage 2). This is the most sophisticated method we currently have. The underlying DTW is computed with either closed or open begin/end. In the later case, the score of the rectifier model also reflects how much of the query was matched.
 
 __No Model__ (approximate function): We can choose to just extract the data from the current interval, to approximate a function for its data, and then compute a score in the same way the Rectifier does, by comparing two functions. Skipping the rectification seems to work well in most cases; however, we assume that the data from the interval has linear time and no time dilations exist.
 
-__Polynomial__: Similar to __No Model__, we fit a 2nd- or 3rd-order polynomial over the data (currently, 3rd order should suffice given the peculiarities of our defined Fire Drill) and then compare the resulting function against the reference. Again, this approach assumes no distortions in time.
+__Polynomial__: Similar to __No Model__, we fit a 2nd- or 3rd-order polynomial (or we may use the new function `poly_autofit()` to find the best model) over the data (currently, 3rd order should suffice given the peculiarities of our defined Fire Drill) and then compare the resulting function against the reference. Again, this approach assumes no distortions in time.
 
 
 
@@ -421,12 +431,12 @@ __Polynomial__: Similar to __No Model__, we fit a 2nd- or 3rd-order polynomial o
 | Begin        | A           | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
 | Begin        | C+P         | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
 | Begin        | FREQ        | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
-| Begin        | SCD        | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
+| Begin        | SCD         | Rectifier, No Model, Poly(2)     | `0.8`  | -              |
 | ---------    | ----------- | -------------------------        | -------- | ---------------------------------------------------- |
-| Long Stretch | A           | LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
-| Long Stretch | C+P         | LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
-| Long Stretch | FREQ        | LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
-| Long Stretch | SCD         | LM ($\mathop{{}\mathbb{E}}[\text{slope}<0^{\circ}]$), Rectifier, No Model, Poly(2) | `0.5`  | Use of non-LM may be applicable, considering the somewhat smooth decline in the beginning of this phase. |
+| Long Stretch | A           | No Score, LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
+| Long Stretch | C+P         | No Score, LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
+| Long Stretch | FREQ        | No Score, LM ($\mathop{{}\mathbb{E}}[0^{\circ}]$) | `0.5`  | -              |
+| Long Stretch | SCD         | No Score, LM ($\mathop{{}\mathbb{E}}[\text{slope}<0^{\circ}]$), Rectifier, No Model, Poly(2) | `0.5`  | Use of non-LM may be applicable, considering the somewhat smooth decline in the beginning of this phase. |
 | ---------    | ----------- | -------------------------        | -------- | ---------------------------------------------------- |
 | Fire Drill   | A           | LM ($\mathop{{}\mathbb{E}}[\text{slope}\geq 45^{\circ}]$), Rectifier, No Model, Poly(3) | `1.0`  | LM may be applicable as we know nothing about _how_ the variable rises, just that it will. It is however the least-preferred option. Usage of LM is probably a bit sketchy, as we need to make assumptions about its slope. |
 | Fire Drill   | C+P         | LM ($\mathop{{}\mathbb{E}}[\text{slope} \approx -45^{\circ}]$), Rectifier, No Model, Poly(3) | `1.0`  | Like adaptive (A), an LM may be worth checking out, as this variable is almost linear in our model. Also, when using an LM for any variable in this interval, we should use a smaller weight. |
