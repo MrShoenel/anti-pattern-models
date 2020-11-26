@@ -1120,3 +1120,61 @@ ImpulseFactor <- function(vec) {
   Peak(vec) / (1 / l * sum(abs(vec)))
 }
 
+
+#' Treats both functions as signals and uniformly samples from
+#' them. Then computes one or more signal measures for either
+#' sampled signal and puts both into relation. Each relation is
+#' moved into [0,1], where 1 means both signals have the same
+#' relation for the computed property. Returns a stat_diff-
+#' style function with f1, f2 and numSamples.
+#' 
+#' @param use One of "RMS", "Kurtosis", "Peak", "ImpulseFactor"
+#' or "all". If "all", computes all of the previous and returns
+#' a named vector instead of a single score.
+#' @param requiredSign One of 0, 1, -1. Determines the required
+#' ratio for each computed property. 1 means that the value for
+#' f1 must be greater than the one for f2, and -1 vice versa. 0
+#' means that it does not matter. If a required sign is not met,
+#' the resulting score for the property is 0.
+stat_diff_2_functions_signals_score <- function(
+  use = c("all", "RMS", "Kurtosis", "Peak", "ImpulseFactor")[1],
+  requiredSign = c(0, 1, -1)[1]
+) {
+  return(function(f1, f2, numSamples = 1e4) {
+    temp <- stat_diff_2_functions(
+      f1 = f1, f2 = f2, numSamples = numSamples)
+    idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+    d1 <- temp$dataF1[idx]
+    d2 <- temp$dataF2[idx]
+    
+    fac1 <- c()
+    fac2 <- c()
+    useAll <- use == "all"
+    if (useAll || "RMS" %in% use) {
+      fac1 <- c(fac1, "RMS" = RMS(d1))
+      fac2 <- c(fac2, "RMS" = RMS(d2))
+    }
+    if (useAll || "Kurtosis" %in% use) {
+      fac1 <- c(fac1, "Kurtosis" = Kurtosis(d1))
+      fac2 <- c(fac2, "Kurtosis" = Kurtosis(d2))
+    }
+    if (useAll || "Peak" %in% use) {
+      fac1 <- c(fac1, "Peak" = Peak(d1))
+      fac2 <- c(fac2, "Peak" = Peak(d2))
+    }
+    if (useAll || "ImpulseFactor" %in% use) {
+      fac1 <- c(fac1, "ImpulseFactor" = ImpulseFactor(d1))
+      fac2 <- c(fac2, "ImpulseFactor" = ImpulseFactor(d2))
+    }
+    
+    frac <- fac1 / fac2
+    temp <- 1 - frac
+    if (requiredSign == 1) {
+      temp[temp < 0] <- 0
+    } else if (requiredSign == -1) {
+      temp[temp > 0] <- 0
+    }
+    
+    sapply(frac, function(r) if (r < 1) r else 1 / r)
+  })
+}
