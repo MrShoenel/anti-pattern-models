@@ -390,12 +390,49 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
   return(temp)
 }
 
-#' Conveniently, this function's co-domain is [0,1] for f1,f2
-#' defined in the unit-square.
-stat_diff_2_functions_frechet <- function(f1, f2, numSamples = 1e2) {
-  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples, statFunc = function(x, y) {
+#' Computes a score based on the sample standard deviation, or
+#' the sample variance, or the MAE or RMSE. The returned score
+#' is normalized w.r.t. the used method's upper bound in the unit-
+#' square, so it is always in the range [0,1]. Returns a stat_diff-
+#' style function with f1, f2 and numSamples.
+#' 
+#' @param use one of "sd", "var", "mae", "rmse"
+#' @return function with parameters f1, f2, numSamples
+stat_diff_2_functions_sd_var_mae_rmse_score <- function(
+  use = c("sd", "var", "mae", "rmse")[1]
+) {
+  return(function(f1, f2, numSamples = 1e4) {
+    temp <- switch (use,
+      "sd"   = stat_diff_2_functions_sd(f1 = f1, f2 = f2, numSamples = numSamples),
+      "var"  = stat_diff_2_functions_var(f1 = f1, f2 = f2, numSamples = numSamples),
+      "mae"  = stat_diff_2_functions_mae(f1 = f1, f2 = f2, numSamples = numSamples),
+      "rmse" = stat_diff_2_functions_rmse(f1 = f1, f2 = f2, numSamples = numSamples),
+      {
+        stop(paste0("Don't know ", corrType, "."))
+      }
+    )$value
     
+    upperBound <- switch (use,
+      "sd"   = sqrt(1/2),
+      "var"  = 1/2,
+      "mae"  = 1,
+      "rmse" = 1
+    )
+    
+    temp / upperBound
   })
+}
+
+#' Conveniently, this function's co-domain is [0,1] for f1,f2
+#' defined in the unit-square. Computing a score can be done
+#' by 1 - frechet-distance.
+#' @note The Fréchet distance is very costly and its runtime
+#' increases exponentially with 'numSamples'. Using a value
+#' much larger than 100 is not recommended. 50 seems to be
+#' an acceptable trade-off. However, for grid-searches a
+#' value larger than 50 is recommended.
+stat_diff_2_functions_frechet <- function(f1, f2, numSamples = 1e2) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   temp$value <- SimilarityMeasures::Frechet(
     traj1 = matrix(data = stats::na.exclude(temp$dataF1), ncol = 1),
     traj2 = matrix(data = stats::na.exclude(temp$dataF2), ncol = 1))
