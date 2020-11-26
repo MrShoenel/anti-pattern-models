@@ -825,6 +825,62 @@ stat_diff_2_functions_mutual_information <- function(f1, f2, numSamples = 1e4) {
 }
 
 
+#' Computes a score based on the mutual information, using the entropy
+#' of either function. Returns a stat_diff- style function with f1, f2
+#' and numSamples.
+#' 
+#' @param symmetry One of 0, -1 or 1. The entropy of the first function
+#' divided by the mutual information is returned when using -1. The one
+#' of the second divided by the mutual information if using 1. When
+#' using the value 0, both of these are multiplied with each other, so
+#' that the score becomes symmetric (commutative). The symmetric version
+#' should be used whenever f1 and f2 are exchangeable. -1 should be used
+#' when the goal is to find out how well f2 resembles f1, and 1 for fin-
+#' ding out how well f1 resembles f2.
+#' @param useBits The mutual information and the entropies are computed
+#' using Shannon-bits, and the score then is computed by putting these
+#' into relation. If you want to compare actual amounts of information,
+#' set this to false. This then results in replacing the log2 bits-value
+#' with 2 to the power of it. Comparisons of actual amounts of infor-
+#' mation are more sensitive.
+#' @param sensitivityExponent Like the JSD score, this score tends to
+#' produce relatively high scores. To increase the sensitivity, these
+#' scores can be spread out more by exponentiating them. If 'useBits'
+#' was set to FALSE, this exponent should be lower, as the score is
+#' already more sensitive. The default exponents are a somewhat good
+#' match for when the entropy and mutual information have about ten
+#' to fifteen bits.
+stat_diff_2_functions_mutual_information_score <- function(
+  symmetry = c(0, -1, 1)[1],
+  useBits = FALSE,
+  sensitivityExponent = if (useBits) 5 else 2
+) {
+  return(function(f1, f2, numSamples = 1e4) {
+    temp <- stat_diff_2_functions_mutual_information(
+      f1 = f1, f2 = f2, numSamples = numSamples)
+    
+    mi <- temp$value
+    e1 <- temp$entropy1
+    e2 <- temp$entropy2
+    
+    if (!useBits) {
+      mi <- 2^mi
+      e1 <- 2^e1
+      e2 <- 2^e2
+    }
+    
+    r1 <- e1 / mi
+    r2 <- e2 / mi
+    
+    switch (paste0(symmetry),
+      "0"  = r1 * r2,
+      "1"  = r1,
+      "-1" = r2
+    )^sensitivityExponent
+  })
+}
+
+
 #' Extract four paths from a DTW-alignment: The two warping-functions;
 #' one for the reference, one for the query. Also extracts paths for
 #' the warping function applied to the reference and to the query. These
