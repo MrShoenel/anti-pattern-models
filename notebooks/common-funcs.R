@@ -315,6 +315,42 @@ stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
   }, numSamples = numSamples))
 }
 
+#' Computes a score based on Pearson-, Kendall- or Spearman
+#' correlation. Returns a stat_diff-style function with f1,
+#' f2 and numSamples.
+#' 
+#' @param requiredSign must be one of 1, 0, -1. If 1, then
+#' only positive correlations will lead to score > 0. Likewise,
+#' for -1, only negative correlations will yield a score > 0.
+#' If 0, then any correlation, positive or negative, produces
+#' a score > 0.
+#' @param corrType one of "pearson", "kendall", "spearman"
+#' @return function with parameters f1, f2, numSamples
+stat_diff_2_functions_cor_score <- function(
+  requiredSign = c(1, 0, -1)[1],
+  corrType = c("pearson", "kendall", "spearman")[1])
+{
+  return(function(f1, f2, numSamples = 1e4) {
+    temp <- switch (corrType,
+      "pearson"  = stat_diff_2_functions_cor(f1 = f1, f2 = f2, numSamples = numSamples),
+      "kendall"  = stat_diff_2_functions_cor_kendall(f1 = f1, f2 = f2, numSamples = numSamples),
+      "spearman" = stat_diff_2_functions_cor_spearman(f1 = f1, f2 = f2, numSamples = numSamples),
+      {
+        stop(paste0("Don't know ", corrType, "."))
+      }
+    )$value
+    
+    switch (paste0(requiredSign),
+      "1"  = max(0, temp),
+      "-1" = abs(min(0, temp)),
+      "0"  = abs(temp),
+      {
+        stop(paste0("Cannot handle ", requiredSign, "."))
+      }
+    )
+  })
+}
+
 stat_diff_2_functions_cor_kendall <- function(f1, f2, numSamples = 1e4) {
   return(stat_diff_2_functions(f1 = f1, f2 = f2, statFunc = function(x, y) {
     return(stats::cor(x = x, y = y, use = "pairwise.complete.obs", method = "kendall"))
@@ -333,6 +369,7 @@ stat_diff_2_functions_var <- function(f1, f2, numSamples = 1e4) {
   return(temp)
 }
 
+#' Computes the sample standard deviation.
 stat_diff_2_functions_sd <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   temp$value <- stats::sd(temp$dataF1 - temp$dataF2, na.rm = TRUE)
