@@ -1041,8 +1041,8 @@ get_dtw_scorable_functions <- function(dtwAlign, signalRef = NULL, signalQuery =
 }
 
 
-densitySafe <- function(data, ratio = 1, kernel = "gauss", bw = "SJ") {
-  d <- stats::density(data, kernel = kernel, bw = bw, n = 2^max(10, ceiling(log2(length(data)))))
+densitySafe <- function(data, ratio = 1, kernel = "gauss", bw = "SJ", from = 0, to = 1) {
+  d <- stats::density(x = data, from = from, to = to, kernel = kernel, bw = bw, n = 2^max(10, ceiling(log2(length(data)))))
   f <- stats::approxfun(x = d$x, y = d$y)
   r <- range(d$x)
   f1 <- Vectorize(function(x) {
