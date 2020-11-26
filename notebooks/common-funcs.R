@@ -442,14 +442,14 @@ stat_diff_2_functions_frechet <- function(f1, f2, numSamples = 1e2) {
 #' Calculates the approximate arc-length of both functions using
 #' @seealso {pracma::poly_length()}. Returns both lengths as well
 #' as the ratio between f1's and f2's length. The ratio is < 0 if
-#' f1's length is shorter than f2's; > 0, otherwise. Ideally, the
+#' f1's length is longer than f2's; > 0, otherwise. Ideally, the
 #' value hence is 0. The arc-length itself has no upper bound.
 #' 
 #' Note that numSamples should ideally be >= 1e5!
 stat_diff_2_functions_arclen <- function(f1, f2, numSamples = 1e5) {
   temp <- stat_diff_2_functions(f1, f2, numSamples = numSamples)
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
-  x <- seq(0, 1, len = length(idx))
+  x <- seq(0, 1, len = sum(idx))
   
   arcLen1 <- pracma::poly_length(x = x, y = temp$dataF1[idx])
   arcLen2 <- pracma::poly_length(x = x, y = temp$dataF2[idx])
@@ -458,6 +458,39 @@ stat_diff_2_functions_arclen <- function(f1, f2, numSamples = 1e5) {
   temp$arcLen2 <- arcLen2
   temp$value <- 1 - (arcLen1 / arcLen2)
   return(temp)
+}
+
+#' Computes a score based on comparing the arc-lengths of two
+#' curves in the unit-square. The score is directly proportional
+#' to the ratio of the functions' arc-lengths. A score of one
+#' hence means that both have the same length. Returns a stat_diff-
+#' style function with f1, f2 and numSamples.
+#' 
+#' @param requiredSign must be one of 1, 0, -1. This is the sign
+#' as expected to be returned from stat_diff_2_functions_arclen.
+#' If, f1's arc-length is longer than f2's, that function will
+#' return a negative value. If f1's arc-length is shorter than
+#' f2's, returns a positive value. If the expected signs differ,
+#' the score is 0.
+#' @return function with parameters f1, f2, numSamples
+stat_diff_2_functions_arclen_score <- function(
+  requiredSign = c(0, 1, -1)[1]
+) {
+  return(function(f1, f2, numSamples = 1e5) {
+    temp <- stat_diff_2_functions_arclen(
+      f1 = f1, f2 = f2, numSamples = numSamples)
+    
+    ratio <- temp$arcLen1 / temp$arcLen2
+    if (ratio > 1) {
+      ratio <- 1 / ratio
+    }
+    
+    switch(paste0(requiredSign),
+      "0"  = ratio,
+      "1"  = if (temp$value < 0) 0 else ratio,
+      "-1" = if (temp$value > 0) 0 else ratio
+    )
+  })
 }
 
 #' Numerically approximates the gradient for both functions
