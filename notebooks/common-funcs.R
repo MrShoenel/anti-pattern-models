@@ -1095,3 +1095,28 @@ poly_autofit <- function(yData, xData = 1:length(yData), maxDegree = 5, method =
     formula = data ~ stats::poly(xData, degree = degreeBest))
 }
 
+
+# The following 4 functions were implemented from [@xi2000bearing].
+
+
+RMS <- function(vec) {
+  l <- length(vec)
+  m <- mean(vec)
+  sqrt(1 / l * sum((vec - m)^2))
+}
+
+Kurtosis <- function(vec) {
+  l <- length(vec)
+  m <- mean(vec)
+  (1 / l * sum((vec - m)^4)) / RMS(vec)
+}
+
+Peak <- function(vec) {
+  .5 * (max(vec) - min(vec))
+}
+
+ImpulseFactor <- function(vec) {
+  l <- length(vec)
+  Peak(vec) / (1 / l * sum(abs(vec)))
+}
+

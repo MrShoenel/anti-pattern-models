@@ -1027,31 +1027,6 @@ In their paper, [@assfalg2006similarity] describe how timeseries can be queried.
 
 [^1]: https://agrimetsoft.com/calculators/Nash%20Sutcliffe%20model%20Efficiency%20coefficient#
 
-```{r}
-# The following functions were implemented from [@xi2000bearing].
-
-RMS <- function(vec) {
-  l <- length(vec)
-  m <- mean(vec)
-  sqrt(1 / l * sum((vec - m)^2))
-}
-
-Kurtosis <- function(vec) {
-  l <- length(vec)
-  m <- mean(vec)
-  (1 / l * sum((vec - m)^4)) / RMS(vec)
-}
-
-Peak <- function(vec) {
-  .5 * (max(vec) - min(vec))
-}
-
-ImpulseFactor <- function(vec) {
-  l <- length(vec)
-  Peak(vec) / (1 / l * sum(abs(vec)))
-}
-```
-
 
 
 
