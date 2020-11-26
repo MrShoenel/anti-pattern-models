@@ -751,7 +751,9 @@ stat_diff_2_functions_symmetric_JSD_score <- function(
 #' of [0,1]). It always uses the log-unit (ln).
 #' 
 #' @source {https://cran.r-project.org/web/packages/philentropy/vignettes/Information_Theory.html}
-stat_diff_2_functions_philentropy_sampled <- function(f1, f2, numSamples = 1e4, method = philentropy::getDistMethods()[1]) {
+stat_diff_2_functions_philentropy_sampled <- function(
+  f1, f2, numSamples = 1e4, method = philentropy::getDistMethods()[1])
+{
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
   
@@ -771,7 +773,8 @@ stat_diff_2_functions_philentropy_sampled <- function(f1, f2, numSamples = 1e4, 
 
 
 #' Calculates the discrete Cross-Entropy H(P,Q) by sampling from
-#' f1,f2, then normalizing the sampled data to sum up to 1.
+#' f1,f2, then normalizing the sampled data to sum up to 1. The
+#' value returned is in Shannon-bits (log2).
 stat_diff_2_functions_cross_entropy <- function(f1, f2, numSamples = 1e4) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2) & temp$dataF1 > 0 & temp$dataF2 > 0
@@ -781,7 +784,7 @@ stat_diff_2_functions_cross_entropy <- function(f1, f2, numSamples = 1e4) {
   vec2 <- temp$dataF2[idx]
   vec2 <- vec2 / sum(vec2)
   
-  temp$value <- -sum(vec1 * log(vec2))
+  temp$value <- -sum(vec1 * log2(vec2))
   return(temp)
 }
 
