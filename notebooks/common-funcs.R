@@ -716,6 +716,34 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sample
 }
 
 
+#' Computes a score based on the Jensen-Shannon divergence of two functions
+#' in the unit-square (or at least with co-domain [0,1]), seen as proper
+#' probability density functions. The divergence appears to capture more
+#' properties than the other low-level scores and is often sufficient for
+#' fitting models. Returns a stat_diff- style function with f1, f2 and numSamples.
+#' 
+#' @param sensitivityExponent an exponent to exponentiate the computed score
+#' by. The JS-divergence tends to produce relatively high scores, so that a
+#' somewhat high exponent helps to spread them out more.
+#' @param useSampledJSD if true, uses stat_diff_2_functions_symmetric_JSD_sampled
+#' instead of the older and less robust stat_diff_2_functions_symmetric_JSD. Less
+#' robust because it assumes that both functions integrate to 1, and it should
+#' not be relied on the user having ascertained that. The newer JSD metric however
+#' resamples both functions to ensure that property.
+stat_diff_2_functions_symmetric_JSD_score <- function(
+  sensitivityExponent = 5, useSampledJSD = TRUE
+) {
+  return(function(f1, f2, numSamples = 1e4, sampleOnError = if (useSampledJSD) NA else TRUE) {
+    temp <- if (useSampledJSD)
+      stat_diff_2_functions_symmetric_JSD_sampled(f1 = f1, f2 = f2, numSamples = numSamples)
+      else stat_diff_2_functions_symmetric_JSD(
+        f1 = f1, f2 = f2, numSamples = numSamples, sampleOnError = sampleOnError)
+    
+    return(unname((1 - (temp$value / log(2)))^sensitivityExponent))
+  })
+}
+
+
 #' Samples the same values (range) from both f1,f2 and then normalizes
 #' the obtained vectors to sum up to 1. If f1,f2 are proper PDFs, that
 #' should be the case anyway (i.e., this function, like the others,
