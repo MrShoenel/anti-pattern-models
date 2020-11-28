@@ -323,7 +323,7 @@ stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
 
 #' Computes a score based on Pearson-, Kendall- or Spearman
 #' correlation. Returns a stat_diff-style function with f1,
-#' f2 and numSamples.
+#' f2.
 #' 
 #' @param requiredSign must be one of 1, 0, -1. If 1, then
 #' only positive correlations will lead to score > 0. Likewise,
@@ -331,12 +331,14 @@ stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
 #' If 0, then any correlation, positive or negative, produces
 #' a score > 0.
 #' @param corrType one of "pearson", "kendall", "spearman"
-#' @return function with parameters f1, f2, numSamples
+#' @param numSamples amount of samples to use
+#' @return function with parameters f1, f2.
 stat_diff_2_functions_cor_score <- function(
   requiredSign = c(1, 0, -1)[1],
-  corrType = c("pearson", "kendall", "spearman")[1])
-{
-  return(function(f1, f2, numSamples = 1e4) {
+  corrType = c("pearson", "kendall", "spearman")[1],
+  numSamples = 1e4
+) {
+  return(function(f1, f2) {
     temp <- switch (corrType,
       "pearson"  = stat_diff_2_functions_cor(f1 = f1, f2 = f2, numSamples = numSamples),
       "kendall"  = stat_diff_2_functions_cor_kendall(f1 = f1, f2 = f2, numSamples = numSamples),
@@ -482,7 +484,7 @@ stat_diff_2_functions_arclen <- function(f1, f2, numSamples = 1e5) {
 #' curves in the unit-square. The score is directly proportional
 #' to the ratio of the functions' arc-lengths. A score of one
 #' hence means that both have the same length. Returns a stat_diff-
-#' style function with f1, f2 and numSamples.
+#' style function with f1, f2.
 #' 
 #' @param requiredSign must be one of 1, 0, -1. This is the sign
 #' as expected to be returned from stat_diff_2_functions_arclen.
@@ -490,11 +492,13 @@ stat_diff_2_functions_arclen <- function(f1, f2, numSamples = 1e5) {
 #' return a negative value. If f1's arc-length is shorter than
 #' f2's, returns a positive value. If the expected signs differ,
 #' the score is 0.
-#' @return function with parameters f1, f2, numSamples
+#' @param numSamples number of samples to use
+#' @return function with parameters f1, f2
 stat_diff_2_functions_arclen_score <- function(
-  requiredSign = c(0, 1, -1)[1]
+  requiredSign = c(0, 1, -1)[1],
+  numSamples = 1e5
 ) {
-  return(function(f1, f2, numSamples = 1e5) {
+  return(function(f1, f2) {
     temp <- stat_diff_2_functions_arclen(
       f1 = f1, f2 = f2, numSamples = numSamples)
     
@@ -738,7 +742,7 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sample
 #' in the unit-square (or at least with co-domain [0,1]), seen as proper
 #' probability density functions. The divergence appears to capture more
 #' properties than the other low-level scores and is often sufficient for
-#' fitting models. Returns a stat_diff- style function with f1, f2 and numSamples.
+#' fitting models. Returns a stat_diff- style function with f1, f2, sampleOnError.
 #' 
 #' @param sensitivityExponent an exponent to exponentiate the computed score
 #' by. The JS-divergence tends to produce relatively high scores, so that a
@@ -748,10 +752,12 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sample
 #' robust because it assumes that both functions integrate to 1, and it should
 #' not be relied on the user having ascertained that. The newer JSD metric however
 #' resamples both functions to ensure that property.
+#' @param numSamples number of samples to use
+#' @return function with parameters f1, f2
 stat_diff_2_functions_symmetric_JSD_score <- function(
-  sensitivityExponent = 5, useSampledJSD = TRUE
+  sensitivityExponent = 5, useSampledJSD = TRUE, numSamples = 1e4
 ) {
-  return(function(f1, f2, numSamples = 1e4, sampleOnError = if (useSampledJSD) NA else TRUE) {
+  return(function(f1, f2, sampleOnError = if (useSampledJSD) NA else TRUE) {
     temp <- if (useSampledJSD)
       stat_diff_2_functions_symmetric_JSD_sampled(f1 = f1, f2 = f2, numSamples = numSamples)
       else stat_diff_2_functions_symmetric_JSD(
@@ -844,8 +850,7 @@ stat_diff_2_functions_mutual_information <- function(f1, f2, numSamples = 1e4) {
 
 
 #' Computes a score based on the mutual information, using the entropy
-#' of either function. Returns a stat_diff- style function with f1, f2
-#' and numSamples.
+#' of either function. Returns a stat_diff- style function with f1, f2.
 #' 
 #' @param symmetry One of 0, -1 or 1. The entropy of the first function
 #' divided by the mutual information is returned when using -1. The one
@@ -868,12 +873,15 @@ stat_diff_2_functions_mutual_information <- function(f1, f2, numSamples = 1e4) {
 #' already more sensitive. The default exponents are a somewhat good
 #' match for when the entropy and mutual information have about ten
 #' to fifteen bits.
+#' @param numSamples number of samples to use
+#' @return function with parameters f1, f2
 stat_diff_2_functions_mutual_information_score <- function(
   symmetry = c(0, -1, 1)[1],
   useBits = FALSE,
-  sensitivityExponent = if (useBits) 5 else 2
+  sensitivityExponent = if (useBits) 5 else 2,
+  numSamples = 1e4
 ) {
-  return(function(f1, f2, numSamples = 1e4) {
+  return(function(f1, f2) {
     temp <- stat_diff_2_functions_mutual_information(
       f1 = f1, f2 = f2, numSamples = numSamples)
     
@@ -1144,7 +1152,7 @@ ImpulseFactor <- function(vec) {
 #' sampled signal and puts both into relation. Each relation is
 #' moved into [0,1], where 1 means both signals have the same
 #' relation for the computed property. Returns a stat_diff-
-#' style function with f1, f2 and numSamples.
+#' style function with f1, f2.
 #' 
 #' @param use One of "RMS", "Kurtosis", "Peak", "ImpulseFactor"
 #' or "all". If "all", computes all of the previous and returns
@@ -1154,11 +1162,13 @@ ImpulseFactor <- function(vec) {
 #' f1 must be greater than the one for f2, and -1 vice versa. 0
 #' means that it does not matter. If a required sign is not met,
 #' the resulting score for the property is 0.
+#' @param numSamples number of samples to use
 stat_diff_2_functions_signals_score <- function(
   use = c("all", "RMS", "Kurtosis", "Peak", "ImpulseFactor")[1],
-  requiredSign = c(0, 1, -1)[1]
+  requiredSign = c(0, 1, -1)[1],
+  numSamples = 1e4
 ) {
-  return(function(f1, f2, numSamples = 1e4) {
+  return(function(f1, f2) {
     temp <- stat_diff_2_functions(
       f1 = f1, f2 = f2, numSamples = numSamples)
     idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
