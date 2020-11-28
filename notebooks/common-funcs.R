@@ -292,11 +292,11 @@ area_diff_2_functions_score <- function() {
 #' two vectors can then be compared statistically.
 stat_diff_2_functions <- function(f1, f2, statFunc = function(a, b) {
   suppressWarnings({
-    stats::cor
+    stats::cor(x = a, y = b, use = "pairwise.complete.obs")
   })
 }, numSamples = 1e4) {
   #indices <- sort(stats::runif(n = numSamples, min = 0, max = 1))
-  indices <- seq(0, 1, by = 1 / numSamples)
+  indices <- seq(0, 1, length.out = numSamples)
   
   d1 <- sapply(indices, f1)
   d2 <- sapply(indices, f2)
