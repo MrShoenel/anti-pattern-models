@@ -280,6 +280,12 @@ area_diff_2_functions <- function(f1, f2) {
   ))
 }
 
+area_diff_2_functions_score <- function() {
+  return(function(f1, f2) {
+    return(1 - area_diff_2_functions(f1, f2)$value)
+  })
+}
+
 
 #' Samples from both function within [0,1] and returns the
 #' indices used and the values from either function. These
