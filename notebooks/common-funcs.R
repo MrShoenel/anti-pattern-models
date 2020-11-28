@@ -280,9 +280,45 @@ area_diff_2_functions <- function(f1, f2) {
   ))
 }
 
-area_diff_2_functions_score <- function() {
+
+#' Computes the are between two function in the unit-square. That area
+#' is directly anti-proportional to the resulting score, i.e., a low
+#' area between corresponds to a high score. Returns a stat_diff-style
+#' function with f1, f2.
+#' 
+#' Note: While this function will also work for when both function use
+#' smaller or larger bounds than the unit-square by setting the para-
+#' meter 'useUpperBoundFromData' to TRUE and using a sufficiently large
+#' number of 'numSamples', it is generally recommeded to use the score
+#' stat_diff_2_functions_sd_var_mae_rmse_score() with MAE instead in
+#' these cases, also setting 'useUpperBoundFromData' to true. Otherwise,
+#' this function should give more precise results as it uses true inte-
+#' gration.
+#' 
+#' @param useUpperBoundFromData If FALSE (default), the two functions
+#' are expected to make use of the bounds of the unit-square. Some-
+#' times the two functions cover another rectangular area, and for
+#' that case you can set this parameter to TRUE.
+#' @param numSamples Only used when using the upper bound from data
+#' to find the maximum/minimum extents for both functions.
+area_diff_2_functions_score <- function(
+  useUpperBoundFromData = FALSE,
+  numSamples = 1e4
+) {
   return(function(f1, f2) {
-    return(1 - area_diff_2_functions(f1, f2)$value)
+    yRange <- if (!useUpperBoundFromData) { c(0,1) } else {
+      temp <- stat_diff_2_functions(
+        f1 = f1, f2 = f2, numSamples = numSamples)
+      range(temp$dataF1, temp$dataF2, na.rm = TRUE)
+    }
+    yExtent <- abs(yRange[2] - yRange[1])
+    
+    score <- 1 - (area_diff_2_functions(f1, f2)$value / yExtent)
+    
+    # We do this to make sure the score is within [0,1], because the
+    # actual yExtent may be larger than what we found, due to a limited
+    # number of samples we took.
+    return(min(1, max(0, score)))
   })
 }
 
