@@ -1,11 +1,33 @@
 library(foreach)
 
+
+#' @param patternData data.frame with columns 'x', 'y' and the
+#' two factor-columns 't' (type of variable) and 'interval'.
+#' @return list where each entry is a chunk of the patternData
+#' that corresponds to one type and one interval. The names of
+#' the entries in this list are in the format "t_interval".
+create_reference_data <- function(patternData) {
+  # First, we divide the original pattern according to the
+  # original boundaries, and store the reference signals.
+  # We use the same names in the list as we expect for the
+  # list of sub-models!
+  referenceSignalData <- list()
+  for (t in levels(patternData$t)) {
+    for (i in levels(patternData$interval)) {
+      varData <- patternData[
+        patternData$t == t & patternData$interval == i, ]
+      
+      referenceSignalData[[paste(t, i, sep = "_")]] <- varData
+    }
+  }
+  
+  referenceSignalData
+}
+
+
+
 #' TODO: Description
 #' 
-#' @param fireDrillPattern the readily processed Fire Drill
-#' pattern, as a single data.frame. Needs to contain data for all
-#' variables and all intervals. The expected columns are:
-#' 'x', 'y', 't' (variable) and 'interval' (name of interval).
 #' @param fireDrillProject the readily processed project that is
 #' suspected to contain a Fire Drill. Should have the same format
 #' as the data.frame 'fireDrillPattern'.
@@ -14,40 +36,16 @@ library(foreach)
 #' expected to return a score within [0,1] (where 1 is best) and
 #' is given the reference- and query-signals. The name of each
 #' sub-model in this list must follow this pattern:
-#' "VARIABLENAME_INTERVALNAME".
-#' @param subModelWeights a named vector with linear weights for
-#' each sub-model. Same naming convention as in the list of sub-
-#' models!
+#' "VARIABLENAME_INTERVALNAME". Also, each submodel may carry a
+#' list of properties to be found in its attributes. Currently,
+#' only the attribute 'weight' is used.
 create_fire_drill_model <- function(
-  fireDrillPattern, fireDrillProject, listOfSubModels,
-  subModelWeights = sapply(names(listOfSubModels), function(n) {
-    vec <- c()
-    vec[n] <- 1
-    vec
-  }, USE.NAMES = FALSE))
+  fireDrillProject, listOfSubModels)
 { 
-  # First, we divide the original pattern according to the
-  # original boundaries, and store the reference signals.
-  # We use the same names in the list as we expect for the
-  # list of sub-models!
-  referenceSignalData <- list()
-  referenceSignalFuncs <- list()
-  for (t in levels(fireDrillPattern$t)) {
-    for (i in levels(fireDrillPattern$interval)) {
-      varData <- fireDrillPattern[fireDrillPattern$t == t & fireDrillPattern$interval == i, ]
-      
-      referenceSignalData[[paste(t, i, sep = "_")]] <- varData
-      
-      referenceSignalFuncs[[paste(t, i, sep = "_")]] <- pattern_approxfun(
-        yData = varData$y,
-        xData = varData$x,
-        yLimits = range(varData$y))
-    }
-  }
-  
-  
   #' @param x is a vector with the current boundaries.
   objectiveFunc <- function(x, returnAllScores = FALSE) {
+    
+    print(42)
     
     scores <- foreach::foreach(
       varAndInterval = names(listOfSubModels),
@@ -68,9 +66,6 @@ create_fire_drill_model <- function(
         3 } else { 4 }
       boundaryEnd <- boundaryStart + 1
       
-      dataRef <- referenceSignalData[[varAndInterval]]
-      fnRef <- referenceSignalFuncs[[varAndInterval]]
-      
       # The next step is to extract data from the project,
       # according to the current boundaries and interval.
       dataQuery <- fireDrillProject[
@@ -78,24 +73,18 @@ create_fire_drill_model <- function(
         fireDrillProject$x >= boundaries[boundaryStart] &
         fireDrillProject$x < boundaries[boundaryEnd], ]
       
-      # Let's make a function out of it:
-      fnQuery <- pattern_approxfun(
-        yData = dataQuery$y,
-        xData = dataQuery$x#,
-        #yLimits = range(dataRef$y) # make it is within reference
-      )
-      
       subModel <- listOfSubModels[[varAndInterval]]
-      subModelWeight <- subModelWeights[[varAndInterval]]
+      subModelAttr <- attributes(subModel)
+      subModelWeight <- if ("weight" %in% names(subModelAttr)) subModelAttr$weight else 1
       
       # Everything is prepared, let's call the model!
       vec <- c()
       vec[varAndInterval] <-
-        subModelWeight * subModel(dataRef, fnRef, dataQuery, fnQuery)
+        subModelWeight * penalizeScore(subModel(dataQuery))
       vec
     }
     
-    scores <- 1 + penalizeScore(scores)
+    scores <- 1 + scores
     
     if (returnAllScores) {
       # These are weighted and penalized!
@@ -110,20 +99,176 @@ create_fire_drill_model <- function(
 
 
 
-#' The input to this model is the reference- and query signal
-#' and it will output the score.
-sub_model_no_model <- function(dataRef, fnRef, dataQuery, fnQuery) {
+# sub_model <- function(dataRef, dataQuery, stage1, stage2) {
+#   
+#   pair_of_funcs_or_vectors <- stage1(dataRef, dataQuery)
+#   
+#   final_score <- stage2(pair_of_funcs_or_vectors)
+#   
+#   return(final_score)
+# 
+# }
+
+
+
+#' Generic sub-model that takes the reference data and two
+#' previously created stages, as well as a weight for this
+#' sub-model. Returns the product of all scores as returned
+#' by stage 2.
+generic_sub_model <- function(weight = 1, dataRef, stage1, stage2) {
+  temp <- function(dataQuery) {
+    scores <- stage2(stage1(dataQuery = dataQuery))
+    # for the single scores of this sub-model prod is OK!
+    prod(scores)
+  }
   
-  # JSD as upper bound log(2), so we normalize it.
-  # 1 minus that gives us a score.
-  # That to a large power increase sensitivity of the score,
-  # since JSD tends to give us larger scores.
-  return((1 - stat_diff_2_functions_symmetric_JSD(f1 = fnRef, f2 = fnQuery)$value / log(2))^4)
-  
-  # For ^5, the slope of the function becomes > 1 at ~0.6687,
-  # for ^6, this happens at ~0.6988,
-  # for ^4, at ~0.6299,
-  # for ^3, at ~0.5774
-  
+  attributes(temp) <- list(weight = weight)
+  temp
 }
+
+
+create_stage1_No_Model <- function(
+  dataRef,
+  yLimitsRef = range(dataRef$y),
+  approxRefFun = TRUE, approxQueryFun = TRUE
+) {
+  fnRef <- if (approxRefFun) pattern_approxfun(
+    yData = dataRef$y,
+    xData = dataRef$x,
+    yLimits = yLimitsRef) else NULL
+  
+  return(function(dataQuery, yLimitsQuery = yLimitsRef) {
+    
+    fnQuery <- if (approxQueryFun) pattern_approxfun(
+      yData = dataQuery$y,
+      xData = dataQuery$x,
+      yLimits = yLimitsQuery) else NULL
+    
+    list(
+      dataRef = dataRef,
+      dataQuery = dataQuery,
+      fnRef = fnRef,
+      fnQuery = fnQuery
+    )
+  })
+}
+
+
+#' Creates a second stage for a sub-model that operates on
+#' two functions and use arbitrary many score functions.
+#' 
+#' @param erroneousScore Function to be called on erroneous
+#' scores (less than 0, larger than 1, NaN, NA etc.)
+#' @param aggregateSubScores Function to use to aggregate
+#' multiple scores as returned by some score-methods.
+#' @param ... Any number of score-methods that accept two
+#' functions f1, f2 and return a plain score (or a plain
+#' vector of sub-scores).
+create_stage2_two_functions_using_scores <- function(
+  ...,
+  erroneousScore = function(type, score) stop(
+    paste0("The score ", type, " produced the erroneous value ", score, ".")),
+  aggregateSubScores = prod
+) {
+  scoreMethods <- unname(list(...))
+  
+  return(function(stage1Result) {
+    
+    # This stage requires a previous stage that produced also
+    # 2 functions for the data.
+    
+    # These two always exist,
+    d1 <- stage1Result$dataRef
+    d2 <- stage1Result$dataQuery
+    # .. and these two may:
+    f1 <- stage1Result$fnRef
+    f2 <- stage1Result$fnQuery
+    
+    if (!is.function(f1) || !is.function(f2)) {
+      stop("Stage 1 did not produce all functions.")
+    }
+    
+    checkScore <- function(type, score) {
+      if (!all(is.numeric(score)) || any(is.na(score)) || any(score < 0) || any(score > 1)) {
+        erroneousScore(type, score)
+      }
+      score
+    }
+    
+    
+    # Each produced score will be added to this vector. After
+    # all metrics were computed, the vector is returned to the
+    # sub-model, which then decides how to proceed (e.g., by
+    # using some aggregation).
+    singleScores <- c()
+    
+    
+    for (i in 1:length(scoreMethods)) {
+      scoreMethod <- scoreMethods[[i]]
+      score <- checkScore(deparse(scoreMethod), scoreMethod(f1 = f1, f2 = f2))
+      singleScores <- c(singleScores, aggregateSubScores(score))
+    }
+    
+    singleScores
+  })
+}
+
+
+
+#' create_sub_model_stage1 <- function(dataRef, dataQuery) {
+#'   
+#'   # dataRef is never changing so we can go ahead and
+#'   # approximate its function directly.
+#'   fnRef <- pattern_approxfun(
+#'     yData = dataRef$y,
+#'     xData = dataRef$x,
+#'     yLimits = range(dataRef$y))
+#'   
+#'   
+#'   
+#' }
+#' 
+#' 
+#' 
+#' #' The input to this model is the reference- and query signal
+#' #' and it will output the score.
+#' sub_model_no_model <- function(dataRef, dataQuery) {
+#'   
+#'   fnRef <- pattern_approxfun(
+#'     yData = dataRef$y,
+#'     xData = dataRef$x,
+#'     yLimits = range(dataRef$y))
+#'   
+#'   # Let's make a function out of it:
+#'   fnQuery <- pattern_approxfun(
+#'     yData = dataQuery$y,
+#'     xData = dataQuery$x,
+#'     yLimits = range(dataRef$y)) # should be within reference
+#'   
+#'   # JSD as upper bound log(2), so we normalize it.
+#'   # 1 minus that gives us a score.
+#'   # That to a large power increase sensitivity of the score,
+#'   # since JSD tends to give us larger scores.
+#'   #return((1 - stat_diff_2_functions_symmetric_JSD(f1 = fnRef, f2 = fnQuery)$value / log(2))^4)
+#'   
+#'   mi <- stat_diff_2_functions_mutual_information(f1 = fnRef, f2 = fnQuery)
+#'   return(
+#'     1 *
+#'     #max(0, stat_diff_2_functions_cor(f1 = fnRef, f2 = fnQuery)$value) * # negative correlation is bad!
+#'     (1 - area_diff_2_functions(f1 = fnRef, f2 = fnQuery)$value) *
+#'     (1 - stat_diff_2_functions_frechet(f1 = fnRef, f2 = fnQuery, numSamples = 60)$value) *
+#'     ## MI should not be used when one of the signals is entirely flat,
+#'     ## as due to rounding errors the value may get out of bounds.
+#'     ## If we later develop a score and encounter this case, we need to warn or stop.
+#'     #((mi$entropy1 / mi$value) * (mi$entropy2 / mi$value)) * # 'symmetric MI'
+#'     #(mi$entropy2 / mi$value) * # 'asymmetric MI' - how much entropy does the query explain in the MI
+#'     1
+#'   )
+#'   
+#'   # For ^5, the slope of the function becomes > 1 at ~0.6687,
+#'   # for ^6, this happens at ~0.6988,
+#'   # for ^4, at ~0.6299,
+#'   # for ^3, at ~0.5774
+#'   
+#' }
 

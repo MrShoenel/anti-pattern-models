@@ -511,39 +511,135 @@ Let's make the list and create the Fire Drill model!
 ```{r}
 source("../models/models.R", echo = FALSE)
 
-listOfSubModels <- list(
-  A_Begin = sub_model_no_model,
-  A_LongStretch = sub_model_no_model,
-  A_FireDrill = sub_model_no_model,
-  A_Aftermath = sub_model_no_model
+# listOfSubModels <- list(
+#   A_Begin = sub_model_no_model,
+#   A_LongStretch = sub_model_no_model, # TODO: This needs to be an LM!
+#   A_FireDrill = sub_model_no_model,
+#   A_Aftermath = sub_model_no_model
+# )
+# 
+# subModelWeights <- c(
+#   "A_Begin" = 1,
+#   "A_LongStretch" = 1,
+#   "A_FireDrill" = 1,
+#   "A_Aftermath" = 1
+# )
+# 
+# fdm <- create_fire_drill_model(
+#   fireDrillProject = dens_acp_data,
+#   listOfSubModels = listOfSubModels,
+#   subModelWeights = subModelWeights
+# )
+# 
+# # Upper bound would be:
+# prod(1 + subModelWeights) - 1
+# 
+# # and a dummy-test!
+# temp <- fdm(c(.3, .38, .85), returnAllScores = TRUE)
+# temp
+# prod(temp) - 1
+# (prod(temp) - 1) / (prod(1 + subModelWeights) - 1) # relative score in [0,1]
+```
+
+```{r}
+# This is a list with reference data for grouped by
+# each variable, then by interval, e.g., A_Begin etc.
+dataRefAll <- create_reference_data(patternData = fd_data_concat)
+
+
+```
+
+
+### Definition of 2nd stages we use
+
+```{r}
+stage2_low_level_scores <- create_stage2_two_functions_using_scores(
+  area_diff_2_functions_score(),
+  stat_diff_2_functions_cor_score(),
+  stat_diff_2_functions_sd_var_mae_rmse_score(use = "sd"),
+  stat_diff_2_functions_arclen_score(),
+  stat_diff_2_functions_signals_score(use = c("RMS", "Kurtosis"))
 )
 
-subModelWeights <- c(
-    "A_Begin" = 1,
-    "A_LongStretch" = 1,
-    "A_FireDrill" = 1,
-    "A_Aftermath" = 1
-  )
-
-fdm <- create_fire_drill_model(
-  fireDrillPattern = fd_data_concat,
-  fireDrillProject = dens_acp_data,
-  listOfSubModels = listOfSubModels,
-  subModelWeights = subModelWeights
+stage2_JSD_score <- create_stage2_two_functions_using_scores(
+  stat_diff_2_functions_symmetric_JSD_score()
 )
 
-# Upper bound would be:
-prod(1 + subModelWeights)
+stage2_divergence_scores <- create_stage2_two_functions_using_scores(
+  stat_diff_2_functions_symmetric_JSD_score(),
+  stat_diff_2_functions_mutual_information_score()
+)
 
-# and a dummy-test!
-temp <- fdm(c(.3, .38, .85), returnAllScores = TRUE)
-temp
-prod(temp)
-prod(temp) / prod(1 + subModelWeights) # relative score in [0,1]
+stage2_angle_between_LMs_zero <- create_stage2_two_functions_using_scores(
+  stat_diff_2_functions_lm_score(expectAngleDeg = 0)
+)
 ```
 
 
 
+### Definition of list of Sub-models
+
+
+```{r}
+subModels_A <- list(
+  A_Begin = generic_sub_model(
+    weight = 1,
+    dataRef = dataRefAll[["A_Begin"]],
+    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_Begin"]]),
+    stage2 = stage2_JSD_score
+  ),
+  
+  A_LongStretch = generic_sub_model(
+    weight = 1/3,
+    dataRef = dataRefAll[["A_LongStretch"]],
+    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_LongStretch"]], yLimitsRef = c(0,1)),
+    stage2 = stage2_angle_between_LMs_zero
+  ),
+  
+  A_FireDrill = generic_sub_model(
+    weight = 1,
+    dataRef = dataRefAll[["A_FireDrill"]],
+    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_FireDrill"]]),
+    stage2 = stage2_JSD_score
+  ),
+  
+  A_Aftermath = generic_sub_model(
+    weight = 1,
+    dataRef = dataRefAll[["A_Aftermath"]],
+    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_Aftermath"]]),
+    stage2 = stage2_JSD_score
+  )
+)
+
+
+subModels_CP <- list()
+
+subModels_FREQ <- list()
+
+subModels_SCD <- list()
+
+listOfSubModels <- c(subModels_A, subModels_CP, subModels_FREQ, subModels_SCD)
+```
+
+
+### Create Fire Drill model
+
+```{r}
+fdm <- create_fire_drill_model(
+  fireDrillProject = dens_acp_data,
+  listOfSubModels = listOfSubModels
+)
+
+fdm(c(.3, .38, .95), returnAllScores = TRUE)
+```
+
+
+
+
+## Todo
+
+* Make sure that fitting the model to itself yields the original boundaries (or very close to it)
+* After fitting the model to the project, compare boundary positions and deviations.
 
 
 # References {-}
