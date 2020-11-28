@@ -590,6 +590,39 @@ stat_diff_2_functions_lm <- function(f1, f2, numSamples = 1e4) {
 }
 
 
+#' @param expectAngleDeg NA if no expectation, otherwise an angle in degrees
+#' that is in the range [-pi, pi]
+#' @param expectIntersect NA if no expection/check, otherwise requires or not
+#' requires an intersect of the two LM's linear functions within the unit square.
+#' @param numSamples number of samples to use
+#' @return function with parameters f1, f2.
+stat_diff_2_functions_lm_score <- function(
+  expectAngleDeg = NA,
+  expectIntersect = c(NA, TRUE, FALSE)[1],
+  numSamples = 1e4
+) {
+  return(function(f1, f2) {
+    temp <- stat_diff_2_functions_lm(f1, f2, numSamples = numSamples)
+    
+    if (!is.na(expectIntersect) &&
+        ((expectIntersect && is.na(temp$value$intersect)) ||
+        (!expectIntersect && !is.na(temp$value$intersect)))) {
+      return(0) # score is 0 if no intersect but expected (or vice versa)
+    } else if (!is.na(expectAngleDeg)) {
+      if (expectAngleDeg < -180 || expectAngleDeg > 180) {
+        stop(paste0("The expectedAngle is not -180* <= a <= 180*: ", expectAngleDeg))
+      }
+      
+      actualAngleDeg <- temp$value$angle / pi * 180
+      diffAngleDeg <- expectAngleDeg - actualAngleDeg
+      return(1 - abs(diffAngleDeg / 360))
+    } else {
+      stop("Need to either score intersect or angle between.")
+    }
+  })
+}
+
+
 #' This function should be preferred over the other one,
 #' whenever there is doubt that the given functions f1,f2
 #' do not integrate to exactly one over the support [0,1].
