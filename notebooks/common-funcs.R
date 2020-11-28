@@ -199,7 +199,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       sd = stats::sd(warp_res),
       var = stats::var(warp_res),
       mae = mean(abs(warp_res)),
-      rmse = sqrt(sum(mean(warp_res^2)))
+      rmse = sqrt(mean(warp_res^2))
     ),
     warp_rel_resid = list(
       lm = warpLm_rel,
@@ -207,7 +207,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
       sd = stats::sd(warp_rel_res),
       var = stats::var(warp_rel_res),
       mae = mean(abs(warp_rel_res)),
-      rmse = sqrt(sum(mean(warp_rel_res^2)))
+      rmse = sqrt(mean(warp_rel_res^2))
     ),
     
     window_info = list(
@@ -264,11 +264,11 @@ area_diff_2_functions <- function(f1, f2) {
         upper = intersections[intsec + 1],
         subdivisions = 1e5)$value
       -
-        stats::integrate(
-          f = f2,
-          lower = intersections[intsec],
-          upper = intersections[intsec + 1],
-          subdivisions = 1e5)$value)
+      stats::integrate(
+        f = f2,
+        lower = intersections[intsec],
+        upper = intersections[intsec + 1],
+        subdivisions = 1e5)$value)
     
     areas <- c(areas, temp)
   }
@@ -394,14 +394,21 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
 #' the sample variance, or the MAE or RMSE. The returned score
 #' is normalized w.r.t. the used method's upper bound in the unit-
 #' square, so it is always in the range [0,1]. Returns a stat_diff-
-#' style function with f1, f2 and numSamples.
+#' style function with f1, f2.
 #' 
 #' @param use one of "sd", "var", "mae", "rmse"
-#' @return function with parameters f1, f2, numSamples
+#' @param useUpperBoundFromData If FALSE (default), the two functions
+#' are expected to make use of the bounds of the unit-square. Some-
+#' times the two functions cover another rectangular area, and for
+#' that case you can set this parameter to TRUE.
+#' @param numSamples number of samples to use
+#' @return function with parameters f1, f2
 stat_diff_2_functions_sd_var_mae_rmse_score <- function(
-  use = c("sd", "var", "mae", "rmse")[1]
+  use = c("sd", "var", "mae", "rmse")[1],
+  useUpperBoundFromData = FALSE,
+  numSamples = 1e4
 ) {
-  return(function(f1, f2, numSamples = 1e4) {
+  return(function(f1, f2) {
     temp <- switch (use,
       "sd"   = stat_diff_2_functions_sd(f1 = f1, f2 = f2, numSamples = numSamples),
       "var"  = stat_diff_2_functions_var(f1 = f1, f2 = f2, numSamples = numSamples),
@@ -410,16 +417,21 @@ stat_diff_2_functions_sd_var_mae_rmse_score <- function(
       {
         stop(paste0("Don't know ", corrType, "."))
       }
-    )$value
-    
-    upperBound <- switch (use,
-      "sd"   = sqrt(1/2),
-      "var"  = 1/2,
-      "mae"  = 1,
-      "rmse" = 1
     )
     
-    temp / upperBound
+    yRange <- if (!useUpperBoundFromData) { c(0,1) } else {
+      range(temp$dataF1, temp$dataF2, na.rm = TRUE)
+    }
+    yExtent <- abs(yRange[2] - yRange[1])
+    
+    upperBound <- switch (use,
+      "sd"   = sqrt(1/2) * yExtent,
+      "var"  = (sqrt(1/2) * yExtent)^2,
+      "mae"  = yExtent,
+      "rmse" = yExtent
+    )
+    
+    1 - (temp$value / upperBound)
   })
 }
 
