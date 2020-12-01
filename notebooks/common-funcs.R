@@ -389,22 +389,39 @@ stat_diff_2_functions_cor <- function(f1, f2, numSamples = 1e4) {
 #' If 0, then any correlation, positive or negative, produces
 #' a score > 0.
 #' @param corrType one of "pearson", "kendall", "spearman"
+#' @param allowReturnNA cor() returns NA in some cases, for
+#' example when at least one of the vectors has an SD of 0. An
+#' NA score is useless, but it might be still worth detecting
+#' and dealing with it. If NA is encountered and this is NOT
+#' set to TRUE, this score will throw an error!
 #' @param numSamples amount of samples to use
 #' @return function with parameters f1, f2.
 stat_diff_2_functions_cor_score <- function(
   requiredSign = c(1, 0, -1)[1],
   corrType = c("pearson", "kendall", "spearman")[1],
+  allowReturnNA = FALSE,
   numSamples = 1e4
 ) {
   return(function(f1, f2) {
-    temp <- switch (corrType,
-      "pearson"  = stat_diff_2_functions_cor(f1 = f1, f2 = f2, numSamples = numSamples),
-      "kendall"  = stat_diff_2_functions_cor_kendall(f1 = f1, f2 = f2, numSamples = numSamples),
-      "spearman" = stat_diff_2_functions_cor_spearman(f1 = f1, f2 = f2, numSamples = numSamples),
-      {
-        stop(paste0("Don't know ", corrType, "."))
+    temp <- suppressWarnings({
+      switch (
+        corrType,
+        "pearson"  = stat_diff_2_functions_cor(f1 = f1, f2 = f2, numSamples = numSamples),
+        "kendall"  = stat_diff_2_functions_cor_kendall(f1 = f1, f2 = f2, numSamples = numSamples),
+        "spearman" = stat_diff_2_functions_cor_spearman(f1 = f1, f2 = f2, numSamples = numSamples),
+        {
+          stop(paste0("Don't know ", corrType, "."))
+        }
+      )$value
+    })
+    
+    if (is.na(temp)) {
+      if (allowReturnNA) {
+        return(temp)
+      } else {
+        stop("Correlation resulted in NA.")
       }
-    )$value
+    }
     
     switch (paste0(requiredSign),
       "1"  = max(0, temp),
