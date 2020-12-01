@@ -1,8 +1,9 @@
 pattern_approxfun <- function(yData, smooth = FALSE, yLimits = c(0, 1), smoothSpan = .15, xData = NULL) {
-  if (all(yData == 0)) {
+  y1 <- yData[1]
+  if (all(yData == y1)) {
     return(approxfun(
       x = c(0, 1),
-      y = c(0, 0)
+      y = c(y1, y1)
     ))
   }
   
@@ -11,7 +12,9 @@ pattern_approxfun <- function(yData, smooth = FALSE, yLimits = c(0, 1), smoothSp
     # Or maybe yData is ordered according to xData..
     # It's fine, but we need to scale it to [0,1]
     xData <- xData - min(xData)
-    xData <- xData / max(xData)
+    if (max(xData) > 0) {
+      xData <- xData / max(xData)
+    }
   }
   
   if (smooth) {
@@ -24,13 +27,17 @@ pattern_approxfun <- function(yData, smooth = FALSE, yLimits = c(0, 1), smoothSp
     
     yData <- temp$y
     xData <- temp$x - min(temp$x)
-    xData <- xData / max(xData)
+    if (max(xData) > 0) {
+      xData <- xData / max(xData)
+    }
   } else {
     xData <- if (missing(xData)) seq(0, 1, by = 1 / (length(yData) - 1)) else xData
   }
   
   yData <- yData - min(yData)
-  yData <- yData / max(yData)
+  if (max(yData) > 0) {
+    yData <- yData / max(yData)
+  }
   
   if (!missing(yLimits)) {
     # Scale Y into the requested range:
