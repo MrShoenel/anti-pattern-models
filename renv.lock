@@ -366,6 +366,13 @@
       "Repository": "CRAN",
       "Hash": "0d57bc8e27b7ba9e45dba825ebc0de6b"
     },
+    "cubature": {
+      "Package": "cubature",
+      "Version": "2.0.4.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "4d3b90273ce34dcac59c60144649ddfd"
+    },
     "curl": {
       "Package": "curl",
       "Version": "4.3",
@@ -827,6 +834,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "d547eab65958fc4f5d68ad0adfacfcf4"
+    },
+    "philentropy": {
+      "Package": "philentropy",
+      "Version": "0.4.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "10e6498f8ee4727f1f6e0525e599f944"
     },
     "pillar": {
       "Package": "pillar",
