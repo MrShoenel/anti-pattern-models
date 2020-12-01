@@ -31,7 +31,8 @@ MultilevelModel <- R6Class(
       stopifnot(length(intervalNames) >= 2)
       stopifnot(missing(boundaryNames) || (length(intervalNames) == 1 + length(boundaryNames)))
       
-      self$refData <- referenceData
+      # Order by x ascending
+      self$refData <- referenceData[order(referenceData$x), ]
       
       # For each series, we may have different data.
       self$queryData <- list()
@@ -70,7 +71,7 @@ MultilevelModel <- R6Class(
       if (missing(queryData) || is.na(queryData)) {
         self$queryData[[series]] <- NULL
       } else {
-        self$queryData[[series]] <- queryData
+        self$queryData[[series]] <- queryData[order(queryData$x), ]
       }
       invisible(self)
     },
@@ -127,6 +128,8 @@ MultilevelModel <- R6Class(
       
       sa <- ScoreAggregator$new()
       
+#      for (subModelName in self$getSubModelsInUse()) {
+      
       smAggs <- foreach::foreach(
         subModelName = self$getSubModelsInUse(),
         .inorder = FALSE,
@@ -155,7 +158,9 @@ MultilevelModel <- R6Class(
         for (series in names(self$queryData)) {
           
           queryData <- self$queryData[[series]]
-          queryData <- queryData[queryData$x >= delimStart & queryData$x < delimEnd, ]
+          queryData <- queryData[
+            queryData$t == sm$varName &
+            queryData$x >= delimStart & queryData$x < delimEnd, ]
           
           sm$setQueryData(queryData = queryData)
           # The 2nd stage of any sub-model can return any number
@@ -191,14 +196,16 @@ RawScore <- R6Class(
   lock_objects = FALSE,
   
   public = list(
-    initialize = function(name, value, weight = 1) {
+    initialize = function(name, value, weight = 1, allowNA = FALSE) {
       stopifnot(is.character(name) && nchar(name) > 0)
-      stopifnot(is.numeric(value) && value >= 0 && value <= 1)
+      stopifnot(allowNA || (is.numeric(value) && value >= 0 && value <= 1))
       stopifnot(is.numeric(weight) && weight >= 0) # let's allow weights > 1..
       
       self$name <- name
       self$value <- value
       self$weight <- weight
+      self$allowNA <- allowNA
+      self$isNA <- is.na(value)
     }
   )
 )
@@ -210,12 +217,17 @@ ScoreAggregator <- R6Class(
   lock_objects = FALSE,
   
   public = list(
-    initialize = function(namePrefix = NULL) {
+    #' @param allowNAScores The number of raw scores that can have
+    #' an NA value. These are ignored when aggregating.
+    initialize = function(namePrefix = NULL, allowNAScores = 0) {
       if (is.character(namePrefix) && nchar(namePrefix) > 0) {
         self$prefix <- paste0(namePrefix, "_")
       } else {
         self$prefix <- NULL
       }
+      
+      stopifnot(is.numeric(allowNAScores) && allowNAScores >= 0)
+      self$allowNAScores = allowNAScores
       
       self$rawScores <- list()
       # The default is actually to use linear transformation.
@@ -232,14 +244,26 @@ ScoreAggregator <- R6Class(
       invisible(self)
     },
     
-    getWeights = function() {
-      unlist(lapply(self$rawScores,
+    getRawScores = function(includeNAScores = FALSE) {
+      if (includeNAScores) {
+        return(self$rawScores)
+      } else {
+        Filter(f = function(rs) !rs$isNA, x = self$rawScores)
+      }
+    },
+    
+    getNumNAScores = function() {
+      length(Filter(f = function(rs) rs$isNA, x = self$rawScores))
+    },
+    
+    getWeights = function(includeNAScores = FALSE) {
+      unlist(lapply(self$getRawScores(includeNAScores = includeNAScores),
         function(rs) self$nonLinearTransform(rs$weight)))
     },
     
-    getScoreValues = function(skipNonLinearTransform = FALSE) {
+    getScoreValues = function(skipNonLinearTransform = FALSE, includeNAScores = FALSE) {
       useTrans <- if (skipNonLinearTransform) base::identity else self$nonLinearTransform
-      unlist(lapply(self$rawScores,
+      unlist(lapply(self$getRawScores(includeNAScores = includeNAScores),
         function(rs) useTrans(rs$value)))
     },
     
@@ -256,6 +280,7 @@ ScoreAggregator <- R6Class(
     
     aggregateUsing_prod = function() {
       stopifnot(all(self$getWeights() == 1))
+      stopifnot(length(self$rawScores) > 0)
       self$aggregateUsing_custom(callback = prod)
     },
     
@@ -270,6 +295,11 @@ ScoreAggregator <- R6Class(
     
     setRawScore = function(rawScore) {
       stopifnot(inherits(rawScore, "RawScore") && R6::is.R6(rawScore))
+      
+      if (rawScore$isNA && self$getNumNAScores() == self$allowNAScores) {
+        stop("No more NA raw scores allowed.")
+      }
+      
       self$rawScores[[paste0(self$prefix, rawScore$name)]] <- rawScore
       invisible(self)
     },
@@ -523,8 +553,15 @@ Stage1NoModel <- R6Class(
       self$fnQuery <- NA
     },
     
-    setRefData = function(dataRef) {
-      super$setRefData(dataRef = dataRef)
+    #' Does only return a list with all data and the approximated
+    #' functions. Calls Stage1::compute() to ensure these data were
+    #' set previously. The returned list always contains the keys
+    #' for the approximated functions, even if they were not created.
+    #' 
+    #' @return list with keys 'dataRef', 'dataQuery', 'fnRef', 'fnQuery'
+    compute = function() {
+      super$compute() # Only performs checks - does not return anything
+      
       
       if (self$approxRefFun) {
         self$fnRef <- pattern_approxfun(
@@ -534,12 +571,6 @@ Stage1NoModel <- R6Class(
             c(0, 1)
           } else { range(self$dataRef$y) })
       }
-      
-      invisible(self)
-    },
-    
-    setQueryData = function(dataQuery) {
-      super$setQueryData(dataQuery = dataQuery)
       
       if (self$approxQueryFun) {
         if (self$yLimitsQuery == "ref" && !is.data.frame(self$dataRef)) {
@@ -557,19 +588,8 @@ Stage1NoModel <- R6Class(
             range(self$dataQuery$y)
           })
       }
-      
-      invisible(self)
-    },
-    
-    #' Does only return a list with all data and the approximated
-    #' functions. Calls Stage1::compute() to ensure these data were
-    #' set previously. The returned list always contains the keys
-    #' for the approximated functions, even if they were not created.
-    #' 
-    #' @return list with keys 'dataRef', 'dataQuery', 'fnRef', 'fnQuery'
-    compute = function() {
-      s1Result <- super$compute()
-      
+
+            
       list(
         dataRef = self$dataRef,
         dataQuery = self$dataQuery,
@@ -590,28 +610,50 @@ Stage1Rectifier <- R6Class(
   lock_objects = FALSE,
   
   public = list(
-    initialize = function() {
-      super$initialize(approxRefFun = TRUE, approxQueryFun = FALSE)
+    initialize = function(yLimitsRef = "01", yLimitsQuery = "ref") {
+      super$initialize(approxRefFun = TRUE, approxQueryFun = TRUE)
+      
+      # Note that these only apply to when a function is approximated!
+      # That means that the data is NOT changed.
+      self$setYLimitsRef(yLimitsRef)
+      self$setYLimitsQuery(yLimitsQuery)
     },
     
     compute = function() {
-      # TODO: Check if we really always want to do this.
-      self$setYLimitsRef("01")
-      self$setYLimitsQuery("01")
-      
       # This is the list with data and functions.
       s1Result <- super$compute()
       
+      # Before we begin, we may have to transform the data. We sample
+      # from the approximated functions exactly at the original x-
+      # positions.
+      normalizeX <- function(xData) {
+        xData <- xData - min(xData)
+        if (max(xData) > 0) {
+          xData <- xData / max(xData)
+        }
+        xData
+      }
+      
+      dataRef <- data.frame(
+        x = normalizeX(s1Result$dataRef$x),
+        y = sapply(normalizeX(s1Result$dataRef$x), s1Result$fnRef))
+      
+      dataQuery <- data.frame(
+        x = normalizeX(s1Result$dataQuery$x),
+        y = sapply(normalizeX(s1Result$dataQuery$x), s1Result$fnQuery))
+      
+      
       align <- dtw::dtw(
-        x = s1Result$dataRef$y,
-        y = s1Result$dataQuery$y,
+        # Note that x=QUERY and y=REF!
+        x = dataQuery$y,
+        y = dataRef$y,
         keep.internals = TRUE,
         open.begin = FALSE,
         open.end = FALSE)
       
       ex <- extract_signal_from_window(
         dtwAlign = align,
-        window = s1Result$dataQuery$y,
+        window = dataQuery$y,
         throwIfFlat = FALSE,
         idxMethod = "smooth",
         smoothCnt = 3)
@@ -619,19 +661,19 @@ Stage1Rectifier <- R6Class(
       paw <- pattern_approxfun_warp(
         dtwAlign = align,
         includeOptimizedAlign = TRUE,
-        signalRef = s1Result$dataRef$y,
-        signalQuery = s1Result$dataQuery$y)
+        signalRef = dataRef$y,
+        signalQuery = dataQuery$y)
       
       # Should not be used manually, use get_dtw_scorable_functions
       #ex_warp <- extract_warping_from_dtw(
       #  dtwAlign = align,
-      #  signalRef = s1Result$dataRef$y,
-      #  signalQuery = s1Result$dataQuery$y)
+      #  signalRef = dataRef$y,
+      #  signalQuery = dataQuery$y)
       
       dtwFuncs <- get_dtw_scorable_functions(
         dtwAlign = align,
-        signalRef = s1Result$dataRef$y,
-        signalQuery = s1Result$dataQuery$y)
+        signalRef = dataRef$y,
+        signalQuery = dataQuery$y)
       
       s1Result$align <- align
       s1Result$ex <- ex
@@ -661,7 +703,8 @@ Stage2Rectifier <- R6Class(
       scoreSignals = c(
         "f_ref-vs-f_query", "f_ref-vs-f_query_np",
         "f_ref-vs-f_ref_warp", "f_ref-vs-f_query_warp",
-        "f_query-vs-f_query_warp", "f_query-vs-f_ref_warp")
+        "f_query-vs-f_query_warp", "f_query-vs-f_ref_warp",
+        "f_ref_warp-vs-f_query_warp")
     ) {
       super$initialize()
       
@@ -691,7 +734,7 @@ Stage2Rectifier <- R6Class(
       # (paw) contains pairs/triplets of functions that can be scored
       # against each other: 
       # - f_warp vs. f_lm (slightly worse than the next triplet)
-      # - f_warp_org vs. (f_warp_np OR f_warp_np_opt)
+      # - f_warp_org vs. (f_warp_np OR (often slightly better) f_warp_np_opt)
       # (paw) also contains the two original warping functions as known
       # the 3-way plot: f_warp_ref, f_warp_query. Those haven't really
       # been used until now, but I guess it would be straightforward to
@@ -761,52 +804,61 @@ Stage2Rectifier <- R6Class(
       
       ################################### Warping Function scores:
       
+      aggregateSubScores <- function(name, methods, f1, f2) {
+        tempSa <- ScoreAggregator$new(allowNAScores = 1)
+        k <- 0
+        for (m in methods) {
+          tempSa$setRawScore(RawScore$new(
+            name = paste0(k), value = m(f1, f2), allowNA = TRUE
+          ))
+          k <- k + 1
+        }
+        
+        self$scoreAgg$setRawScore(
+          RawScore$new(name = name, value = tempSa$aggregateUsing_prod()))
+      }
+      
       warpScoreMethods <- list(
-        area_diff_2_functions_score(),
-        stat_diff_2_functions_cor_score(),
+        # Use upper bound from data is safer here.
+        area_diff_2_functions_score(useUpperBoundFromData = TRUE),
+        stat_diff_2_functions_cor_score(allowReturnNA = TRUE),
         stat_diff_2_functions_arclen_score(),
-        stat_diff_2_functions_sd_var_mae_rmse_score(use = "rmse"))
+        stat_diff_2_functions_sd_var_mae_rmse_score(
+          use = "rmse", useUpperBoundFromData = TRUE)
+      )
       
       if ("f_warp_org-vs-f_warp_np" %in% self$scoreWarping) {
         # These are in [0,1]
         f1 <- paw$f_warp_org
         f2 <- paw$f_warp_np
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_warp_org-vs-f_warp_np", value = prod(
-            unlist(lapply(warpScoreMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_warp_org-vs-f_warp_np", warpScoreMethods, f1, f2)
       }
       if ("f_warp_org-vs-f_warp_np_opt" %in% self$scoreWarping) {
         f1 <- paw$f_warp_org
         f2 <- paw$f_warp_np_opt
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_warp_org-vs-f_warp_np_opt", value = prod(
-            unlist(lapply(warpScoreMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_warp_org-vs-f_warp_np_opt", warpScoreMethods, f1, f2)
       }
       if ("f_warp-vs-f_lm" %in% self$scoreWarping) {
         f1 <- paw$f_warp
         f2 <- paw$f_lm
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_warp-vs-f_lm", value = prod(
-            unlist(lapply(warpScoreMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_warp-vs-f_lm", warpScoreMethods, f1, f2)
       }
       
       ################################### Ref vs. Query Function scores:
       
       refVsQueryMethods <- list(
         stat_diff_2_functions_symmetric_JSD_score(),
-        area_diff_2_functions_score(),
+        area_diff_2_functions_score(useUpperBoundFromData = TRUE),
         stat_diff_2_functions_cor_score())
       
       if ("f_ref-vs-f_query" %in% self$scoreSignals) {
         f1 <- dtwFuncs$f_ref
         f2 <- dtwFuncs$f_query
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_ref-vs-f_query", value = prod(
-            unlist(lapply(refVsQueryMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_ref-vs-f_query", refVsQueryMethods, f1, f2)
       }
       if ("f_ref-vs-f_query_np" %in% self$scoreSignals) {
         f1 <- dtwFuncs$f_ref
@@ -814,41 +866,37 @@ Stage2Rectifier <- R6Class(
           yData = ex$data,
           yLimits = range(stage1Result$dataRef$y))
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_ref-vs-f_query_np", value = prod(
-            unlist(lapply(refVsQueryMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_ref-vs-f_query_np", refVsQueryMethods, f1, f2)
       }
       if ("f_ref-vs-f_ref_warp" %in% self$scoreSignals) {
         f1 <- dtwFuncs$f_ref
         f2 <- dtwFuncs$f_ref_warp
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_ref-vs-f_ref_warp", value = prod(
-            unlist(lapply(refVsQueryMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_ref-vs-f_ref_warp", refVsQueryMethods, f1, f2)
       }
       if ("f_ref-vs-f_query_warp" %in% self$scoreSignals) {
         f1 <- dtwFuncs$f_ref
         f2 <- dtwFuncs$f_query_warp
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_ref-vs-f_query_warp", value = prod(
-            unlist(lapply(refVsQueryMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_ref-vs-f_query_warp", refVsQueryMethods, f1, f2)
       }
       if ("f_query-vs-f_query_warp" %in% self$scoreSignals) {
         f1 <- dtwFuncs$f_query
         f2 <- dtwFuncs$f_query_warp
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_query-vs-f_query_warp", value = prod(
-            unlist(lapply(refVsQueryMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_query-vs-f_query_warp", refVsQueryMethods, f1, f2)
       }
       if ("f_query-vs-f_ref_warp" %in% self$scoreSignals) {
         f1 <- dtwFuncs$f_query
         f2 <- dtwFuncs$f_ref_warp
         
-        self$scoreAgg$setRawScore(
-          RawScore$new(name = "f_query-vs-f_ref_warp", value = prod(
-            unlist(lapply(refVsQueryMethods, function(sm) sm(f1, f2))))))
+        aggregateSubScores("f_query-vs-f_ref_warp", refVsQueryMethods, f1, f2)
+      }
+      if ("f_ref_warp-vs-f_query_warp" %in% self$scoreSignals) {
+        f1 <- dtwFuncs$f_ref_warp
+        f2 <- dtwFuncs$f_query_warp
+        
+        aggregateSubScores("f_ref_warp-vs-f_query_warp", refVsQueryMethods, f1, f2)
       }
       
       self$scoreAgg
