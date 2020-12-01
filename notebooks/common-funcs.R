@@ -71,7 +71,10 @@ plot_2_functions <- function(fReference, fQuery, interval = c(0, 1)) {
 }
 
 
-extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idxMethod = c("discrete", "smooth"), smoothCnt = 3) {
+extract_signal_from_window <- function(
+  dtwAlign, window, throwIfFlat = TRUE,
+  idxMethod = c("discrete", "smooth"), smoothCnt = 3
+) {
   idxMethod <- if (missing(idxMethod)) idxMethod[1] else idxMethod
   
   # First, we check whether the warping function is flat. This
@@ -147,7 +150,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
     # with a value > 0. In such a case, we store the index and its next
     # index in an array.
     indices <- c()
-    for (idx in 1:(min(length(window), length(dtwAlign$index2)) - 1)) {
+    for (idx in 1:(length(dtwAlign$index2) - 1)) {
       if (dtwAlign$index2[idx] < dtwAlign$index2[idx + 1]) {
         indices <- c(indices, c(idx, idx + 1))
       }
@@ -155,13 +158,18 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
     indices <- unique(indices)
   } else if (idxMethod == "smooth") {
     indices <- c()
-    for (idx in 1:(min(length(window), length(dtwAlign$index2)) - smoothCnt + 1)) {
+    for (idx in 1:(length(dtwAlign$index2) - smoothCnt + 1)) {
       temp <- dtwAlign$index2[idx:(idx + smoothCnt - 1)]
       if (max(temp) > min(temp)) {
         indices <- c(indices, idx:(idx + smoothCnt - 1))
       }
     }
     indices <- unique(indices)
+  }
+  
+  # Additional flatness-check:
+  if (throwIfFlat && length(indices) == 0) {
+    stop("Warping function is flat, no path between signals exist.")
   }
   
   # An additional metric is computed from the linear model of the warping
@@ -225,15 +233,18 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
     ),
     
     indices = indices,
-    start = min(indices),
-    start_rel = min(indices) / dtwAlign$N,
-    end = max(indices),
-    end_rel = max(indices) / dtwAlign$N,
-    start_ref = min(dtwAlign$index2),
-    start_rel_ref = min(dtwAlign$index2) / dtwAlign$M,
-    end_ref = max(dtwAlign$index2),
-    end_rel_ref = max(dtwAlign$index2) / dtwAlign$M,
-    data = window[indices]
+    start_ref = min(dtwAlign$index2[indices]),
+    start_rel_ref = (min(dtwAlign$index2[indices]) - 1) / (dtwAlign$M - 1),
+    end_ref = max(dtwAlign$index2[indices]),
+    end_rel_ref = (max(dtwAlign$index2[indices]) - 1) / (dtwAlign$M - 1),
+    
+    start = min(dtwAlign$index1[indices]),
+    start_rel = (min(dtwAlign$index1[indices]) - 1) / (dtwAlign$N - 1),
+    end = max(dtwAlign$index1[indices]),
+    end_rel = (max(dtwAlign$index1[indices]) - 1) / (dtwAlign$N - 1),
+    
+    # That data in the window that could be warped.
+    data = window[dtwAlign$index1[indices]]
   ))
 }
 
