@@ -231,7 +231,7 @@ extract_signal_from_window <- function(dtwAlign, window, throwIfFlat = TRUE, idx
 }
 
 
-area_diff_2_functions <- function(f1, f2) {
+area_diff_2_functions <- function(f1, f2, useCubintegrate = TRUE) {
   # Find the intersections of both functions:
   intersections <- sort(rootSolve::uniroot.all(
     f = function(x) f1(x) - f2(x),
@@ -250,6 +250,15 @@ area_diff_2_functions <- function(f1, f2) {
     intersections <- c(intersections, 1)
   }
   
+  integrateFn <- function(f, l, u) {
+    if (useCubintegrate) {
+      cubature::cubintegrate(
+        f = f, lower = l, upper = u)$integral
+    } else {
+      stats::integrate(
+        f = f, lower = l, upper = u, subdivisions = 1e5)$value
+    }
+  }
   
   
   # Now, for each pair of intersections, we integrate both
@@ -258,17 +267,12 @@ area_diff_2_functions <- function(f1, f2) {
   areas <- c()
   for (intsec in 1:(length(intersections) - 1)) {
     temp <- abs(
-      stats::integrate(
-        f = f1,
-        lower = intersections[intsec],
-        upper = intersections[intsec + 1],
-        subdivisions = 1e5)$value
+      integrateFn(
+        f = f1, l = intersections[intsec], u = intersections[intsec + 1])
       -
-      stats::integrate(
-        f = f2,
-        lower = intersections[intsec],
-        upper = intersections[intsec + 1],
-        subdivisions = 1e5)$value)
+      integrateFn(
+        f = f2, l = intersections[intsec], u = intersections[intsec + 1])
+    )
     
     areas <- c(areas, temp)
   }
