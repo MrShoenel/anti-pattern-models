@@ -127,6 +127,90 @@ generic_sub_model <- function(weight = 1, dataRef, stage1, stage2) {
 }
 
 
+SubModel <- setClass(
+  Class = "SubModel",
+  
+  slots = c(
+    weight = "numeric",
+    dataRef = "data.frame",
+    dataQuery = "data.frame",
+    
+    stage1 = "function",
+    stage1Result = "list",
+    stage2 = "function",
+    stage2Result = "list"
+  ),
+  
+  prototype = list(
+    weight = 1
+  )
+)
+
+
+setValidity("SubModel", function(object) {
+  if (object@weight < 0 || object@weight > 1) {
+    return("Weight must be 0 <= w <= 1.")
+  }
+  TRUE
+})
+
+setMethod("initialize", "SubModel", function(.Object, ...) {
+  .Object <- callNextMethod() # call super.initialize()
+  
+  if (!all(c("stage1", "stage2") %in% names(list(...)))) {
+    stop("stage1 and stage2 are required to be functions.")
+  }
+  
+  .Object
+})
+
+
+
+setGeneric("updateStage1", def = function(.Object, df) {
+  standardGeneric("updateStage1")
+})
+
+setMethod("updateStage1", "SubModel", function(.Object, df) {
+ .Object@dataRef <- df
+ .Object@stage1Result <- .Object@stage1(df)
+ .Object
+})
+
+
+
+
+setGeneric("updateStage2", def = function(.Object) {
+  standardGeneric("updateStage2")
+})
+
+setMethod("updateStage2", "SubModel", function(.Object) {
+  .Object <- .Object@stage2(.Object@stage1Result)
+  .Object
+})
+
+
+
+setGeneric("fit", def = function(.Object) {
+  standardGeneric("fit")
+})
+
+setMethod("fit", "SubModel", function(.Object) {
+  sm <- updateStage1(.Object, .Object@dataQuery)
+  sm <- updateStage2(sm)
+  
+  scores <- sm@stage2Result
+  
+  scores <- l$stage2Result
+  # for the single scores of this sub-model prod is OK!
+  prod(scores)
+})
+
+setMethod("plot", "SubModel", function(.Object, x, y, foo) {
+  print(43)
+  print(foo)
+})
+
+
 create_stage1_No_Model <- function(
   dataRef,
   yLimitsRef = range(dataRef$y),
