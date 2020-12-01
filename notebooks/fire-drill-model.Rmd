@@ -372,6 +372,11 @@ dens_acp_data$t <- factor(x = dens_acp_data$t, levels = unique(dens_acp_data$t),
 # so that we get all three within [0,1].
 dens_acp_data$x <- dens_acp_data$x - min(dens_acp_data$x)
 dens_acp_data$x <- dens_acp_data$x / max(dens_acp_data$x)
+
+# Now that we have used the densities to get each variable's proportions
+# right, we limit our project data back to [0,1] in y, as the pattern's
+# definition lives in the same co-domain.
+dens_acp_data$y <- dens_acp_data$y / max(dens_acp_data$y)
 ```
 
 ## The Final project
