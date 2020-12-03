@@ -51,6 +51,10 @@ MultilevelModel <- R6Class(
       self$boundaries <- matrix(nrow = 1, ncol = self$numBoundaries)
       colnames(self$boundaries) <- boundaryNames # NULL is OK
       
+      # Now that we know the amount of boundaries, we can
+      # initialize a structure for the linear inequalities:
+      self$linIneqs <- matrix(ncol = self$numBoundaries + 1, nrow = 0)
+      
       
       # Next step is to generate slots for the sub-models.
       # For each variable in each interval, there may or
@@ -71,6 +75,59 @@ MultilevelModel <- R6Class(
       self$sourceFiles <- c()
     },
     
+    
+    hasLinIneqConstraint = function(name) {
+      stopifnot(is.character(name) && nchar(name) > 0)
+      name %in% rownames(self$linIneqs)
+    },
+    
+    removeLinIneqConstraint = function(name) {
+      stopifnot(self$hasLinIneqConstraint(name))
+      rIdx <- which(rownames(self$linIneqs) == name)
+      self$linIneqs <- self$linIneqs[-rIdx, ]
+      invisible(self)
+    },
+    
+    setLinIneqConstraint = function(name, ineqs) {
+      stopifnot(is.vector(ineqs) && length(ineqs) == self$numBoundaries + 1)
+      stopifnot(all(is.numeric(ineqs)) && !any(is.na(ineqs)))
+      
+      # Set or replace semantics:
+      if (!self$hasLinIneqConstraint(name)) {
+        newRow <- matrix(ncol = self$numBoundaries + 1, nrow = 1)
+        rownames(newRow) <- name
+        self$linIneqs <- rbind(self$linIneqs, newRow)
+      }
+      
+      self$linIneqs[name, ] <- ineqs
+      invisible(self)
+    },
+    
+    flushLinIneqConstraints = function() {
+      self$linIneqs <- self$linIneqs[-1:-nrow(self$linIneqs), ]
+      invisible(self)
+    },
+    
+    getTheta = function() {
+      self$boundaries[1, ]
+    },
+    
+    getUi = function() {
+      self$linIneqs[, 1:self$numBoundaries]
+    },
+    
+    getCi = function() {
+      self$linIneqs[, self$numBoundaries + 1]
+    },
+    
+    validateLinIneqConstraints = function() {
+      theta <- self$getTheta()
+      ui <- self$getUi()
+      ci <- self$getCi()
+      
+      res <- ui %*% theta - ci
+      !any(is.na(res)) && all(res >= 0)
+    },
     
     #' (Un-)sets Query data for a series. Omit 'queryData' to unset.
     setQueryData = function(series, queryData = NA) {
