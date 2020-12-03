@@ -264,12 +264,22 @@ MultilevelModel <- R6Class(
     
     
     
-    #' (Un-)sets a sub-model. Omit 'model' to unset.
-    setSubModel = function(name, model = NA) {
-      stopifnot(is.character(name) && (name %in% names(private$subModels)))
-      stopifnot(missing(model) || (inherits(model, "SubModel") && R6::is.R6(model)))
+    #' Sets a sub-model. Also sets self as MLM of the sub-model.
+    setSubModel = function(model) {
+      stopifnot(inherits(model, "SubModel") && R6::is.R6(model))
+      stopifnot(model$name %in% names(private$subModels)) # remember that slots are pre-allocated!
       
-      private$subModels[[name]] <- model
+      private$subModels[[model$name]] <- model
+      model$setMLM(self)
+      invisible(self)
+    },
+    
+    removeSubModel = function(model) {
+      stopifnot(inherits(model, "SubModel") && R6::is.R6(model))
+      stopifnot(model$name %in% names(private$subModels))
+      
+      model$setMLM(NULL)
+      private$subModels[[model$name]] <- NA
       invisible(self)
     },
     
@@ -289,18 +299,19 @@ MultilevelModel <- R6Class(
     
     
     
+    hasBoundary = function(indexOrName) {
+      (is.character(indexOrName) && indexOrName %in% colnames(self$boundaries)) ||
+      (is.numeric(indexOrName) && (indexOrName >= 1 || indexOrName <= ncol(self$boundaries)))
+    },
+    
     getBoundary = function(indexOrName) {
-      stopifnot(
-        (is.character(indexOrName) && indexOrName %in% colnames(self$boundaries)) ||
-        (is.numeric(indexOrName) && (indexOrName >= 1 || indexOrName <= ncol(self$boundaries))))
+      stopifnot(self$hasBoundary(indexOrName = indexOrName))
       
       self$boundaries[1, indexOrName]
     },
     
     setBoundary = function(indexOrName, value) {
-      stopifnot(
-        (is.character(indexOrName) && indexOrName %in% colnames(self$boundaries)) ||
-        (is.numeric(indexOrName) && (indexOrName >= 1 || indexOrName <= ncol(self$boundaries))))
+      stopifnot(self$hasBoundary(indexOrName = indexOrName))
       stopifnot(value >= 0, value <= 1)
       
       self$boundaries[1, indexOrName] <- value
@@ -518,6 +529,10 @@ SubModel <- R6Class(
   
   lock_objects = FALSE,
   
+  private = list(
+    mlm = NULL
+  ),
+  
   public = list(
     initialize = function(varName, intervalName, referenceData = NULL, weight = 1) {
       stopifnot(all(is.character(c(varName, intervalName))))
@@ -531,17 +546,32 @@ SubModel <- R6Class(
       } else {
         self$setReferenceData(referenceData)
       }
+      
+      # A reference to the MLM, to be set by it
+      private$mlm <- NA
+    },
+    
+    setMLM = function(mlm) {
+      stopifnot(inherits(mlm, "MultilevelModel") && R6::is.R6(mlm))
+      private$mlm <- mlm
+      invisible(self)
+    },
+    
+    getMLM = function() {
+      private$mlm
     },
     
     setStage1 = function(stage1) {
       stopifnot(inherits(stage1, "Stage1") && R6::is.R6(stage1))
       self$stage1 <- stage1
+      stage1$setSubModel(self)
       invisible(self)
     },
     
     setStage2 = function(stage2) {
       stopifnot(inherits(stage2, "Stage2") && R6::is.R6(stage2))
       self$stage2 <- stage2
+      stage2$setSubModel(self)
       invisible(self)
     },
     
@@ -608,6 +638,10 @@ Stage2 <- R6Class(
   
   lock_objects = FALSE,
   
+  private = list(
+    subModel = NULL
+  ),
+  
   public = list(
     initialize = function(namePrefix = NULL) {
       # Init sub-score aggregation to default:
@@ -616,6 +650,14 @@ Stage2 <- R6Class(
       self$namePrefix <- namePrefix
       self$scoreMethods <- list()
       self$scoreAgg <- ScoreAggregator$new(namePrefix = namePrefix)
+      
+      private$subModel <- NA
+    },
+    
+    setSubModel = function(subModel) {
+      stopifnot(inherits(subModel, "SubModel") && R6::is.R6(subModel))
+      private$subModel <- subModel
+      invisible(self)
     },
     
     
@@ -681,12 +723,26 @@ Stage2 <- R6Class(
 Stage1 <- R6Class(
   "Stage1",
   
+  lock_objects = FALSE,
+  
+  private = list(
+    subModel = NULL
+  ),
+  
   public = list(
     initialize = function(yLimitsRef = c("01", "self")[1], yLimitsQuery = c("ref", "01", "self")[1]) {
       self$dataRef <- NA
       self$dataQuery <- NA
       self$setYLimitsRef(yLimits = yLimitsRef)
       self$setYLimitsQuery(yLimits = yLimitsQuery)
+      
+      private$subModel <- NA
+    },
+    
+    setSubModel = function(subModel) {
+      stopifnot(inherits(subModel, "SubModel") && R6::is.R6(subModel))
+      private$subModel <- subModel
+      invisible(self)
     },
     
     setYLimitsRef = function(yLimits = c("01", "self")[1]) {
