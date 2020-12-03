@@ -493,11 +493,7 @@ Penalize small scores:
 penalizeThreshold <- .4
 penalizeExponent <- 2.2
 
-penalizeScore <- (function(t, k) {
-  return(Vectorize(function(x) {
-    if (x <= t) x * t^(k - 1) else x^k
-  }))
-})(penalizeThreshold, penalizeExponent)
+penalizeScore <- create_penalizeScore(penalizeThreshold, penalizeExponent)
 
 round(penalizeScore(c(.4,.5,.6,.7,.8,.9)), 3)
 
@@ -507,11 +503,21 @@ curve(tempf, from = penalizeThreshold, add = TRUE, type = "l", lty = "dotted", l
 ```
 
 
-## Selecting sub-models for each variable
+## Create Fire Drill model (obsolete)
 
-Now we are ready to select a sub-model for each variable in each interval. Note that all sub-models, as well as the objective function are defined in the file `models.R`.
+~~Now we are ready to select a sub-model for each variable in each interval. Note that all sub-models, as well as the objective function are defined in the file `models.R`.~~ The following is obsolete code that was using functional-style models (defined in `models.R`). We keep it for historical reasons, but everything else has moved to the new __R6__ models below.
 
-Let's make the list and create the Fire Drill model!
+
+```{r}
+# This is a list with reference data for grouped by
+# each variable, then by interval, e.g., A_Begin etc.
+dataRefAll <- create_reference_data(patternData = fd_data_concat)
+```
+
+
+### Selecting sub-models for each variable
+
+Some obsolete code for ya:
 
 ```{r}
 source("../models/models.R", echo = FALSE)
@@ -544,100 +550,184 @@ source("../models/models.R", echo = FALSE)
 # temp
 # prod(temp) - 1
 # (prod(temp) - 1) / (prod(1 + subModelWeights) - 1) # relative score in [0,1]
+# stage2_low_level_scores <- create_stage2_two_functions_using_scores(
+#   area_diff_2_functions_score(),
+#   stat_diff_2_functions_cor_score(),
+#   stat_diff_2_functions_sd_var_mae_rmse_score(use = "sd"),
+#   stat_diff_2_functions_arclen_score(),
+#   stat_diff_2_functions_signals_score(use = c("RMS", "Kurtosis"))
+# )
+# 
+# stage2_JSD_score <- create_stage2_two_functions_using_scores(
+#   stat_diff_2_functions_symmetric_JSD_score()
+# )
+# 
+# stage2_divergence_scores <- create_stage2_two_functions_using_scores(
+#   stat_diff_2_functions_symmetric_JSD_score(),
+#   stat_diff_2_functions_mutual_information_score()
+# )
+# 
+# stage2_angle_between_LMs_zero <- create_stage2_two_functions_using_scores(
+#   stat_diff_2_functions_lm_score(expectAngleDeg = 0)
+# )
+# 
+# subModels_A <- list(
+#   A_Begin = generic_sub_model(
+#     weight = 1,
+#     dataRef = dataRefAll[["A_Begin"]],
+#     stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_Begin"]]),
+#     stage2 = stage2_JSD_score
+#   ),
+#   
+#   A_LongStretch = generic_sub_model(
+#     weight = 1/3,
+#     dataRef = dataRefAll[["A_LongStretch"]],
+#     stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_LongStretch"]], yLimitsRef = c(0,1)),
+#     stage2 = stage2_angle_between_LMs_zero
+#   ),
+#   
+#   A_FireDrill = generic_sub_model(
+#     weight = 1,
+#     dataRef = dataRefAll[["A_FireDrill"]],
+#     stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_FireDrill"]]),
+#     stage2 = stage2_JSD_score
+#   ),
+#   
+#   A_Aftermath = generic_sub_model(
+#     weight = 1,
+#     dataRef = dataRefAll[["A_Aftermath"]],
+#     stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_Aftermath"]]),
+#     stage2 = stage2_JSD_score
+#   )
+# )
+# 
+# 
+# subModels_CP <- list()
+# 
+# subModels_FREQ <- list()
+# 
+# subModels_SCD <- list()
+# 
+# listOfSubModels <- c(subModels_A, subModels_CP, subModels_FREQ, subModels_SCD)
+
+#fdm <- create_fire_drill_model(
+#  fireDrillProject = dens_acp_data,
+#  listOfSubModels = listOfSubModels
+#)
+#fdm(c(.3, .38, .95), returnAllScores = TRUE)
 ```
+
+
+## Create Fire Drill model (NEW)
+
+In the meantime, I have developed a much more sophisticated __Multilevel Model__, as well as other classes, such as `SubModel`, `Stage1`- and `Stage2`-classes (including some more specialized sub-classes), classes for scoring etc. The `MultilevelModel` class takes reference- and query-data, arbitrary many boundaries (1 or more) and one or no model per variable and interval. It has fitting built in, with support for parallelization. Also, convenient ways to set linear inequality constraints for all boundaries, as well as validation of these was built in.
+
+The two stages, `Stage1` and `Stage2` (and derivatives thereof), were made to reflect the idea of our __Metrics Pipeline__. In it, the first stage is responsible for generating and/or transforming the data as needed by the second stage, which will do the scoring. The task of the `SubModel` then is take both stages, capture one variable in one interval, and to use the given reference- and query-data to compute a score.
+
+For the __Fire Drill__ pattern, as of now, we only really use two kinds of sub-models. This will most likely change in the future, when we refine
+
+* Rectifier: Use __DTW__ to rectify the query, then calculate a score
+* Linear Regression: The only thing we score with it is the flatness of the regression line, w.r.t. an expected slope.
+
+Since we use `R6`-classes, we get reference semantics in R (i.e., not copy-on-write)! We can also easily (deep-)clone objects, which will come in handy when we define our sub-models and their stages below, and can reuse many of these.
+
 
 ```{r}
-# This is a list with reference data for grouped by
-# each variable, then by interval, e.g., A_Begin etc.
-dataRefAll <- create_reference_data(patternData = fd_data_concat)
+mlm <- MultilevelModel$new(
+  referenceData = fd_data_concat,
+  intervalNames = levels(fd_data_concat$interval),
+  referenceBoundaries = fd_data_boundaries)
+mlm$sourceFiles <- c("common-funcs.R", "../models/modelsR6.R")
+
+mlm$setQueryData(series = "ALL", queryData = dens_acp_data)
+
+# Set both limits to "01" to match shape; to "self" to match shape+magnitude!
+# Shape+mag will result in lower, but usually more realistic scores.
+stage1_A_Begin <- Stage1Rectifier$new(
+  yLimitsRef = "self",
+  yLimitsQuery = "self")
+stage2_A_Begin <- Stage2Rectifier$new(
+  scoreWarpingFunction = c("mono_rel", "start_end", "f_warp_org-vs-f_warp_np_opt"),
+  scoreSignals = c("f_ref-vs-f_query_np", "f_ref_warp-vs-f_query_warp"))
 
 
+sm_A_Begin <- SubModel$new(varName = "A", intervalName = "Begin", weight = 1)
+sm_A_Begin$setStage1(stage1 = stage1_A_Begin)
+sm_A_Begin$setStage2(stage2 = stage2_A_Begin)
+mlm$setSubModel(model = sm_A_Begin)
+
+
+
+stage1_A_LongStretch <- Stage1NoModel$new(
+  approxRefFun = TRUE, approxQueryFun = TRUE)$setYLimitsRef("self")$setYLimitsQuery("self")
+stage2_A_LongStretch <- Stage2$new()
+stage2_A_LongStretch$addScoreMethod(
+  name = "Score_LM", scoreMethod = function(f1, f2) {
+    stat_diff_2_functions_lm_score2(maxAngleBetween = 30, requireSign = FALSE)(f1, f2)^5 })
+stage2_A_LongStretch$addScoreMethod(
+  name = "Score_IntervalLength", scoreMethod = stat_diff_custom_score(callback = function(model, interval, useA) {
+    mlm <- model # THIS IS UTMOST IMPORTANT
+    
+    # Create a custom score based on the current interval length.
+    # We have two options:
+    # - A: measure the ratio of the lengths of the current interval to the pattern's interval:
+    #      the closer it is to the reference, the higher the score.
+    # - B: return a score that is higher if the chosen interval is longer:
+    #      The longer, the better, that's it!
+    
+    curr <- mlm$getCurrentIntervalRange(intervalIndexOrName = interval)
+    currExt <- curr[2] - curr[1]
+    
+    if (useA) {
+      # We have to access the original boundaries first.
+      intIdx <- which(mlm$intervalNames == interval)
+      ref <- c(
+        if (intIdx == 1) 0 else mlm$refBoundaries[intIdx - 1],
+        if (intIdx == length(mlm$intervalNames)) 1 else mlm$refBoundaries[intIdx])
+      
+      refExt <- ref[2] - ref[1]
+      ratio <- refExt / currExt
+      ratio <- if (ratio > 1) 1 / ratio else ratio
+      
+      return(ratio)
+    } else {
+      # The best way would be to divide the current length
+      # by the maximum theoretical length, based on the lin.
+      # ineq. constraints. This is not necessarily trivial,
+      # so we use the absolute theoretical maximum of 1.
+      return(currExt)
+    }
+  }, model = mlm, interval = "LongStretch", useA = TRUE))
+
+sm_A_LongStretch <- SubModel$new(varName = "A", intervalName = "LongStretch", weight = .5)
+sm_A_LongStretch$setStage1(stage1 = stage1_A_LongStretch)
+sm_A_LongStretch$setStage2(stage2 = stage2_A_LongStretch)
+mlm$setSubModel(model = sm_A_LongStretch)
 ```
 
 
-### Definition of 2nd stages we use
 
 ```{r}
-stage2_low_level_scores <- create_stage2_two_functions_using_scores(
-  area_diff_2_functions_score(),
-  stat_diff_2_functions_cor_score(),
-  stat_diff_2_functions_sd_var_mae_rmse_score(use = "sd"),
-  stat_diff_2_functions_arclen_score(),
-  stat_diff_2_functions_signals_score(use = c("RMS", "Kurtosis"))
-)
+mlm$flushLinIneqConstraints()
+mlm$addDefaultBoundaryConstraints()
 
-stage2_JSD_score <- create_stage2_two_functions_using_scores(
-  stat_diff_2_functions_symmetric_JSD_score()
-)
+# distance >= 0.05 and <= 0.8
+mlm$addDefaultBoundaryDistanceConstraints(boundaryDistance = .05, op = "geq")
+mlm$addDefaultBoundaryDistanceConstraints(boundaryDistance = .8, op = "leq")
 
-stage2_divergence_scores <- create_stage2_two_functions_using_scores(
-  stat_diff_2_functions_symmetric_JSD_score(),
-  stat_diff_2_functions_mutual_information_score()
-)
+mlm$setBoundary(1, .1)$setBoundary(2, .6)$setBoundary(3, .8)
+# For the moment, the last boundary has no influence on fitting, so we fixate it!
+mlm$fixateBoundaryAt(indexOrName = 3, fixateAt = .9)
 
-stage2_angle_between_LMs_zero <- create_stage2_two_functions_using_scores(
-  stat_diff_2_functions_lm_score(expectAngleDeg = 0)
-)
+res3 <- doWithParallelCluster(expr = {
+  mlm$fit(verbose = TRUE, reltol = 1e-8)#, method = "SANN")
+}, numCores = 4)
 ```
-
-
-
-### Definition of list of Sub-models
 
 
 ```{r}
-subModels_A <- list(
-  A_Begin = generic_sub_model(
-    weight = 1,
-    dataRef = dataRefAll[["A_Begin"]],
-    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_Begin"]]),
-    stage2 = stage2_JSD_score
-  ),
-  
-  A_LongStretch = generic_sub_model(
-    weight = 1/3,
-    dataRef = dataRefAll[["A_LongStretch"]],
-    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_LongStretch"]], yLimitsRef = c(0,1)),
-    stage2 = stage2_angle_between_LMs_zero
-  ),
-  
-  A_FireDrill = generic_sub_model(
-    weight = 1,
-    dataRef = dataRefAll[["A_FireDrill"]],
-    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_FireDrill"]]),
-    stage2 = stage2_JSD_score
-  ),
-  
-  A_Aftermath = generic_sub_model(
-    weight = 1,
-    dataRef = dataRefAll[["A_Aftermath"]],
-    stage1 = create_stage1_No_Model(dataRef = dataRefAll[["A_Aftermath"]]),
-    stage2 = stage2_JSD_score
-  )
-)
-
-
-subModels_CP <- list()
-
-subModels_FREQ <- list()
-
-subModels_SCD <- list()
-
-listOfSubModels <- c(subModels_A, subModels_CP, subModels_FREQ, subModels_SCD)
+res <- mlm$fit(verbose = TRUE)
 ```
-
-
-### Create Fire Drill model
-
-```{r}
-fdm <- create_fire_drill_model(
-  fireDrillProject = dens_acp_data,
-  listOfSubModels = listOfSubModels
-)
-
-fdm(c(.3, .38, .95), returnAllScores = TRUE)
-```
-
 
 
 
