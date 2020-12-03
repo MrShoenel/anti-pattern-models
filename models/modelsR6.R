@@ -319,6 +319,65 @@ MultilevelModel <- R6Class(
     },
     
     
+    fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "SANN")[1]) {
+      stopifnot(self$validateLinIneqConstraints())
+      
+      penalizeScore <- create_penalizeScore(.4, 2.2)
+      
+      histCols <- c("begin", "end", "duration", "score_raw", "score_pen", "score_log", colnames(self$boundaries))
+      fitHist <- matrix(nrow = 0, ncol = length(histCols))
+      colnames(fitHist) <- histCols
+      
+      
+      beginOpt <- as.numeric(Sys.time())
+      optR <- stats::constrOptim(
+        control = list(reltol = reltol),
+        method = method,
+        ui = self$getUi(),
+        theta = self$getTheta(),
+        ci = self$getCi(),
+        grad = NULL,
+        f = function(x) {
+          x <- x + (rnorm(length(x))/10)^5
+          for (idx in 1:length(x)) {
+            self$setBoundary(indexOrName = idx, value = x[idx])
+          }
+          
+          begin <- as.numeric(Sys.time())
+          
+          scoreAgg <- self$compute()
+          score_raw <- scoreAgg$aggregateUsing_Honel()
+          score <- penalizeScore(score_raw)
+          score_log <- log(1 - score)
+          
+          finish <- as.numeric(Sys.time())
+          fitHist <<- rbind(fitHist, c(
+            begin, finish, finish - begin, score_raw, score, score_log, x
+          ))
+          
+          if (verbose) {
+            cat(paste0("Boundaries: ", paste0(sapply(x, function(b) {
+              format(b, digits = 10, nsmall = 10)
+            }), collapse = ", "),
+              " -- Value: ", format(score_log, digits = 10, nsmall = 5),
+              " --  Duration: ", format(finish - begin, digits = 2, nsmall = 2), "s\n"))
+          }
+          
+          score_log
+        }
+      )
+      finishOpt <- as.numeric(Sys.time())
+      
+      list(
+        begin = beginOpt,
+        end = finishOpt,
+        duration = finishOpt - beginOpt,
+        fitHist = fitHist,
+        optResult = optR
+      )
+    },
+    
+    
     #' Evaluates the entire MLM using the currently set boundaries.
     compute = function() {
       stopifnot(!any(is.na(self$boundaries)))
