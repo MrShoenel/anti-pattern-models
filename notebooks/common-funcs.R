@@ -637,6 +637,10 @@ stat_diff_2_functions_lm <- function(f1, f2, numSamples = 1e4) {
   lm2 <- stats::lm(
     formula = y ~ x, data = list(x = itv, y = temp$dataF2[idx]))
   
+  # The idea behind these two vectors is this:
+  # - The two functions have a support of [0,1]
+  # - if we let them go through 0,0 then we just need to
+  #   calculate the value at 1 to get the slope
   vec1 <- c(1,
             stats::predict(lm1, newdata = list(x = c(1))) -
             stats::predict(lm1, newdata = list(x = c(0))))
@@ -694,6 +698,47 @@ stat_diff_2_functions_lm_score <- function(
     } else {
       stop("Need to either score intersect or angle between.")
     }
+  })
+}
+
+
+#' Similar to \code{stat_diff_2_functions_lm_score}, this function
+#' computes a score based on the two LMs of two functions. Instead
+#' of expecting an angle, here we expect a maximum angle between
+#' those two functions.
+#' 
+#' @param maxAngleBetween expected angle between the two LMs; must
+#' be specified as degrees in the range [-180, 180]
+#' @param requireSign If TRUE, then the deviation must have the same
+#' sign as the maxAngleBetween. If TRUE and the sign is not met, the
+#' resulting score is 0. If false, the sign is discarded, effectively
+#' moving the scoring into the range [0, 180].
+#' @param numSamples number of samples to use
+#' @return function with parameters f1, f2.
+stat_diff_2_functions_lm_score2 <- function(
+  maxAngleBetween,
+  requireSign = TRUE,
+  numSamples = 1e4
+) {
+  return(function(f1, f2) {
+    if (maxAngleBetween <= -180 || maxAngleBetween >= 180) {
+      stop(paste0("The maxAngleBetween is not -180* < a < 180*: ", maxAngleBetween))
+    }
+    
+    temp <- stat_diff_2_functions_lm(f1, f2, numSamples = numSamples)
+    diffAngleDeg <- temp$value$angle / pi * 180
+    
+    if (!requireSign) {
+      maxAngleBetween <- abs(maxAngleBetween)
+      diffAngleDeg <- abs(diffAngleDeg)
+    }
+    
+    if ((maxAngleBetween < 0 && (diffAngleDeg < maxAngleBetween || diffAngleDeg > 0)) ||
+        (maxAngleBetween > 0 && (diffAngleDeg > maxAngleBetween || diffAngleDeg < 0))) {
+      return(0)
+    }
+    
+    return(1 - abs(diffAngleDeg / maxAngleBetween))
   })
 }
 
@@ -1271,6 +1316,7 @@ ImpulseFactor <- function(vec) {
 #' means that it does not matter. If a required sign is not met,
 #' the resulting score for the property is 0.
 #' @param numSamples number of samples to use
+#' @return function with parameters f1, f2
 stat_diff_2_functions_signals_score <- function(
   use = c("all", "RMS", "Kurtosis", "Peak", "ImpulseFactor")[1],
   requiredSign = c(0, 1, -1)[1],
@@ -1314,3 +1360,32 @@ stat_diff_2_functions_signals_score <- function(
     sapply(frac, function(r) if (r < 1) r else 1 / r)
   })
 }
+
+
+#' Creates a custom scoring method with a callback that is
+#' passed the arguments specified by the three dots (...).
+#' stat_diff-style scores accepts the two functions f1,f2,
+#' but a custom score does not have to. If however it does
+#' have these parameter names, then f1,f2 will be passed
+#' as first two arguments, followed by the three dots.
+#' Instead of specifying args using the 3 dots, you can
+#' also make a closure over the values you need.
+#' 
+#' @param callback function that may accept any (even zero)
+#' arguments. If it accpets f1,f2, then those are passed.
+#' @return stat_diff-style function that accepts f1,f2.
+stat_diff_custom_score <- function(callback, ...) {
+  stopifnot(is.function(callback))
+  hasF1F2 <- all(c("f1", "f2") %in% methods::formalArgs(callback))
+  useArgs <- list(...)
+  
+  return(function(f1, f2) {
+    if (hasF1F2) {
+      return(callback(f1 = f1, f2 = f2, unlist(useArgs)))
+    }
+    return(callback(...))
+  })
+}
+
+
+
