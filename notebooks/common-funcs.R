@@ -1389,3 +1389,22 @@ stat_diff_custom_score <- function(callback, ...) {
 
 
 
+#' Used to create a non-linear transformation R -> R for scores,
+#' with both domain and co-domain [0,1].
+#' 
+#' @param t A threshold (0,1) until which (including) the function
+#' will behave linearly. Values larger than it are exponentiated
+#' using the parameter \code{k}. Values until \code{t} are calculated
+#' as \code{x * t^(k - 1)}.
+#' @param k An exponent for the non-linear transformation that is
+#' applied for all x > \code{t}, i.e., \code{x^k}.
+#' @return A vectorized function R -> R, that non-linearly trans-
+#' formes the given score, into [0,1] again
+create_penalizeScore <- function(t = .4, k = 2.2) {
+  fac <- t^(k-1)
+  return(Vectorize(function(x) {
+    if (x <= t) x * fac else x^k
+  }))
+}
+
+
