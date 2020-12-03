@@ -217,6 +217,37 @@ MultilevelModel <- R6Class(
       }
       invisible(self)
     },
+    
+    getCurrentIntervalRange = function(intervalIndexOrName) {
+      intIdx <- if (is.numeric(intervalIndexOrName)) intervalIndexOrName else which(self$intervalNames == intervalIndexOrName)
+      stopifnot(intIdx >= 1 && intIdx <= length(self$intervalNames))
+      
+      b1 <- if (intIdx == 1) c("[start]" = 0) else self$boundaries[1, intIdx - 1]
+      b2 <- if (intIdx == length(self$intervalNames)) c("[end]" = 1) else self$boundaries[1, intIdx]
+      
+      c(b1, b2)
+    },
+    
+    getMinMaxBoundaryDistances = function(boundary1_IndexOrName, boundary2_IndexOrName) {
+      
+      boundaryIdx_1 <- if(is.numeric(boundary1_IndexOrName)) boundary1_IndexOrName else which(colnames(self$boundaries) == boundary1_IndexOrName)
+      boundaryIdx_2 <- if(is.numeric(boundary2_IndexOrName)) boundary2_IndexOrName else which(colnames(self$boundaries) == boundary2_IndexOrName)
+      stopifnot(boundaryIdx_1 + 1 == boundaryIdx_2)
+      
+      b1 <- colnames(self$boundaries)[boundaryIdx_1]
+      b2 <- colnames(self$boundaries)[boundaryIdx_2]
+      cNameLeq <- paste0("+", b1, "-", b2, "_geq_v")
+      cNameGeq <- paste0("-", b1, "+", b2, "_geq_v")
+      
+      c(
+        "min" = if (cNameGeq %in% rownames(self$linIneqs)) self$linIneqs[cNameGeq, self$numBoundaries + 1] else NA,
+        # this is negative because if leq
+        "max" = if (cNameLeq %in% rownames(self$linIneqs)) abs(self$linIneqs[cNameLeq, self$numBoundaries + 1]) else NA
+      )
+    },
+    
+    
+    
     #' (Un-)sets Query data for a series. Omit 'queryData' to unset.
     setQueryData = function(series, queryData = NA) {
       stopifnot(is.character(series) && nchar(series) > 0)
