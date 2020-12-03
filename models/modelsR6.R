@@ -129,6 +129,94 @@ MultilevelModel <- R6Class(
       !any(is.na(res)) && all(res >= 0)
     },
     
+    constrainBoundaryInterval = function(boundaryIndexOrName, value, op = c("leq", "geq")[1]) {
+      stopifnot(self$hasBoundary(boundaryIndexOrName))
+      stopifnot(is.numeric(value) && !is.nan(value))
+      stopifnot(op %in% c("leq", "geq"))
+      isNeg <- if (op == "leq") -1 else 1
+      
+      boundaryIdx <- if(is.numeric(boundaryIndexOrName)) boundaryIndexOrName else which(colnames(self$boundaries) == boundaryIndexOrName)
+      newConstr <- matrix(nrow = 1, ncol = self$numBoundaries + 1, data = c(rep(0, self$numBoundaries), isNeg * value))
+      newConstr[1, boundaryIdx] <- isNeg * 1
+      
+      b1 <- colnames(self$boundaries)[boundaryIdx]
+      if (op == "leq") {
+        b1 <- paste0("-", b1)
+      }
+      
+      self$setLinIneqConstraint(
+        name = paste0(b1, "_geq_v"),
+        ineqs = c(newConstr[1, ]))
+      invisible(self)
+    },
+    
+    constrainBoundaryDistance = function(boundary1_IndexOrName, boundary2_IndexOrName, value, op = c("leq", "geq")[1]) {
+      stopifnot(self$hasBoundary(boundary1_IndexOrName))
+      stopifnot(self$hasBoundary(boundary2_IndexOrName))
+      stopifnot(is.numeric(value) && !is.nan(value) && value >= 0)
+      stopifnot(op %in% c("leq", "geq"))
+      
+      isNeg <- if (op == "leq") -1 else 1
+      
+      boundaryIdx_1 <- if(is.numeric(boundary1_IndexOrName)) boundary1_IndexOrName else which(colnames(self$boundaries) == boundary1_IndexOrName)
+      boundaryIdx_2 <- if(is.numeric(boundary2_IndexOrName)) boundary2_IndexOrName else which(colnames(self$boundaries) == boundary2_IndexOrName)
+      stopifnot(boundaryIdx_1 < boundaryIdx_2)
+      
+      newConstr <- matrix(nrow = 1, ncol = self$numBoundaries + 1, data = c(rep(0, self$numBoundaries), isNeg * value))
+      newConstr[1, boundaryIdx_1] <- isNeg * -1
+      newConstr[1, boundaryIdx_2] <- isNeg * 1
+      
+      b1 <- colnames(self$boundaries)[boundaryIdx_1]
+      b2 <- colnames(self$boundaries)[boundaryIdx_2]
+      cName <- if (op == "leq") paste0("+", b1, "-", b2) else paste0("-", b1, "+", b2)
+      
+      
+      self$setLinIneqConstraint(
+        name = paste0(cName, "_geq_v"),
+        ineqs = c(newConstr[1, ]))
+      invisible(self)
+    },
+    
+    fixateBoundaryAt = function(indexOrName, fixateAt, threshold = sqrt(.Machine$double.eps)) {
+      self$setBoundary(indexOrName = indexOrName, value = fixateAt)
+      self$constrainBoundaryInterval(boundaryIndexOrName = indexOrName, value = fixateAt + threshold, op = "leq")
+      self$constrainBoundaryInterval(boundaryIndexOrName = indexOrName, value = fixateAt - threshold, op = "geq")
+      
+      invisible(self)
+    },
+    
+    #' Sets constraints that ascertain that:
+    #' - each boundary is within [0,1]
+    addDefaultBoundaryConstraints = function() {
+      
+      for (bIdx in 1:self$numBoundaries) {
+        self$constrainBoundaryInterval(
+          boundaryIndexOrName = bIdx, value = 0, op = "geq")
+        self$constrainBoundaryInterval(
+          boundaryIndexOrName = bIdx, value = 1, op = "leq")
+      }
+      invisible(self)
+    },
+    
+    #' Sets constraints that ascertain that:
+    #' - two neighbouring boundaries have a minimum or
+    #'   maximum distance (this function can be called
+    #'   once using 'geq' and once using 'leq')
+    addDefaultBoundaryDistanceConstraints = function(
+      boundaryDistance = .Machine$double.eps, op = c("geq", "leq")[1])
+    {
+      stopifnot(op %in% c("leq", "geq"))
+      
+      for (bIdx in 1:self$numBoundaries) {
+        if (bIdx > 1) {
+          self$constrainBoundaryDistance(
+            boundary1_IndexOrName = bIdx - 1,
+            boundary2_IndexOrName = bIdx,
+            value = boundaryDistance, op = op)
+        }
+      }
+      invisible(self)
+    },
     #' (Un-)sets Query data for a series. Omit 'queryData' to unset.
     setQueryData = function(series, queryData = NA) {
       stopifnot(is.character(series) && nchar(series) > 0)
