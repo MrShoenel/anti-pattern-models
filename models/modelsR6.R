@@ -65,6 +65,10 @@ MultilevelModel <- R6Class(
           private$subModels[[paste(t, i, sep = "_")]] <- NA
         }
       }
+      
+      # Can be written to from outside. These files will be
+      # sourced in the parallel foreach loop.
+      self$sourceFiles <- c()
     },
     
     
@@ -143,6 +147,9 @@ MultilevelModel <- R6Class(
                       "philentropy", "pracma", "rootSolve",
                       "SimilarityMeasures", "stats", "utils")
       ) %dopar% {
+        for (file in self$sourceFiles) {
+          source(file = file)
+        }
         
         sm <- self$getSubModel(name = subModelName)
         intervalIdx <- which(self$intervalNames == sm$intervalName)
