@@ -19,16 +19,20 @@ MultilevelModel <- R6Class(
     #' @param intervalNames ordered character of intervals, i.e.,
     #' the first interval's name is the first interval. If there
     #' are m intervals, there must be m-1 boundaries.
-    initialize = function(referenceData, intervalNames = levels(referenceData$interval), boundaryNames = NULL) {
+    initialize = function(referenceData, intervalNames = levels(referenceData$interval), referenceBoundaries = NULL, boundaryNames = if (missing(referenceBoundaries)) NULL else names(referenceBoundaries)) {
       
       stopifnot(is.data.frame(referenceData) && nrow(referenceData) > 0)
       stopifnot(is.numeric(referenceData$x) && is.numeric(referenceData$y))
       stopifnot(is.factor(referenceData$t))
       stopifnot(is.factor(referenceData$interval) && length(levels(referenceData$interval)) > 1)
-      stopifnot(all(is.character(intervalNames) && nchar(intervalNames) > 0))
+      stopifnot(all(is.character(intervalNames) & nchar(intervalNames) > 0))
       stopifnot(length(intervalNames) == length(levels(referenceData$interval)))
       stopifnot(all(intervalNames %in% levels(referenceData$interval)))
-      stopifnot(length(intervalNames) >= 2)
+      stopifnot(length(intervalNames) > 1)
+      stopifnot(missing(referenceBoundaries) || (all(
+        is.numeric(referenceBoundaries) &
+        referenceBoundaries >= 0 &
+        referenceBoundaries <= 1)))
       stopifnot(missing(boundaryNames) || (length(intervalNames) == 1 + length(boundaryNames)))
       
       # Order by x ascending
@@ -36,6 +40,8 @@ MultilevelModel <- R6Class(
       
       # For each series, we may have different data.
       self$queryData <- list()
+      
+      self$refBoundaries <- referenceBoundaries
       
       self$intervalNames <- intervalNames
       
