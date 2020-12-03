@@ -330,6 +330,7 @@ MultilevelModel <- R6Class(
       smAggs <- foreach::foreach(
         subModelName = self$getSubModelsInUse(),
         .inorder = FALSE,
+        .export = c("self"),
         .packages = c("dtw", "Metrics", "numDeriv",
                       "philentropy", "pracma", "rootSolve",
                       "SimilarityMeasures", "stats", "utils")
@@ -379,8 +380,10 @@ MultilevelModel <- R6Class(
       
       
       lapply(smAggs, function(smAgg) {
+        sm <- self$getSubModel(smAgg$prefix)
+        
         sa$setRawScore(rawScore = RawScore$new(
-          name = smAgg$prefix, value = smAgg$aggregateUsing_mean()))
+          name = smAgg$prefix, value = smAgg$aggregateUsing_mean(), weight = sm$weight))
       })
       
       sa
@@ -421,7 +424,7 @@ ScoreAggregator <- R6Class(
     #' an NA value. These are ignored when aggregating.
     initialize = function(namePrefix = NULL, allowNAScores = 0) {
       if (is.character(namePrefix) && nchar(namePrefix) > 0) {
-        self$prefix <- paste0(namePrefix, "_")
+        self$prefix <- namePrefix
       } else {
         self$prefix <- NULL
       }
@@ -546,6 +549,8 @@ SubModel <- R6Class(
       } else {
         self$setReferenceData(referenceData)
       }
+      
+      self$weight <- weight
       
       # A reference to the MLM, to be set by it
       private$mlm <- NA
