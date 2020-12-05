@@ -429,13 +429,21 @@ MultilevelModel <- R6Class(
       
       beginOpt <- as.numeric(Sys.time())
       optR <- stats::constrOptim(
-        control = list(reltol = reltol),
+        control = list(
+          reltol = reltol
+        ),
         method = method,
         ui = self$getUi(),
         theta = self$getTheta(),
         ci = self$getCi(),
         grad = NULL,
         f = function(x) {
+          if (verbose) {
+            cat(paste0("Boundaries: ", paste0(sapply(x, function(b) {
+              format(b, digits = 10, nsmall = 10)
+            }), collapse = ", ")))
+          }
+          
           x <- x + (rnorm(length(x))/10)^5
           for (idx in 1:length(x)) {
             self$setBoundary(indexOrName = idx, value = x[idx])
@@ -473,21 +481,18 @@ MultilevelModel <- R6Class(
     
     
     #' Evaluates the entire MLM using the currently set boundaries.
-    compute = function() {
+    compute = function(forceSeq = NULL) {
       stopifnot(!any(is.na(self$boundaries)))
       
-      sa <- ScoreAggregator$new()
-      
-#      for (subModelName in self$getSubModelsInUse()) {
-      
-      smAggs <- foreach::foreach(
+      foreachOp <- if (missing(forceSeq) || forceSeq != TRUE) foreach::`%dopar%` else foreach::`%do%`
+      smAggs <- foreachOp(foreach::foreach(
         subModelName = self$getSubModelsInUse(),
         .inorder = FALSE,
-        .export = c("self"),
+        .export = c("self", "private"),
         .packages = c("dtw", "Metrics", "numDeriv",
                       "philentropy", "pracma", "rootSolve",
                       "SimilarityMeasures", "stats", "utils")
-      ) %dopar% {
+      ), {
         for (file in self$sourceFiles) {
           source(file = file)
         }
@@ -522,21 +527,22 @@ MultilevelModel <- R6Class(
           # on low-level metrics and all have weight=1, so doing
           # the product or mean ought to be fine.
           tempSa <- sm$compute()
-          score <- tempSa$aggregateUsing_Honel()
+          score <- private$scoreAggCallback(tempSa)
           
           saSm$setRawScore(
             rawScore = RawScore$new(name = series, value = score))
         }
         
         saSm
-      }
+      })
       
       
+      sa <- ScoreAggregator$new()
       lapply(smAggs, function(smAgg) {
         sm <- self$getSubModel(smAgg$prefix)
         
         sa$setRawScore(rawScore = RawScore$new(
-          name = smAgg$prefix, value = smAgg$aggregateUsing_mean(), weight = sm$weight))
+          name = smAgg$prefix, value = private$scoreAggCallback(smAgg), weight = sm$weight))
       })
       
       sa
