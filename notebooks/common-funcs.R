@@ -1378,17 +1378,26 @@ stat_diff_2_functions_signals_score <- function(
 #' 
 #' @param callback function that may accept any (even zero)
 #' arguments. If it accpets f1,f2, then those are passed.
+#' @param ... additional arguments that should be passed to
+#' the callback. NOTE: these are evaluated immediately.
 #' @return stat_diff-style function that accepts f1,f2.
 stat_diff_custom_score <- function(callback, ...) {
   stopifnot(is.function(callback))
-  hasF1F2 <- all(c("f1", "f2") %in% methods::formalArgs(callback))
+  argNames <- methods::formalArgs(callback)
+  
+  hasF1F2 <- all(c("f1", "f2") %in% argNames)
+  # This is UTMOST important, as otherwise, the scope might not
+  # be longer accessible at later run-time!
   useArgs <- list(...)
+  stopifnot(all(argNames %in% names(useArgs)))
+  
   
   return(function(f1, f2) {
     if (hasF1F2) {
-      return(callback(f1 = f1, f2 = f2, unlist(useArgs)))
+      useArgs$f1 <- f1
+      useArgs$f2 <- f2
     }
-    return(callback(...))
+    return(do.call(what = callback, args = useArgs))
   })
 }
 
@@ -1410,6 +1419,39 @@ create_penalizeScore <- function(t = .4, k = 2.2) {
   return(Vectorize(function(x) {
     if (x <= t) x * fac else x^k
   }))
+}
+
+
+custom_interval_length_score <- function(mlm, interval, useA) {
+  # Create a custom score based on the current interval length.
+  # We have two options:
+  # - A: measure the ratio of the lengths of the current interval to the pattern's interval:
+  #      the closer it is to the reference, the higher the score.
+  # - B: return a score that is higher if the chosen interval is longer:
+  #      The longer, the better, that's it!
+  
+  curr <- mlm$getCurrentIntervalRange(intervalIndexOrName = interval)
+  currExt <- curr[2] - curr[1]
+  
+  if (useA) {
+    # We have to access the original boundaries first.
+    intIdx <- which(mlm$intervalNames == interval)
+    ref <- c(
+      if (intIdx == 1) 0 else mlm$refBoundaries[intIdx - 1],
+      if (intIdx == length(mlm$intervalNames)) 1 else mlm$refBoundaries[intIdx])
+    
+    refExt <- ref[2] - ref[1]
+    ratio <- refExt / currExt
+    ratio <- if (ratio > 1) 1 / ratio else ratio
+    
+    return(ratio)
+  } else {
+    # The best way would be to divide the current length
+    # by the maximum theoretical length, based on the lin.
+    # ineq. constraints. This is not necessarily trivial,
+    # so we use the absolute theoretical maximum of 1.
+    return(currExt)
+  }
 }
 
 
