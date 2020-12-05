@@ -58,6 +58,9 @@ MultilevelModel <- R6Class(
       self$numBoundaries <- length(levels(referenceData$interval)) - 1
       self$boundaries <- matrix(nrow = 1, ncol = self$numBoundaries)
       colnames(self$boundaries) <- boundaryNames # NULL is OK
+      if (!missing(referenceBoundaries)) {
+        self$boundaries[1, ] <- referenceBoundaries
+      }
       
       # Now that we know the amount of boundaries, we can
       # initialize a structure for the linear inequalities:
@@ -285,6 +288,13 @@ MultilevelModel <- R6Class(
       invisible(self)
     },
     
+    setAllSubModels = function(...) {
+      for (sm in list(...)) {
+        self$setSubModel(sm)
+      }
+      invisible(self)
+    },
+    
     removeSubModel = function(model) {
       stopifnot(inherits(model, "SubModel") && R6::is.R6(model))
       stopifnot(model$name %in% names(private$subModels))
@@ -326,6 +336,16 @@ MultilevelModel <- R6Class(
       stopifnot(value >= 0, value <= 1)
       
       self$boundaries[1, indexOrName] <- value
+      invisible(self)
+    },
+    
+    setAllBoundaries = function(values) {
+      stopifnot(is.vector(values) && length(values) == self$numBoundaries)
+      stopifnot(is.null(names(values)) || all(colnames(self$boundaries) %in% names(values)))
+      
+      for (i in 1:length(values)) {
+        self$setBoundary(indexOrName = i, value = values[i])
+      }
       invisible(self)
     },
     
