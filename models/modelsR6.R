@@ -81,12 +81,81 @@ MultilevelModel <- R6Class(
         }
       }
       
+      
+      # Those properties will be filled if the model is calibrated
+      self$boundariesCalibrated <- matrix(nrow = 1, ncol = self$numBoundaries)
+      colnames(self$boundariesCalibrated) <- boundaryNames
+      # To be of type ScoreAggregator
+      self$scoreCalibrated <- NA
+      # Also, ScoreAggregator; only set if the previous is set.
+      self$scoreRef <- NA
+      
       private$scoreAggCallback <- scoreAggCallback
       
       
       # Can be written to from outside. These files will be
       # sourced in the parallel foreach loop.
       self$sourceFiles <- c()
+    },
+    
+    calibrate = function(requireAbsoluteConverge = FALSE, verbose = FALSE) {
+      stopifnot(self$validateLinIneqConstraints())
+      
+      # Note this is a list where the names are the series' names.
+      queryDataOld <- self$queryData
+      boundariesOld <- self$boundaries[, ]
+      scoreBefore <- private$scoreAggCallback(self$compute())
+      
+      self$setQueryData(series = "ALL", queryData = self$refData)
+      fitResult <- self$fit(verbose = verbose)
+      
+      # Revert the Query data:
+      for (series in names(queryDataOld)) {
+        self$setQueryData(series = series, queryData = queryDataOld[[series]])
+      }
+      
+      # The optimization might not converge. However, it
+      # may still find better boundaries than the reference
+      # boundaries. Better means a higher score. if the
+      # parameter 'requireAbsoluteConvergence' is FALSE, even an
+      # optimization that failed may provide such better
+      # boundaries, which we will then use.
+      if (requireAbsoluteConverge && resDummy$optResult$convergence != 0) {
+        stop("The model requires convergence but failed to do so.")
+      }
+      if (verbose) {
+        cat(paste0("The model did ", (if (resDummy$optResult$convergence == 0) "" else "not"), " converge.\n"))
+      }
+      
+      # OK, let's check if the found boundaries provide
+      # better scores.
+      
+      best <- fitResult$fitHist[
+        which.max(fitResult$fitHist[, "score_raw"]), ]
+      bestBounds <- tail(best, self$numBoundaries)
+      self$setAllBoundaries(bestBounds)
+      scoreAfterAgg <- self$compute()
+      scoreAfter <- private$scoreAggCallback(scoreAfterAgg)
+      if (scoreAfter > scoreBefore) {
+        if (verbose) {
+          cat(paste0("More optimal than the reference boundaries were found: ",
+                     paste0(self$boundaries[1, ], collapse = ", ")))
+          cat(paste0(" -- Old Score: ", scoreBefore, " -- New Score: ", scoreAfter, "\n"))
+        }
+        self$boundariesCalibrated[1, ] <- self$boundaries[1, ]
+        self$scoreCalibrated <- scoreAfterAgg
+        
+        boundsBefore <- self$boundaries[1, ]
+        self$setAllBoundaries(self$refBoundaries)
+        self$scoreRef <- self$compute()
+        self$setAllBoundaries(boundsBefore)
+      } else {
+        if (verbose) {
+          cat("The calibration failed to find more optimal boundaries\n.")
+        }
+      }
+      
+      invisible(fitResult)
     },
     
     
