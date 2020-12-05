@@ -25,7 +25,7 @@ getDataset = function(dsName, removeUnwantedColums = TRUE) {
       #,"ParentCommitSHA1s"
       )
     
-    ds <- ds[, !names(ds) %in% removeNames]
+    ds <- ds[, !(names(ds) %in% removeNames)]
   }
   
   dbClearResult(result)
@@ -38,7 +38,7 @@ doWithParallelCluster <- function(expr, errorValue = NULL, numCores = parallel::
   doSNOW::registerDoSNOW(cl)
   
   result <- tryCatch(expr, error=function(cond) {
-    if (!is.null(errorValue)) {
+    if (!missing(errorValue)) {
       return(errorValue)
     }
     return(cond)
