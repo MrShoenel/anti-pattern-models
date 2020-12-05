@@ -658,10 +658,15 @@ stat_diff_2_functions_lm <- function(f1, f2, numSamples = 1e4) {
     stats::predict(lm1, newdata = list(x = z)) - stats::predict(lm2, newdata = list(x = z))
   }, interval = c(0, 1))
   
+  arcCosAngle <- sum(vec1 * vec2) / (sqrt(sum(vec1^2)) * sqrt(sum(vec2^2)))
+  # To increase numeric stability, as sometimes the calculated arcCos angle
+  # maybe, e.g., 1+1e-16.
+  arcCosAngle <- max(-1, min(1, arcCosAngle))
+  
   temp$value <- list(
     lm1 = lm1,
     lm2 = lm2,
-    angle = isNeg * acos(sum(vec1 * vec2) / (sqrt(sum(vec1^2)) * sqrt(sum(vec2^2)))),
+    angle = isNeg * acos(arcCosAngle),
     intersect = if (length(int) == 0) NA else int
   )
   
