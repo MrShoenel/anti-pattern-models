@@ -133,7 +133,7 @@ Also, we need to define additional inequality constraints between the boundaries
 The following plot includes the initial boundaries and their allowed ranges:
 
 ```{r}
-ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
+plot_fullPattern <- ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
   geom_line() +
   labs(color = "Data series") +
   scale_x_continuous(
@@ -153,6 +153,8 @@ ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
     fill = c("green", "red", "blue")
   ), aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = fill), color = "black", alpha = .25, inherit.aes = FALSE, show.legend = FALSE) +
   scale_color_brewer(palette = "Set1")
+
+plot_fullPattern
 ```
 
 ## Extracting all sub-patterns
@@ -384,11 +386,13 @@ dens_acp_data$y <- dens_acp_data$y / max(dens_acp_data$y)
 Let's plot how that looks:
 
 ```{r}
-ggplot(dens_acp_data, aes(x = x, y = y)) +
+plot_finalProject <- ggplot(dens_acp_data, aes(x = x, y = y)) +
   geom_line(aes(color = t), size = .75) +
   theme_light() +
   labs(color = "Activity") +
   scale_color_brewer(palette = "Set1")
+
+plot_finalProject
 ```
 
 The above plot represents now the final project that we will fit our entire pattern to:
@@ -632,97 +636,273 @@ For the __Fire Drill__ pattern, as of now, we only really use two kinds of sub-m
 Since we use `R6`-classes, we get reference semantics in R (i.e., not copy-on-write)! We can also easily (deep-)clone objects, which will come in handy when we define our sub-models and their stages below, and can reuse many of these.
 
 
+The __Fire Drill__ model is defined as a __`MultilevelModel`__. We set all reference- and query-data.
+
 ```{r}
 mlm <- MultilevelModel$new(
   referenceData = fd_data_concat,
-  intervalNames = levels(fd_data_concat$interval),
   referenceBoundaries = fd_data_boundaries)
-mlm$sourceFiles <- c("common-funcs.R", "../models/modelsR6.R")
 
 mlm$setQueryData(series = "ALL", queryData = dens_acp_data)
-
-# Set both limits to "01" to match shape; to "self" to match shape+magnitude!
-# Shape+mag will result in lower, but usually more realistic scores.
-stage1_A_Begin <- Stage1Rectifier$new(
-  yLimitsRef = "self",
-  yLimitsQuery = "self")
-stage2_A_Begin <- Stage2Rectifier$new(
-  scoreWarpingFunction = c("mono_rel", "start_end", "f_warp_org-vs-f_warp_np_opt"),
-  scoreSignals = c("f_ref-vs-f_query_np", "f_ref_warp-vs-f_query_warp"))
-
-
-sm_A_Begin <- SubModel$new(varName = "A", intervalName = "Begin", weight = 1)
-sm_A_Begin$setStage1(stage1 = stage1_A_Begin)
-sm_A_Begin$setStage2(stage2 = stage2_A_Begin)
-mlm$setSubModel(model = sm_A_Begin)
-
-
-
-stage1_A_LongStretch <- Stage1NoModel$new(
-  approxRefFun = TRUE, approxQueryFun = TRUE)$setYLimitsRef("self")$setYLimitsQuery("self")
-stage2_A_LongStretch <- Stage2$new()
-stage2_A_LongStretch$addScoreMethod(
-  name = "Score_LM", scoreMethod = function(f1, f2) {
-    stat_diff_2_functions_lm_score2(maxAngleBetween = 30, requireSign = FALSE)(f1, f2)^5 })
-stage2_A_LongStretch$addScoreMethod(
-  name = "Score_IntervalLength", scoreMethod = stat_diff_custom_score(callback = function(model, interval, useA) {
-    mlm <- model # THIS IS UTMOST IMPORTANT
-    
-    # Create a custom score based on the current interval length.
-    # We have two options:
-    # - A: measure the ratio of the lengths of the current interval to the pattern's interval:
-    #      the closer it is to the reference, the higher the score.
-    # - B: return a score that is higher if the chosen interval is longer:
-    #      The longer, the better, that's it!
-    
-    curr <- mlm$getCurrentIntervalRange(intervalIndexOrName = interval)
-    currExt <- curr[2] - curr[1]
-    
-    if (useA) {
-      # We have to access the original boundaries first.
-      intIdx <- which(mlm$intervalNames == interval)
-      ref <- c(
-        if (intIdx == 1) 0 else mlm$refBoundaries[intIdx - 1],
-        if (intIdx == length(mlm$intervalNames)) 1 else mlm$refBoundaries[intIdx])
-      
-      refExt <- ref[2] - ref[1]
-      ratio <- refExt / currExt
-      ratio <- if (ratio > 1) 1 / ratio else ratio
-      
-      return(ratio)
-    } else {
-      # The best way would be to divide the current length
-      # by the maximum theoretical length, based on the lin.
-      # ineq. constraints. This is not necessarily trivial,
-      # so we use the absolute theoretical maximum of 1.
-      return(currExt)
-    }
-  }, model = mlm, interval = "LongStretch", useA = TRUE))
-
-sm_A_LongStretch <- SubModel$new(varName = "A", intervalName = "LongStretch", weight = .5)
-sm_A_LongStretch$setStage1(stage1 = stage1_A_LongStretch)
-sm_A_LongStretch$setStage2(stage2 = stage2_A_LongStretch)
-mlm$setSubModel(model = sm_A_LongStretch)
+mlm$sourceFiles <- c("common-funcs.R", "../models/modelsR6.R")
 ```
 
 
+### 1st Stages
+
+We will be able to reuse Stages, Scores and SubModels across variables and intervals. As for the current description of Fire Drill, we will only need two kinds of first stages:
+
+1. A specialized (`Stage1Rectifier`) first stage, that samples from the reference- and query-signals with high resolution (e.g., 10k points), and produces a function for each. This stage will respect the original co-domains of each signal, so that the signals do __not__ get stretched into `[0,1]`. The implication of that is, that we match __both__, shape and magnitude. If we were to scale both signals into `[0,1]`, we would only match shape. By not doing it, we need to be careful with the scores that we compute, as some of them are sensitive to whether the signals live in the unit-square or not.
+2. An ordinary (`Stage1NoModel`) first stage, that does not do any transformations on the data, only samples with a high resolution and approximates functions for further processing, according to the co-domain of each signal (i.e., no `[0,1]` scaling is performed). This is acceptable if two conditions are met: A) The reference- and query-data are both defined on that interval, and B) we are not planning on scoring the magnitude of the extracted signals later on. B) is fulfilled here, as this 1st stage is used for when we apply a Linear Model with the goal of comparing the slopes of both signals. If we wanted to do something else, such as scoring the shapes of the signals, a `[0,1]` scaling would be recommended.
+
+These two kinds of first stages are sufficient for all our operations, and we will define them once and then reuse them (by cloning) on subsequent sub-models The two first stages are:
+
+
+```{r}
+stage1_special <- Stage1Rectifier$new(
+  yLimitsRef = "self", yLimitsQuery = "self")
+
+stage1_ordinary <- Stage1NoModel$new(
+  approxRefFun = TRUE, approxQueryFun = TRUE)
+stage1_ordinary$setYLimitsRef("self")$setYLimitsQuery("self")
+```
+
+
+### 2nd Stages
+
+Those will be designed in concordance with the respective 1st stages. Again, we need two different stages that can process the results of the first stages we have. A second stage can use any number of scoring methods, and thus produces one or more sub-scores. These are usually aggregated using the mean, or `Honel`.
+
+1. A specialized (`Stage2Rectifier`) second stage, that can handle either, scaled and un-scaled data. It uses DTW to rectify the query-signal, and computes scores over the warping function and its derivatives. It also computes scores of two pairs of other functions. For pairs of functions we use a combination of low- and mid-level scores, such as the area between curves, correlation, arc-length etc., as well as divergence measures, such as Jensen-Shannon. All sub-scores in this stage are This 2nd stage is always used when the `Stage1Rectifier` is used.
+2. An ordinary (`Stage2`) second stage that takes the two functions, samples from them and scores the Linear Models of both of them. Currently, we score only the angle between both regressions (the expectation is `0°`). The ordinary stages are only used in the __LongStretch__ intervals, of which we do not know much. While we have much more characteristic pattern to match in the other three intervals, we want this phase to be as long as possible. Therefore, we include a manual score that is greater, the longer this phase is selected.
+
+We are defining these 2nd stages:
+
+
+```{r}
+stage2_special <- Stage2Rectifier$new(
+  scoreWarpingFunction = c("mono_rel", "start_end", "f_warp_org-vs-f_warp_np_opt"),
+  scoreSignals = c("f_ref-vs-f_query_np", "f_ref_warp-vs-f_query_warp"))
+
+stage2_ordinary <- Stage2$new()
+stage2_ordinary$addScoreMethod(
+  name = "Score_LM", scoreMethod = function(f1, f2) {
+    stat_diff_2_functions_lm_score2(maxAngleBetween = 30, requireSign = FALSE)(f1, f2)^5 })
+```
+
+
+### Sub-Models
+
+Now we can compose all sub-models! We will use the stages we just defined, but clone them.
+
+```{r}
+create_submodel_special <- function(varName, intervalName, weight) {
+  sm <- SubModel$new(varName = varName, intervalName = intervalName, weight = weight)
+  sm$setStage1(stage1_special$clone(deep = TRUE))
+  sm$setStage2(stage2_special$clone(deep = TRUE))
+}
+
+create_submodel_ordinary <- function(varName, intervalName, weight) {
+  sm <- SubModel$new(varName = varName, intervalName = intervalName, weight = weight)
+  sm$setStage1(stage1_ordinary$clone(deep = TRUE))
+  s2 <- stage2_ordinary$clone(deep = TRUE)
+  # Doing it this way will come in handy should we ever use this
+  # in another interval.
+  s2$addScoreMethod(name = "Score_IntervalLength",
+    scoreMethod = stat_diff_custom_score(
+      callback = custom_interval_length_score, mlm = mlm, interval = intervalName, useA = FALSE))
+  sm$setStage2(s2)
+}
+
+sm_A_Begin <- create_submodel_special("A", "Begin", .8)
+sm_CP_Begin <- create_submodel_special("CP", "Begin", .8)
+sm_FREQ_Begin <- create_submodel_special("FREQ", "Begin", .8)
+sm_SCD_Begin <- create_submodel_special("SCD", "Begin", .8)
+
+sm_A_LongStretch <- create_submodel_ordinary("A", "LongStretch", .6)
+sm_CP_LongStretch <- create_submodel_ordinary("CP", "LongStretch", .6)
+sm_FREQ_LongStretch <- create_submodel_ordinary("FREQ", "LongStretch", .6)
+sm_SCD_LongStretch <- create_submodel_ordinary("SCD", "LongStretch", .6)
+
+sm_A_FireDrill <- create_submodel_special("A", "FireDrill", 1)
+sm_CP_FireDrill <- create_submodel_special("CP", "FireDrill", 1)
+sm_FREQ_FireDrill <- create_submodel_special("FREQ", "FireDrill", 1)
+sm_SCD_FireDrill <- create_submodel_special("SCD", "FireDrill", 1)
+
+sm_A_Aftermath <- create_submodel_special("A", "Aftermath", 1)
+sm_CP_Aftermath <- create_submodel_special("CP", "Aftermath", 1)
+sm_FREQ_Aftermath <- create_submodel_special("FREQ", "Aftermath", 1)
+sm_SCD_Aftermath <- create_submodel_special("SCD", "Aftermath", 1)
+```
+
+Now add all models to our MLM!
+
+```{r}
+mlm$setAllSubModels(sm_A_Begin, sm_CP_Begin, sm_FREQ_Begin, sm_SCD_Begin)
+mlm$setAllSubModels(sm_A_LongStretch, sm_CP_LongStretch, sm_FREQ_LongStretch, sm_SCD_LongStretch)
+mlm$setAllSubModels(sm_A_FireDrill, sm_CP_FireDrill, sm_FREQ_FireDrill, sm_FREQ_FireDrill)
+mlm$setAllSubModels(sm_A_Aftermath, sm_CP_Aftermath, sm_FREQ_Aftermath, sm_FREQ_Begin)
+```
+
+## Fitting our model
+
+Everything is now set up, and we can start the optimization. We add the default inequality constraints, and impose only that two boundaries have a minimum distance of `0.025` and a maximum distance of `0.85`.
 
 ```{r}
 mlm$flushLinIneqConstraints()
 mlm$addDefaultBoundaryConstraints()
 
-# distance >= 0.05 and <= 0.8
-mlm$addDefaultBoundaryDistanceConstraints(boundaryDistance = .05, op = "geq")
-mlm$addDefaultBoundaryDistanceConstraints(boundaryDistance = .8, op = "leq")
+# distance >= 0.025 and <= 0.85
+mlm$addDefaultBoundaryDistanceConstraints(boundaryDistance = .025, op = "geq")
+mlm$addDefaultBoundaryDistanceConstraints(boundaryDistance = .850, op = "leq")
 
-mlm$setBoundary(1, .1)$setBoundary(2, .6)$setBoundary(3, .8)
-# For the moment, the last boundary has no influence on fitting, so we fixate it!
-mlm$fixateBoundaryAt(indexOrName = 3, fixateAt = .9)
-
-res3 <- doWithParallelCluster(expr = {
-  mlm$fit(verbose = TRUE, reltol = 1e-8)#, method = "SANN")
-}, numCores = 4)
+mlm$constrainBoundaryInterval(boundaryIndexOrName = 1, value = .02, op = "geq")
+mlm$constrainBoundaryInterval(boundaryIndexOrName = 3, value = .98, op = "leq")
 ```
+
+```{r}
+res4 <- doWithParallelCluster(expr = {
+  mlm$fit(verbose = TRUE, reltol = 1e-8)#, method = "SANN")
+}, numCores = 16)
+```
+
+
+```{r}
+plot_finalProject +
+  geom_vline(xintercept = res4$optResult$par[1], color = "blue", size = .5) +
+  geom_vline(xintercept = res4$optResult$par[2], color = "blue", size = .5) +
+  geom_vline(xintercept = res4$optResult$par[3], color = "blue", size = .5)
+```
+So here is the first fit of the boundaries that sub-divide the pattern into intervals. I think that given the irregularities and noise in the data, it appears to be a good fit. Also it shows that (given this first project actually had a Fire Drill) we will have to adjust the pattern manifestation, and probably also have to adjust the weights not only of all models in one interval, but probably also of specific variables (for example, the source code density (SCD) in the first interval should probably be less important than the activities, or probably less important overall).
+
+
+### Test of fitting the pattern to itself
+
+The next test is to randomly initialize the boundaries and have the model attempt to fit them, not to the data but rather to the pattern itself. This is a dummy test to see if the model would converge to our suggested boundaries, given that the data would exactly look like we described it.
+
+```{r}
+mlmDummy <- mlm$clone(deep = TRUE)
+# Set these to avoid potential errors.
+mlmDummy$constrainBoundaryInterval(boundaryIndexOrName = 1, value = .01, op = "geq")
+mlmDummy$constrainBoundaryInterval(boundaryIndexOrName = 3, value = .99, op = "leq")
+```
+
+The following tests make sure that the boundaries converge to a near-optimal value, that must ideally be close to the reference boundaries. We set those manually, i.e., those were not calculated. However, given the sub-models, stages and scores we defined, we expect the calibration to select boundaries very close to the reference boundaries. We conduct three types of tests with different starting values: The reference boundaries, equidistant-spaced boundaries, and two times random boundaries (all adhering to the linear inequality constraints, of course).
+
+```{r}
+set.seed(0xbeef30)
+testBoundaries <- matrix(
+  data = c(
+    fd_data_boundaries,
+    c(1/4, 1/2, 3/4),
+    sort(runif(3, min = 0.01, max = 0.99)),
+    sort(runif(3, min = 0.01, max = 0.99))
+  ),
+  byrow = TRUE, ncol = 3
+)
+colnames(testBoundaries) <- names(mlm$refBoundaries)
+
+testBoundaries
+```
+
+For each set of boundaries, we will attempt to calibrate the model. The expectation is that each run will converge to the same optimal boundaries (within range of error/tolerance of course).
+
+```{r}
+library(foreach)
+
+dummyResults <- doWithParallelCluster(expr = {
+  foreach::foreach(
+    rIdx = 1:nrow(testBoundaries),
+    .packages = c("dtw", "Metrics", "numDeriv",
+                      "philentropy", "pracma", "rootSolve",
+                      "SimilarityMeasures", "stats", "utils")
+  ) %dopar% {
+    for (sf in mlmDummy$sourceFiles) {
+      source(sf)
+    }
+    useMlm <- mlmDummy$clone(deep = TRUE)
+    
+    useMlm$refBoundaries <- testBoundaries[rIdx, ]
+    fitResult <- doWithParallelCluster(expr = {
+      useMlm$calibrate(requireAbsoluteConverge = FALSE, verbose = TRUE)
+    })
+    
+    scoreBefore <- NULL
+    if (R6::is.R6(useMlm$scoreRef)) {
+      scoreBefore <- useMlm$scoreRef$clone(deep = TRUE)
+    }
+    scoreAfter <- NULL
+    if (R6::is.R6(useMlm$scoreCalibrated)) {
+      scoreAfter <- useMlm$scoreCalibrated$clone(deep = TRUE)
+    }
+    
+    list(
+      scoreBefore = scoreBefore,
+      scoreAfter = scoreAfter,
+      fitResult = fitResult)
+  }  
+})
+
+
+# for (rIdx in 1:nrow(testBoundaries)) {
+#   scoresBefore <- list()
+#   scoresAfter <- list()
+#   fitResults <- list()
+#   
+#   mlmDummy$refBoundaries <- testBoundaries[rIdx, ]
+#   temp <- doWithParallelCluster(expr = {
+#     mlmDummy$calibrate(requireAbsoluteConverge = FALSE, verbose = TRUE)
+#   })
+#   
+#   if (R6::is.R6(mlmDummy$scoreRef)) {
+#     scoresBefore[[paste0(rIdx)]] <- mlmDummy$scoreRef$clone(deep = TRUE)
+#   }
+#   if (R6::is.R6(mlmDummy$scoreCalibrated)) {
+#     scoresAfter[[paste0(rIdx)]] <- mlmDummy$scoreCalibrated$clone(deep = TRUE)
+#   }
+#   
+#   fitResults[[paste0(rIdx)]] <- temp
+# }
+```
+
+
+
+```{r}
+mlmDummy$refBoundaries <- c(1/4, 1/2, 3/4)
+# Let's set some the reference or dummy boundaries:
+mlmDummy$setAllBoundaries(fd_data_boundaries)
+#mlmDummy$setAllBoundaries(c(1/4, 1/2, 3/4))
+
+if (!is.environment(mlmDummy$calibratedScore)) {
+  mlmDummy <- doWithParallelCluster(expr = {
+    mlmDummy$calibrate(requireConverge = FALSE, verbose = TRUE)
+  }, numCores = 16)
+}
+
+if (inherits(mlmDummy$calibratedScore, 'ScoreAggregator')) {
+  # TODO: Make all this prettier...
+  temp <- doWithParallelCluster({
+    list(
+      mlmDummy$setAllBoundaries(mlmDummy$refBoundaries)$compute(),
+      mlmDummy$setAllBoundaries(mlmDummy$calibratedBoundaries[1, ])$compute())
+  })
+  
+  saBefore <- temp[[1]]
+  saAfter <- temp[[2]]
+  
+  cat("We found more optimal boundaries!\n")
+  cat(paste0("Before: ", paste0(mlmDummy$refBoundaries, collapse = ", "), "\n"))
+  cat(paste0("After: ", paste0(round(mlmDummy$calibratedBoundaries[1, ], 6), collapse = ", "), "\n\n"))
+  
+  print(paste0("Scores before: ", saBefore$aggregateUsing_Honel(), " (aggregated), each: ", paste0(sapply(saBefore$rawScores, function(rs) {
+    paste0(rs$name, ": ", round(rs$value, 4))
+  }), collapse = ", ")))
+  print(paste0("Scores after: ", saAfter$aggregateUsing_Honel(), " (aggregated), each: ", paste0(sapply(saAfter$rawScores, function(rs) {
+    paste0(rs$name, ": ", round(rs$value, 4))
+  }), collapse = ", ")))
+}
+```
+
+
 
 
 ```{r}
