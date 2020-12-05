@@ -12,14 +12,21 @@ MultilevelModel <- R6Class(
   lock_objects = FALSE,
   
   private = list(
-    subModels = NULL
+    subModels = NULL,
+    scoreAggCallback = NULL
   ),
   
   public = list(
     #' @param intervalNames ordered character of intervals, i.e.,
     #' the first interval's name is the first interval. If there
     #' are m intervals, there must be m-1 boundaries.
-    initialize = function(referenceData, intervalNames = levels(referenceData$interval), referenceBoundaries = NULL, boundaryNames = if (missing(referenceBoundaries)) NULL else names(referenceBoundaries)) {
+    initialize = function(
+      referenceData,
+      intervalNames = levels(referenceData$interval),
+      referenceBoundaries = NULL,
+      boundaryNames = if (missing(referenceBoundaries)) NULL else names(referenceBoundaries),
+      scoreAggCallback = function(sa) sa$aggregateUsing_Honel()
+    ) {
       
       stopifnot(is.data.frame(referenceData) && nrow(referenceData) > 0)
       stopifnot(is.numeric(referenceData$x) && is.numeric(referenceData$y))
@@ -34,6 +41,7 @@ MultilevelModel <- R6Class(
         referenceBoundaries >= 0 &
         referenceBoundaries <= 1)))
       stopifnot(missing(boundaryNames) || (length(intervalNames) == 1 + length(boundaryNames)))
+      stopifnot(is.function(scoreAggCallback) && length(methods::formalArgs(scoreAggCallback)) == 1)
       
       # Order by x ascending
       self$refData <- referenceData[order(referenceData$x), ]
@@ -69,6 +77,9 @@ MultilevelModel <- R6Class(
           private$subModels[[paste(t, i, sep = "_")]] <- NA
         }
       }
+      
+      private$scoreAggCallback <- scoreAggCallback
+      
       
       # Can be written to from outside. These files will be
       # sourced in the parallel foreach loop.
@@ -322,9 +333,7 @@ MultilevelModel <- R6Class(
     fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "SANN")[1]) {
       stopifnot(self$validateLinIneqConstraints())
       
-      penalizeScore <- create_penalizeScore(.4, 2.2)
-      
-      histCols <- c("begin", "end", "duration", "score_raw", "score_pen", "score_log", colnames(self$boundaries))
+      histCols <- c("begin", "end", "duration", "score_raw", "score_log", colnames(self$boundaries))
       fitHist <- matrix(nrow = 0, ncol = length(histCols))
       colnames(fitHist) <- histCols
       
@@ -346,21 +355,17 @@ MultilevelModel <- R6Class(
           begin <- as.numeric(Sys.time())
           
           scoreAgg <- self$compute()
-          score_raw <- scoreAgg$aggregateUsing_Honel()
-          score <- penalizeScore(score_raw)
-          score_log <- log(1 - score)
+          score_raw <- private$scoreAggCallback(scoreAgg)
+          score_log <- -log(score_raw)
           
           finish <- as.numeric(Sys.time())
           fitHist <<- rbind(fitHist, c(
-            begin, finish, finish - begin, score_raw, score, score_log, x
+            begin, finish, finish - begin, score_raw, score_log, x
           ))
           
           if (verbose) {
-            cat(paste0("Boundaries: ", paste0(sapply(x, function(b) {
-              format(b, digits = 10, nsmall = 10)
-            }), collapse = ", "),
-              " -- Value: ", format(score_log, digits = 10, nsmall = 5),
-              " --  Duration: ", format(finish - begin, digits = 2, nsmall = 2), "s\n"))
+            cat(paste0(" -- Value: ", format(score_log, digits = 10, nsmall = 5),
+                       " --  Duration: ", format(finish - begin, digits = 2, nsmall = 2), "s\n"))
           }
           
           score_log
