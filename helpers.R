@@ -128,6 +128,7 @@ loadResultsOrCompute <- function(file, computeExpr) {
     expr = computeExpr, error = function(cond) cond)
   
   if (class(res) %in% c("simpleError", "error", "condition")) {
+    print(traceback())
     stop(paste0("The computation failed: ", res))
   }
   
