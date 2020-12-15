@@ -1300,8 +1300,8 @@ SubModel <- R6Class(
 
 
 
-Stage2 <- R6Class(
-  "Stage2",
+Stage <- R6Class(
+  "Stage",
   
   lock_objects = FALSE,
   
@@ -1310,21 +1310,42 @@ Stage2 <- R6Class(
   ),
   
   public = list(
-    initialize = function(namePrefix = NULL) {
+    initialize = function() {
+      private$subModel <- NA
+    },
+    
+    setSubModel = function(subModel = NA) {
+      stopifnot((inherits(subModel, "SubModel") && R6::is.R6(subModel)) ||
+                (missing(subModel) || is.na(subModel)))
+      private$subModel <- subModel
+      invisible(self)
+    },
+    
+    getSubModel = function() {
+      private$subModel
+    }
+  )
+)
+
+
+
+Stage2 <- R6Class(
+  "Stage2",
+  
+  inherit = Stage,
+  
+  lock_objects = FALSE,
+  
+  public = list(
+    initialize = function(namePrefix = NULL, numSamples = 1e4) {
+      super$initialize()
       # Init sub-score aggregation to default:
       #self$setSubScoreAggregation()
       
       self$namePrefix <- namePrefix
       self$scoreMethods <- list()
       self$scoreAgg <- ScoreAggregator$new(namePrefix = namePrefix)
-      
-      private$subModel <- NA
-    },
-    
-    setSubModel = function(subModel) {
-      stopifnot(inherits(subModel, "SubModel") && R6::is.R6(subModel))
-      private$subModel <- subModel
-      invisible(self)
+      self$numSamples <- numSamples
     },
     
     
@@ -1390,26 +1411,18 @@ Stage2 <- R6Class(
 Stage1 <- R6Class(
   "Stage1",
   
-  lock_objects = FALSE,
+  inherit = Stage,
   
-  private = list(
-    subModel = NULL
-  ),
+  lock_objects = FALSE,
   
   public = list(
     initialize = function(yLimitsRef = c("01", "self")[1], yLimitsQuery = c("ref", "01", "self")[1]) {
+      super$initialize()
+      
       self$dataRef <- NA
       self$dataQuery <- NA
       self$setYLimitsRef(yLimits = yLimitsRef)
       self$setYLimitsQuery(yLimits = yLimitsQuery)
-      
-      private$subModel <- NA
-    },
-    
-    setSubModel = function(subModel) {
-      stopifnot(inherits(subModel, "SubModel") && R6::is.R6(subModel))
-      private$subModel <- subModel
-      invisible(self)
     },
     
     setYLimitsRef = function(yLimits = c("01", "self")[1]) {
@@ -1424,15 +1437,26 @@ Stage1 <- R6Class(
       invisible(self)
     },
     
-    setRefData = function(dataRef) {
-      stopifnot(is.data.frame(dataRef) && all(c("x", "y") %in% colnames(dataRef)))
-      self$dataRef <- dataRef
+    setRefData = function(dataRef = NA) {
+      np <- missing(dataRef) || is.na(dataRef)
+      stopifnot(np || is.data.frame(dataRef) && all(c("x", "y") %in% colnames(dataRef)))
+      if (np) {
+        self$dataRef <- NA
+      } else {
+        self$dataRef <- dataRef[order(dataRef$x), ]
+      }
       invisible(self)
     },
     
-    setQueryData = function(dataQuery) {
-      stopifnot(is.data.frame(dataQuery) && all(c("x", "y") %in% colnames(dataQuery)))
-      self$dataQuery <- dataQuery
+    setQueryData = function(dataQuery = NA) {
+      np <- missing(dataQuery) || is.na(dataQuery)
+      stopifnot(np || (is.data.frame(dataQuery) && all(c("x", "y") %in% colnames(dataQuery))))
+      if (np) {
+        self$dataQuery <- NA
+      } else {
+        self$dataQuery <- dataQuery[order(dataQuery$x), ]
+      }
+      
       invisible(self)
     },
     
@@ -1598,6 +1622,244 @@ Stage1Rectifier <- R6Class(
 )
 
 
+Stage1Meta <- R6Class(
+  "Stage1Meta",
+  
+  inherit = Stage1,
+  
+  lock_objects = FALSE,
+  
+  public = list(
+    initialize = function() {
+      super$initialize()
+    },
+    
+    compute = function() {
+      # Also, we need access to the sub-model and MLM:
+      sm <- self$getSubModel()
+      stopifnot(inherits(sm, "SubModel") && R6::is.R6(sm))
+      mlm <- sm$getMLM()
+      stopifnot(inherits(mlm, "MultilevelModel") && R6::is.R6(mlm))
+      
+      intervals <- data.frame(
+        type = c(), interval = c(), start = c(), stop = c(), len = c(), stringsAsFactors = FALSE)
+      
+      for (intName in mlm$intervalNames) {
+        # Now each MLM has multiple types of boundaries:
+        # - 'refBoundaries' are constant and are set during construction,
+        #   they divide the pattern into the reference-intervals
+        # - 'boundaries' are the currently set boundaries that are used
+        #   to slice the query data into hypothetical intervals
+        # - 'boundariesCalibrated' are present if the reference pattern
+        #   has been calibrated previously. If these are present, they
+        #   are usually prefered over the 'refBoundaries', as they fit
+        #   the reference pattern better due to the calibration process.
+        #
+        # For each set of boundaries (if present), we calculate the current
+        # interval lengths, starts and stops.
+        
+        boundsRef <- mlm$refBoundaries
+        boundsCurr <- mlm$boundaries[1, ]
+        boundsCali <- mlm$boundariesCalibrated[1, ]
+        allBounds <- list(
+          "ref" = boundsRef,
+          "current" = boundsCurr,
+          "calibrated" = boundsCali
+        )
+        
+        intervalIdx <- which(mlm$intervalNames == intName)
+        for (bName in names(allBounds)) {
+          bData <- allBounds[[bName]]
+          delimStart <- if (intervalIdx == 1) 0 else bData[intervalIdx - 1]
+          delimEnd <- if (intervalIdx == mlm$numIntervals) 1 else bData[intervalIdx]
+          r <- range(delimStart, delimEnd)
+          
+          intervals <- rbind(intervals, data.frame(
+            type = bName, interval = intName, start = r[1], stop = r[2], len = r[2] - r[1]))
+        }
+      }
+      
+      intervals$type <- factor(x = intervals$type, levels = unique(intervals$type), ordered = FALSE)
+      intervals$interval <- factor(x = intervals$interval, levels = mlm$intervalNames, ordered = TRUE)
+      intervals
+    }
+  )
+)
+
+
+Stage2Meta <- R6Class(
+  "Stage2Meta",
+  
+  inherit = Stage2,
+  
+  lock_objects = FALSE,
+  
+  private = list(
+    compareRatioDiffReferenceLengths = function(ref_l1, ref_l2, query_l1, query_l2) {
+      private$compareRatioDiff(
+        ratio = query_l1 / (query_l1 + query_l2),
+        targetRatio = ref_l1 / (ref_l1 + ref_l2))
+    },
+    
+    compareRatioDiffLengths = function(l1, l2, targetRatio = 1) {
+      private$compareRatioDiff(ratio = l1 / (l1 + l2), targetRatio = targetRatio)
+    },
+    
+    compareRatioDiff = function(ratio, targetRatio = 1) {
+      stopifnot(all(!is.na(ratio)) && is.numeric(ratio) && ratio >= 0 && ratio <= 1)
+      
+      if (ratio > targetRatio) {
+        ratio <- ratio - targetRatio
+        return(ratio / (1 - targetRatio))
+      } else {
+        return(1 - (ratio / targetRatio))
+      }
+    },
+    
+    checkTypes = function(types, ...) {
+      ts <- as.vector(unlist(list(...)))
+      all(ts %in% types)
+    },
+    
+    checkIntervals = function(intervals, ...) {
+      ints <- as.vector(unlist(list(...)))
+      all(ints %in% intervals)
+    }
+  ),
+  
+  public = list(
+    initialize = function() {
+      super$initialize()
+      
+      self$scoresLength <- list()
+      self$scoresRatio <- list()
+    },
+    
+    #' Create a score for the length of an interval. It is assumed that
+    #' an interval always has a length >= 0 and <= 1, therefore, the longer
+    #' the length, the higher the score (when maximize=TRUE).
+    addSubScoreFor_length = function(intervalName, intervalType, maximize = TRUE, weight = 1) {
+      stopifnot(is.character(intervalName) && is.character(intervalType))
+      stopifnot(is.numeric(weight) && weight > 0 && weight <= 1)
+      
+      self$scoresLength[[paste(intervalName, intervalType, maximize, weight, sep = "_")]] <-
+        c(intervalName, intervalType, maximize, weight)
+      
+      invisible(self)
+    },
+    
+    addSubScoreFor_ratio = function(
+      intervalName1, intervalType1,
+      intervalName2 = intervalName1, intervalType2,
+      targetRatio = 1,
+      weight = 1
+    ) {
+      stopifnot(is.character(intervalName1) && is.character(intervalType1) && is.character(intervalName2) && is.character(intervalType2))
+      stopifnot(is.numeric(weight) && weight > 0 && weight <= 1)
+      
+      self$scoresRatio[[paste(intervalName1, intervalType1, intervalName2, intervalType2, targetRatio, weight, sep = "_")]] <-
+        c(intervalName1, intervalType1, intervalName2, intervalType2, targetRatio, weight)
+      
+      invisible(self)
+    },
+    
+    addSubScoreFor_ratioReference = function(
+      ref_intervalName1,
+      ref_intervalType1,
+      ref_intervalName2,
+      ref_intervalType2 = ref_intervalType1,
+      query_intervalName1 = ref_intervalName1,
+      query_intervalType1 = "current",
+      query_intervalName2 = ref_intervalName2,
+      query_intervalType2 = "current",
+      weight = 1
+    ) {
+      stopifnot(is.character(ref_intervalName1) && is.character(ref_intervalType1) &&
+                is.character(ref_intervalName2) && is.character(ref_intervalType2) &&
+                is.character(query_intervalName1) && is.character(query_intervalType1) &&
+                is.character(query_intervalName2) && is.character(query_intervalType2))
+      stopifnot(is.numeric(weight) && weight > 0 && weight <= 1)
+      
+      self$scoresRatio[[paste(
+        ref_intervalName1, ref_intervalType1, ref_intervalName2, ref_intervalType2,
+        query_intervalName1, query_intervalType1, query_intervalName2, query_intervalType2, weight, sep = "_")]] <-
+          c(ref_intervalName1, ref_intervalType1, ref_intervalName2, ref_intervalType2,
+            query_intervalName1, query_intervalType1, query_intervalName2, query_intervalType2, weight)
+      
+      invisible(self)
+    },
+    
+    computeScores = function(stage1Result) {
+      stopifnot(is.data.frame(stage1Result) &&
+                all(c("type", "interval", "start", "stop", "len") %in% colnames(stage1Result)))
+      stopifnot(is.factor(stage1Result$type) && is.factor(stage1Result$interval))
+      
+      types <- levels(stage1Result$type)
+      intervals <- levels(stage1Result$interval)
+      
+      self$scoreAgg$flushRawScores()
+      
+      for (slName in names(self$scoresLength)) {
+        sl <- self$scoresLength[[slName]]
+        private$checkIntervals(intervals = intervals, sl[1])
+        private$checkTypes(types = types, sl[2])
+        
+        # Just extract the requested length
+        len <- stage1Result[stage1Result$interval == sl[1] & stage1Result$type == sl[2], ]$len
+        stopifnot(!is.na(len))
+        maximize <- as.logical(sl[3])
+        if (!maximize) {
+          len <- 1 - len
+        }
+        weight <- as.numeric(sl[4])
+        stopifnot(is.numeric(len) && len >= 0 && len <= 1)
+        self$scoreAgg$setRawScore(
+          rawScore = RawScore$new(name = paste(sl, collapse = "_"), value = len, weight = weight))
+      }
+      
+      for (srName in names(self$scoresRatio)) {
+        sr <- self$scoresRatio[[srName]]
+        score <- 0
+        weight <- 0
+        
+        # Note that in the following, difference in the range [0,1] are returned,
+        # and we want scores, so we need to compute 1 - diff.
+        if (length(sr) == 6) {
+          # Compare one interval to another
+          private$checkIntervals(intervals = intervals, sr[1], sr[3])
+          private$checkTypes(types = types, sr[2], sr[4])
+          
+          l1 <- stage1Result[stage1Result$interval == sr[1] & stage1Result$type == sr[2], ]$len
+          l2 <- stage1Result[stage1Result$interval == sr[3] & stage1Result$type == sr[4], ]$len
+          stopifnot(!is.na(l1) && !is.na(l2))
+          tr <- as.numeric(sr[5])
+          weight <- as.numeric(sr[5])
+          score <- 1 - (private$compareRatioDiffLengths(l1 = l1, l2 = l2, targetRatio = tr))
+        } else {
+          # compare the ratio of the lengths of two reference intervals
+          # to the ratio of the lengths of two query intervals.
+          private$checkIntervals(intervals = intervals, sr[1], sr[3], sr[5], sr[7])
+          private$checkTypes(types = types, sr[2], sr[4], sr[6], sr[8])
+          
+          ref_l1 <- stage1Result[stage1Result$interval == sr[1] & stage1Result$type == sr[2], ]$len
+          ref_l2 <- stage1Result[stage1Result$interval == sr[3] & stage1Result$type == sr[4], ]$len
+          query_l1 <- stage1Result[stage1Result$interval == sr[5] & stage1Result$type == sr[6], ]$len
+          query_l2 <- stage1Result[stage1Result$interval == sr[7] & stage1Result$type == sr[8], ]$len
+          stopifnot(!is.na(ref_l1) && !is.na(ref_l2) && !is.na(query_l1) && !is.na(query_l2))
+          weight <- as.numeric(sr[9])
+          score <- 1 - (private$compareRatioDiffReferenceLengths(
+            ref_l1 = ref_l1, ref_l2 = ref_l2, query_l1 = query_l1, query_l2 = query_l2))
+        }
+        
+        # Just return the ratio; the closer it is to 1, the better.
+        self$scoreAgg$setRawScore(
+          rawScore = RawScore$new(name = paste(sr, collapse = "_"), value = score, weight = weight))
+      }
+      
+      self$scoreAgg
+    }
+  )
+)
 
 Stage2Rectifier <- R6Class(
   "Stage2Rectifier",
