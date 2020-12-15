@@ -826,53 +826,67 @@ MultilevelModel <- R6Class(
     },
     
     
-    fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "SANN")[1]) {
+    fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "SANN")[1], forceSeq = NULL) {
       stopifnot(self$validateLinIneqConstraints())
       
       histCols <- c("begin", "end", "duration", "score_raw", "score_log", colnames(self$boundaries))
       fitHist <- matrix(nrow = 0, ncol = length(histCols))
       colnames(fitHist) <- histCols
       
+      cArgs <- list()
+      if (!missing(forceSeq)) {
+        cArgs[["forceSeq"]] <- forceSeq
+      }
+      
+      
+      objF <- function(x, isGrad = FALSE) {
+        if (verbose && !isGrad) {
+          cat(paste0("Boundaries: ", paste0(sapply(x, function(b) {
+            format(b, digits = 10, nsmall = 10)
+          }), collapse = ", ")))
+        }
+        
+        for (idx in 1:length(x)) {
+          self$setBoundary(indexOrName = idx, value = x[idx])
+        }
+        
+        begin <- as.numeric(Sys.time())
+        scoreAgg <- do.call(what = self$compute, args = cArgs)
+        score_raw <- private$scoreAggCallback(scoreAgg)
+        score_log <- -log(score_raw)
+        finish <- as.numeric(Sys.time())
+        
+        if (!isGrad) {
+          fitHist <<- rbind(fitHist, c(
+            begin, finish, finish - begin, score_raw, score_log, x
+          ))
+        }
+        
+        if (verbose && !isGrad) {
+          cat(paste0(" -- Value: ", format(score_log, digits = 10, nsmall = 5),
+                     " -- Duration: ", format(finish - begin, digits = 2, nsmall = 2), "s\n"))
+        }
+        
+        score_log
+      }
+      
       
       beginOpt <- as.numeric(Sys.time())
       optR <- stats::constrOptim(
         control = list(
-          reltol = reltol
+          reltol = reltol,
+          maxit = 3000 # TODO
         ),
         method = method,
         ui = self$getUi(),
         theta = self$getTheta(),
         ci = self$getCi(),
-        grad = NULL,
-        f = function(x) {
+        f = objF,
+        grad = function(x) {
           if (verbose) {
-            cat(paste0("Boundaries: ", paste0(sapply(x, function(b) {
-              format(b, digits = 10, nsmall = 10)
-            }), collapse = ", ")))
+            cat(paste0("Calculatung gradient for: ", paste0(x, collapse = ", "), "\n"))
           }
-          
-          x <- x + (rnorm(length(x))/10)^5
-          for (idx in 1:length(x)) {
-            self$setBoundary(indexOrName = idx, value = x[idx])
-          }
-          
-          begin <- as.numeric(Sys.time())
-          
-          scoreAgg <- self$compute()
-          score_raw <- private$scoreAggCallback(scoreAgg)
-          score_log <- -log(score_raw)
-          
-          finish <- as.numeric(Sys.time())
-          fitHist <<- rbind(fitHist, c(
-            begin, finish, finish - begin, score_raw, score_log, x
-          ))
-          
-          if (verbose) {
-            cat(paste0(" -- Value: ", format(score_log, digits = 10, nsmall = 5),
-                       " --  Duration: ", format(finish - begin, digits = 2, nsmall = 2), "s\n"))
-          }
-          
-          score_log
+          numDeriv::grad(func = objF, x = x, method = "Richardson", isGrad = TRUE)
         }
       )
       finishOpt <- as.numeric(Sys.time())
@@ -888,19 +902,28 @@ MultilevelModel <- R6Class(
     
     
     #' Evaluates the entire MLM using the currently set boundaries.
-    compute = function(forceSeq = NULL) {
+    compute = function(forceSeq = NULL, verbose = FALSE) {
       stopifnot(!any(is.na(self$boundaries)))
+      
+      # smAggs <- list()
+      # for (subModelName in self$getSubModelsInUse(includeOrdinarySubModels = TRUE, includeMetaSubModels = TRUE)) {
       
       foreachOp <- if (missing(forceSeq) || forceSeq != TRUE) foreach::`%dopar%` else foreach::`%do%`
       smAggs <- foreachOp(foreach::foreach(
-        subModelName = self$getSubModelsInUse(),
+        subModelName = self$getSubModelsInUse(
+          includeOrdinarySubModels = TRUE, includeMetaSubModels = TRUE),
         .inorder = FALSE,
+        .verbose = verbose,
         .export = c("self", "private"),
         .packages = c("dtw", "Metrics", "numDeriv",
                       "philentropy", "pracma", "rootSolve",
                       "SimilarityMeasures", "stats", "utils")
       ), {
         for (file in self$sourceFiles) {
+          fileAbs <- normalizePath(file, mustWork = FALSE)
+          if (!file.exists(fileAbs) || file.access(fileAbs, mode = 4) != 0) {
+            stop(paste0("Cannot source file: ", file, " -- cwd: ", getwd()))
+          }
           source(file = file)
         }
         
