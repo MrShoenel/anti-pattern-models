@@ -1,5 +1,81 @@
 library(R6)
 library(foreach)
+LinearInequalityConstraints <- R6Class(
+  "LinearInequalityConstraints",
+  
+  lock_objects = FALSE,
+  
+  public = list(
+    initialize = function(theta) {
+      stopifnot(is.numeric(theta) && length(theta) > 0)
+      
+      self$numParams <- length(theta)
+      self$linIneqs <- matrix(nrow = 0, ncol = self$numParams + 1) # +1 for theta-column
+      self$theta <- theta
+    },
+    
+    hasLinIneqConstraint = function(name) {
+      stopifnot(is.character(name) && nchar(name) > 0)
+      name %in% rownames(self$linIneqs)
+    },
+    
+    removeLinIneqConstraint = function(name) {
+      stopifnot(self$hasLinIneqConstraint(name))
+      rIdx <- which(rownames(self$linIneqs) == name)
+      self$linIneqs <- self$linIneqs[-rIdx, ]
+      invisible(self)
+    },
+    
+    setLinIneqConstraint = function(name, ineqs) {
+      stopifnot(is.vector(ineqs) && length(ineqs) == self$numParams + 1)
+      stopifnot(all(is.numeric(ineqs)) && !any(is.na(ineqs)))
+      
+      # Set or replace semantics:
+      if (!self$hasLinIneqConstraint(name)) {
+        newRow <- matrix(ncol = self$numParams + 1, nrow = 1)
+        rownames(newRow) <- name
+        self$linIneqs <- rbind(self$linIneqs, newRow)
+      }
+      
+      self$linIneqs[name, ] <- ineqs
+      invisible(self)
+    },
+    
+    flushLinIneqConstraints = function() {
+      self$linIneqs <- self$linIneqs[-1:-nrow(self$linIneqs), ]
+      invisible(self)
+    },
+    
+    setTheta = function(theta) {
+      stopifnot(is.numeric(theta) && length(theta) == length(self$theta))
+      names(theta) <- names(self$theta)
+      self$theta <- theta
+      invisible(self)
+    },
+    
+    getTheta = function() {
+      self$theta
+    },
+    
+    getUi = function() {
+      self$linIneqs[, 1:self$numParams]
+    },
+    
+    getCi = function() {
+      self$linIneqs[, self$numParams + 1]
+    },
+    
+    validateLinIneqConstraints = function() {
+      theta <- self$getTheta()
+      ui <- self$getUi()
+      ci <- self$getCi()
+      
+      res <- ui %*% theta - ci
+      !any(is.na(res)) && all(res >= 0)
+    }
+  )
+)
+
 
 
 #' The model we use to describe, fit and score arbitrary many time
