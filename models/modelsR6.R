@@ -450,6 +450,7 @@ MultilevelModel <- R6Class(
       
       # Order by x ascending
       self$refData <- referenceData[order(referenceData$x), ]
+      self$numVars <- length(levels(referenceData$t))
       
       # For each series, we may have different data.
       self$queryData <- list()
@@ -457,6 +458,7 @@ MultilevelModel <- R6Class(
       self$refBoundaries <- referenceBoundaries
       
       self$intervalNames <- intervalNames
+      self$numIntervals <- length(intervalNames)
       
       # Now for n intervals, there will be n-1 boundaries.
       # We do not initialize them, however.
@@ -485,6 +487,13 @@ MultilevelModel <- R6Class(
           private$subModels[[paste(t, i, sep = "_")]] <- NA
         }
       }
+      
+      
+      # We also allow additional sub-models that do not have
+      # to capture a tuple of variable and interval. These
+      # are called meta-models and are computed exactly as
+      # the regular models.
+      private$metaSubModels <- list()
       
       
       # Those properties will be filled if the model is calibrated
@@ -718,9 +727,15 @@ MultilevelModel <- R6Class(
     #' Sets a sub-model. Also sets self as MLM of the sub-model.
     setSubModel = function(model) {
       stopifnot(inherits(model, "SubModel") && R6::is.R6(model))
-      stopifnot(model$name %in% names(private$subModels)) # remember that slots are pre-allocated!
+      stopifnot(model$isMetaModel() ||
+                (model$name %in% names(private$subModels))) # remember that slots are pre-allocated!
       
-      private$subModels[[model$name]] <- model
+      if (model$isMetaModel()) {
+        private$metaSubModels[[model$name]] <- model
+      } else {
+        private$subModels[[model$name]] <- model
+      }
+      
       model$setMLM(self)
       invisible(self)
     },
@@ -734,25 +749,49 @@ MultilevelModel <- R6Class(
     
     removeSubModel = function(model) {
       stopifnot(inherits(model, "SubModel") && R6::is.R6(model))
-      stopifnot(model$name %in% names(private$subModels))
       
-      model$setMLM(NULL)
-      private$subModels[[model$name]] <- NA
+      isMeta <- model$isMetaModel()
+      inSm <- model$name %in% names(private$subModels)
+      inMsm <- model$name %in% names(private$metaSubModels)
+      
+      stopifnot((isMeta && inMsm) || (!isMeta && inSm))
+      stopifnot(inSm || inMsm)
+      
+      model$setMLM(NA)
+      if (inSm) {
+        private$subModels[[model$name]] <- NA
+      } else {
+        private$metaSubModels[[model$name]] <- NULL # Note that we're un-setting!
+      }
       invisible(self)
     },
     
     getSubModel = function(name) {
-      stopifnot(name %in% names(private$subModels))
+      inSm <- name %in% names(private$subModels)
+      inMsm <- name %in% names(private$metaSubModels)
       
-      private$subModels[[name]]
+      stopifnot(inSm || inMsm)
+      
+      if (inSm) private$subModels[[name]] else private$metaSubModels[[name]]
     },
     
-    getSubModelsInUse = function() {
-      inUse <- sapply(names(private$subModels), function(name) {
+    getSubModelsInUse = function(
+      includeOrdinarySubModels = TRUE, includeMetaSubModels = FALSE
+    ) {
+      modelNames <- c()
+      if (includeOrdinarySubModels) {
+        modelNames <- names(private$subModels)
+      }
+      if (includeMetaSubModels) {
+        modelNames <- c(modelNames, names(private$metaSubModels))
+      }
+      
+      inUse <- sapply(modelNames, function(name) {
         sm <- self$getSubModel(name)
         inherits(sm, "SubModel") && R6::is.R6(sm)
       })
-      names(private$subModels)[inUse]
+      
+      modelNames[inUse]
     },
     
     
@@ -866,15 +905,6 @@ MultilevelModel <- R6Class(
         }
         
         sm <- self$getSubModel(name = subModelName)
-        intervalIdx <- which(self$intervalNames == sm$intervalName)
-        
-        refData <- self$refData[
-          self$refData$t == sm$varName & self$refData$interval == sm$intervalName, ]
-        
-        sm$setReferenceData(referenceData = refData)
-        
-        delimStart <- if (intervalIdx == 1) 0 else self$boundaries[1, intervalIdx - 1]
-        delimEnd <- if (intervalIdx == length(self$intervalNames)) 1 else self$boundaries[1, intervalIdx]
         
         # We may need to calculate the score w.r.t. more than one
         # query data series, and that's what the nested aggregator
@@ -882,27 +912,47 @@ MultilevelModel <- R6Class(
         # data series at once (average model).
         saSm <- ScoreAggregator$new(namePrefix = subModelName)
         
-        for (series in names(self$queryData)) {
-          
-          queryData <- self$queryData[[series]]
-          queryData <- queryData[
-            queryData$t == sm$varName &
-            queryData$x >= delimStart & queryData$x < delimEnd, ]
-          
-          sm$setQueryData(queryData = queryData)
-          # The 2nd stage of any sub-model can return any number
-          # of scores. However, usually these are scores based
-          # on low-level metrics and all have weight=1, so doing
-          # the product or mean ought to be fine.
-          tempSa <- sm$compute()
-          score <- private$scoreAggCallback(tempSa)
-          
+        if (sm$isMetaModel()) {
+          score <- private$scoreAggCallback(sm$compute())
           saSm$setRawScore(
-            rawScore = RawScore$new(name = series, value = score))
+            rawScore = RawScore$new(name = sm$name, value = score))
+        } else {
+          intervalIdx <- which(self$intervalNames == sm$intervalName)
+          
+          refData <- self$refData[
+            self$refData$t == sm$varName & self$refData$interval == sm$intervalName, ]
+          
+          sm$setReferenceData(referenceData = refData)
+          
+          delimStart <- if (intervalIdx == 1) 0 else self$boundaries[1, intervalIdx - 1]
+          delimEnd <- if (intervalIdx == length(self$intervalNames)) 1 else self$boundaries[1, intervalIdx]
+          
+          
+          for (series in names(self$queryData)) {
+            queryData <- self$queryData[[series]]
+            queryData <- queryData[
+              queryData$t == sm$varName &
+              queryData$x >= delimStart & queryData$x < delimEnd, ]
+            
+            sm$setQueryData(queryData = queryData)
+            # The 2nd stage of any sub-model can return any number
+            # of scores. However, usually these are scores based
+            # on low-level metrics and all have weight=1, so doing
+            # the product or mean ought to be fine.
+            tempSa <- sm$compute()
+            score <- private$scoreAggCallback(tempSa)
+            
+            saSm$setRawScore(
+              rawScore = RawScore$new(
+                name = paste(sm$name, series, sep = "_"),
+                value = score))
+          }
         }
         
         saSm
       })
+      #   smAggs <- append(smAggs, saSm)
+      # }
       
       
       sa <- ScoreAggregator$new()
@@ -1131,8 +1181,13 @@ SubModel <- R6Class(
       private$mlm <- NA
     },
     
-    setMLM = function(mlm) {
-      stopifnot(inherits(mlm, "MultilevelModel") && R6::is.R6(mlm))
+    isMetaModel = function() {
+      FALSE
+    },
+    
+    setMLM = function(mlm = NA) {
+      stopifnot((inherits(mlm, "MultilevelModel") && R6::is.R6(mlm)) ||
+                (missing(mlm) || is.na(mlm)))
       private$mlm <- mlm
       invisible(self)
     },
