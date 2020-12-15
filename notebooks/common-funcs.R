@@ -1237,18 +1237,31 @@ get_dtw_scorable_functions <- function(dtwAlign, signalRef = NULL, signalQuery =
   ex <- extract_warping_from_dtw(
     dtwAlign = dtwAlign, signalRef = signalRef, signalQuery = signalQuery)
   
+  safe_divide <- function(numerator, divisor, threshold = 1e-20) {
+    if (divisor < threshold) {
+      return(numerator)
+    }
+    res <- numerator / divisor
+    if (any(is.na(res))) {
+      stop("Division produces NA.")
+    }
+    res
+  }
+  
   
   range_ref <- range(signalRef, ex$warpTransRef)
   extent_ref <- range_ref[2] - range_ref[1]
-  data_ref <- (signalRef - range_ref[1]) / extent_ref
-  data_ref_warp <- (ex$warpTransRef - range_ref[1]) / extent_ref
+  data_ref <- safe_divide(signalRef - range_ref[1], extent_ref)
+  data_ref_warp <- safe_divide(ex$warpTransRef - range_ref[1], extent_ref)
+  
   f_ref <- pattern_approxfun(yData = data_ref, yLimits = c(0, 1))
   f_ref_warp <- pattern_approxfun(yData = data_ref_warp, yLimits = c(0, 1))
   
   range_q <- range(signalQuery, ex$warpTransQuery)
   extent_q <- range_q[2] - range_q[1]
-  data_q <- (signalQuery - range_q[1]) / extent_q
-  data_q_warp <- (ex$warpTransQuery - range_q[1]) / extent_q
+  data_q <- safe_divide(signalQuery - range_q[1], extent_q)
+  data_q_warp <- safe_divide(ex$warpTransQuery - range_q[1], extent_q)
+  
   f_q <- pattern_approxfun(yData = data_q, yLimits = c(0, 1))
   f_q_warp <- pattern_approxfun(yData = data_q_warp, yLimits = c(0, 1))
   
