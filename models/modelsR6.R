@@ -1052,6 +1052,24 @@ ScoreAggregator <- R6Class(
 
 
 
+MetaSubModel <- R6Class(
+  "MetaSubModel",
+  
+  inherit = SubModel,
+  
+  lock_objects = FALSE,
+  
+  public = list(
+    initialize = function(name, weight = 1) {
+      super$initialize(varName = "_META_", intervalName = name, weight = weight)
+    },
+    
+    isMetaModel = function() {
+      TRUE
+    }
+  )
+)
+
 
 
 SubModel <- R6Class(
