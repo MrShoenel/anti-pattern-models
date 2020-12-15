@@ -85,6 +85,8 @@ LinearInequalityConstraints <- R6Class(
 MultilevelModel <- R6Class(
   "MultilevelModel",
   
+  inherit = LinearInequalityConstraints,
+  
   lock_objects = FALSE,
   
   private = list(
@@ -140,7 +142,7 @@ MultilevelModel <- R6Class(
       
       # Now that we know the amount of boundaries, we can
       # initialize a structure for the linear inequalities:
-      self$linIneqs <- matrix(ncol = self$numBoundaries + 1, nrow = 0)
+      super$initialize(theta = if (missing(referenceBoundaries)) rep(NA, self$numBoundaries) else referenceBoundaries)
       
       
       # Next step is to generate slots for the sub-models.
@@ -234,37 +236,9 @@ MultilevelModel <- R6Class(
       invisible(fitResult)
     },
     
-    
-    hasLinIneqConstraint = function(name) {
-      stopifnot(is.character(name) && nchar(name) > 0)
-      name %in% rownames(self$linIneqs)
-    },
-    
-    removeLinIneqConstraint = function(name) {
-      stopifnot(self$hasLinIneqConstraint(name))
-      rIdx <- which(rownames(self$linIneqs) == name)
-      self$linIneqs <- self$linIneqs[-rIdx, ]
-      invisible(self)
-    },
-    
-    setLinIneqConstraint = function(name, ineqs) {
-      stopifnot(is.vector(ineqs) && length(ineqs) == self$numBoundaries + 1)
-      stopifnot(all(is.numeric(ineqs)) && !any(is.na(ineqs)))
-      
-      # Set or replace semantics:
-      if (!self$hasLinIneqConstraint(name)) {
-        newRow <- matrix(ncol = self$numBoundaries + 1, nrow = 1)
-        rownames(newRow) <- name
-        self$linIneqs <- rbind(self$linIneqs, newRow)
-      }
-      
-      self$linIneqs[name, ] <- ineqs
-      invisible(self)
-    },
-    
-    flushLinIneqConstraints = function() {
-      self$linIneqs <- self$linIneqs[-1:-nrow(self$linIneqs), ]
-      invisible(self)
+    ###### Some overrides:
+    setTheta = function(theta) {
+      mlm$setAllBoundaries(theta)
     },
     
     getTheta = function() {
@@ -277,15 +251,6 @@ MultilevelModel <- R6Class(
     
     getCi = function() {
       self$linIneqs[, self$numBoundaries + 1]
-    },
-    
-    validateLinIneqConstraints = function() {
-      theta <- self$getTheta()
-      ui <- self$getUi()
-      ci <- self$getCi()
-      
-      res <- ui %*% theta - ci
-      !any(is.na(res)) && all(res >= 0)
     },
     
     constrainBoundaryInterval = function(boundaryIndexOrName, value, op = c("leq", "geq")[1]) {
