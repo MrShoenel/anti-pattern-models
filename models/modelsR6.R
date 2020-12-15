@@ -1878,12 +1878,14 @@ Stage2Rectifier <- R6Class(
         "f_ref-vs-f_query", "f_ref-vs-f_query_np",
         "f_ref-vs-f_ref_warp", "f_ref-vs-f_query_warp",
         "f_query-vs-f_query_warp", "f_query-vs-f_ref_warp",
-        "f_ref_warp-vs-f_query_warp")
+        "f_ref_warp-vs-f_query_warp"),
+      numSamples = 1e4
     ) {
       super$initialize()
       
       self$scoreWarping <- scoreWarpingFunction
       self$scoreSignals <- scoreSignals
+      self$numSamples <- numSamples
     },
     
     computeScores = function(stage1Result) {
@@ -1994,11 +1996,11 @@ Stage2Rectifier <- R6Class(
       
       warpScoreMethods <- list(
         # Use upper bound from data is safer here.
-        area_diff_2_functions_score(useUpperBoundFromData = TRUE),
-        stat_diff_2_functions_cor_score(allowReturnNA = TRUE),
-        stat_diff_2_functions_arclen_score(),
+        area_diff_2_functions_score(useUpperBoundFromData = TRUE, numSamples = self$numSamples),
+        stat_diff_2_functions_cor_score(allowReturnNA = TRUE, numSamples = self$numSamples),
+        stat_diff_2_functions_arclen_score(numSamples = self$numSamples),
         stat_diff_2_functions_sd_var_mae_rmse_score(
-          use = "rmse", useUpperBoundFromData = TRUE)
+          use = "rmse", useUpperBoundFromData = TRUE, numSamples = self$numSamples)
       )
       
       if ("f_warp_org-vs-f_warp_np" %in% self$scoreWarping) {
@@ -2024,9 +2026,9 @@ Stage2Rectifier <- R6Class(
       ################################### Ref vs. Query Function scores:
       
       refVsQueryMethods <- list(
-        stat_diff_2_functions_symmetric_JSD_score(),
-        area_diff_2_functions_score(useUpperBoundFromData = TRUE),
-        stat_diff_2_functions_cor_score())
+        stat_diff_2_functions_symmetric_JSD_score(numSamples = self$numSamples),
+        area_diff_2_functions_score(useUpperBoundFromData = TRUE, numSamples = self$numSamples),
+        stat_diff_2_functions_cor_score(allowReturnNA = TRUE, numSamples = self$numSamples))
       
       if ("f_ref-vs-f_query" %in% self$scoreSignals) {
         f1 <- dtwFuncs$f_ref
