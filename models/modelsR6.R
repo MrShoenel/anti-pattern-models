@@ -914,6 +914,36 @@ MultilevelModel <- R6Class(
       })
       
       sa
+    },
+    
+    plot = function() {
+      plot_fullPattern <- ggplot(data = self$refData, aes(x = x, y = y, color = t)) +
+        geom_line() +
+        labs(color = "Variable") +
+        scale_x_continuous(
+          breaks = seq(0, 1, by = .05)
+        ) +
+        theme_light() +
+        theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
+        scale_color_brewer(palette = "Set1")
+      
+      for (bName in colnames(self$boundaries)) {
+        if (!is.na(self$boundaries[1, bName])) {
+          plot_fullPattern <- plot_fullPattern +
+            geom_vline(xintercept = self$boundaries[1, bName], color = "blue", size = .4)
+        }
+      }
+      
+      if (!any(is.na(self$boundariesCalibrated))) {
+        for (bName in colnames(self$boundariesCalibrated)) {
+          plot_fullPattern <- plot_fullPattern +
+            geom_vline(xintercept = self$boundariesCalibrated[1, bName], color = "red", size = .6)
+        }
+      }
+      
+      
+      
+      plot_fullPattern
     }
   )
 )
