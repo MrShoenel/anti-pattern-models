@@ -512,7 +512,7 @@ MultilevelModel <- R6Class(
       self$sourceFiles <- c()
     },
     
-    calibrate = function(requireAbsoluteConverge = FALSE, verbose = FALSE) {
+    calibrate = function(requireAbsoluteConverge = FALSE, verbose = FALSE, method = c("Nelder-Mead", "SANN")[1]) {
       stopifnot(self$validateLinIneqConstraints())
       
       # Note this is a list where the names are the series' names.
@@ -521,7 +521,7 @@ MultilevelModel <- R6Class(
       scoreBefore <- private$scoreAggCallback(self$compute())
       
       self$setQueryData(series = "ALL", queryData = self$refData)
-      fitResult <- self$fit(verbose = verbose)
+      fitResult <- self$fit(verbose = verbose, method = method)
       
       # Revert the Query data:
       for (series in names(queryDataOld)) {
@@ -534,11 +534,11 @@ MultilevelModel <- R6Class(
       # parameter 'requireAbsoluteConvergence' is FALSE, even an
       # optimization that failed may provide such better
       # boundaries, which we will then use.
-      if (requireAbsoluteConverge && resDummy$optResult$convergence != 0) {
+      if (requireAbsoluteConverge && fitResult$optResult$convergence != 0) {
         stop("The model requires convergence but failed to do so.")
       }
       if (verbose) {
-        cat(paste0("The model did ", (if (resDummy$optResult$convergence == 0) "" else "not"), " converge.\n"))
+        cat(paste0("The model did ", (if (fitResult$optResult$convergence == 0) "" else "not"), " converge.\n"))
       }
       
       # OK, let's check if the found boundaries provide
@@ -710,11 +710,12 @@ MultilevelModel <- R6Class(
     
     #' (Un-)sets Query data for a series. Omit 'queryData' to unset.
     setQueryData = function(series, queryData = NA) {
+      np <- missing(queryData) || is.na(queryData)
       stopifnot(is.character(series) && nchar(series) > 0)
-      stopifnot(missing(queryData) ||
+      stopifnot(np ||
         (is.data.frame(queryData) && is.numeric(queryData$x) && is.numeric(queryData$y) && is.factor(queryData$t)))
       
-      if (missing(queryData) || is.na(queryData)) {
+      if (np) {
         self$queryData[[series]] <- NULL
       } else {
         self$queryData[[series]] <- queryData[order(queryData$x), ]
@@ -1185,19 +1186,14 @@ SubModel <- R6Class(
   ),
   
   public = list(
-    initialize = function(varName, intervalName, referenceData = NULL, weight = 1) {
+    initialize = function(varName, intervalName, referenceData = NA, weight = 1) {
       stopifnot(all(is.character(c(varName, intervalName))))
       stopifnot(is.numeric(weight) || weight >= 0 || weight <= 1)
       
       self$varName <- varName
       self$intervalName <- intervalName
       self$name <- paste(varName, intervalName, sep = "_")
-      if (missing(referenceData)) {
-        self$setReferenceData()
-      } else {
-        self$setReferenceData(referenceData)
-      }
-      
+      self$setReferenceData(referenceData = referenceData)
       self$weight <- weight
       
       # A reference to the MLM, to be set by it
@@ -1238,17 +1234,19 @@ SubModel <- R6Class(
       stopifnot(inherits(self$stage1, "Stage1") && R6::is.R6(self$stage1))
       stopifnot(inherits(self$stage2, "Stage2") && R6::is.R6(self$stage2))
       
-      self$stage1$setRefData(dataRef = self$getReferenceData())
-      self$stage1$setQueryData(dataQuery = self$getQueryData())
-      
       stage1Result <- self$stage1$compute()
       self$stage2$computeScores(stage1Result = stage1Result)
     },
     
     
-    setReferenceData = function(referenceData = NULL) {
-      if (missing(referenceData)) {
+    setReferenceData = function(referenceData = NA) {
+      hasS1 <- inherits(self$stage1, "Stage1") && R6::is.R6(self$stage1)
+      
+      if (missing(referenceData) || is.na(referenceData)) {
         self$refData <- NA
+        if (hasS1) {
+          self$stage1$setRefData(dataRef = NA)
+        }
         return(invisible(self))
       }
       
@@ -1258,7 +1256,10 @@ SubModel <- R6Class(
       # One SubModel can only represent one variable in one interval.
       stopifnot(length(unique(referenceData$t)) == 1 && length(unique(referenceData$interval)) == 1)
       
-      self$refData <- referenceData
+      self$refData <- referenceData[order(referenceData$x), ]
+      if (hasS1) {
+        self$stage1$setRefData(dataRef = self$getReferenceData())
+      }
       invisible(self)
     },
     
@@ -1268,9 +1269,14 @@ SubModel <- R6Class(
     
     
     
-    setQueryData = function(queryData = NULL) {
-      if (missing(queryData)) {
+    setQueryData = function(queryData = NA) {
+      hasS1 <- inherits(self$stage1, "Stage1") && R6::is.R6(self$stage1)
+      
+      if (missing(queryData) || is.na(queryData)) {
         self$queryData <- NA
+        if (hasS1) {
+          self$stage1$setQueryData(dataQuery = NA)
+        }
         return(invisible(self))
       }
       
@@ -1279,7 +1285,10 @@ SubModel <- R6Class(
       stopifnot(is.factor(queryData$t))
       stopifnot(nrow(queryData[queryData$t == self$varName, ]) > 0)
       
-      self$queryData <- queryData
+      self$queryData <- queryData[order(queryData$x), ]
+      if (hasS1) {
+        self$stage1$setQueryData(dataQuery = self$getQueryData())
+      }
       invisible(self)
     },
     
