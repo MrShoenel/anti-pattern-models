@@ -1,5 +1,332 @@
 library(R6)
 library(foreach)
+library(ggplot2)
+
+
+MultilevelModelReferenceCalibrator <- R6Class(
+  "MultilevelModelReferenceCalibrator",
+  
+  lock_objects = FALSE,
+  
+  inherit = LinearInequalityConstraints,
+  
+  private = list(
+    scoreAggCallback = NULL
+  ),
+  
+  public = list(
+    initialize = function(mlm, scoreAggCallback = function(sa) sa$aggregateUsing_Honel()) {
+      stopifnot(inherits(mlm, "MultilevelModel") && R6::is.R6(mlm))
+      stopifnot(is.matrix(mlm$boundariesCalibrated) && !any(is.na(mlm$boundariesCalibrated)))
+      stopifnot(is.function(scoreAggCallback) && length(methods::formalArgs(scoreAggCallback)) == 1)
+      
+      self$mlm <- mlm
+      # Let's copy it over. During optimization, we will do our affine
+      # transformations and then set the data back to the MLM, before
+      # we call its compute()-method.
+      self$refData <- mlm$refData[, ]
+      
+      # Needed later in fit()
+      private$scoreAggCallback <- scoreAggCallback
+      
+      theta <- mlm$getTheta()
+      bounds <- sort(unique(c(0, 1, mlm$refBoundaries)))
+      # For each variable, we add the current intercept with each boundary
+      # from left to right, including the 0,1 boundaries.
+      # Each variable has 'numIntervals' + 1 y-values we can adjust.
+      for (t in levels(mlm$refData$t)) {
+        tFunc <- (function() {
+          d <- mlm$refData[mlm$refData$t == t, ]
+          f <- stats::approxfun(x = d$x, y = d$y)
+          return(function(x) {
+            if (x < min(d$x)) d$y[1]
+            if (x > max(d$x)) utils::tail(d$y, 1)
+            f(x)
+          })
+        })()
+        for (bIdx in 1:length(bounds)) {
+          newC <- c()
+          newC[paste(t, bIdx, sep = "_")] <- tFunc(bounds[bIdx])
+          theta <- c(theta, newC)
+        }
+      }
+      
+      super$initialize(theta = theta)
+      self$refTheta <- theta
+      colnames(self$linIneqs) <- c(names(theta), "CI")
+    },
+    
+    #' Transfers over the MLM's boundary constraints into our matrix.
+    copyBoundaryConstraints = function() {
+      for (rIdx in rownames(self$mlm$linIneqs)) {
+        newC <- rep(0, ncol(self$linIneqs))
+        newC[1:self$mlm$numBoundaries] <- self$mlm$linIneqs[rIdx, 1:self$mlm$numBoundaries]
+        newC[length(newC)] <- self$mlm$linIneqs[rIdx, self$mlm$numBoundaries + 1]
+        mlmrc$setLinIneqConstraint(name = rIdx, ineqs = newC)
+      }
+      invisible(self)
+    },
+    
+    addDefaultVariableYConstraints = function() {
+      idxOffset <- length(self$mlm$getTheta())
+      bounds <- sort(unique(c(0, 1, mlm$refBoundaries)))
+      lvls <- levels(self$mlm$refData$t)
+      
+      for (t in lvls) {
+        lvlIdx <- which(t == lvls)
+        for (bIdx in 1:length(bounds)) {
+          newC <- rep(0, ncol(self$linIneqs))
+          newC[idxOffset + (lvlIdx - 1) * length(bounds) + bIdx] <- 1
+          newC[length(newC)] <- 0
+          # >= 0:
+          self$setLinIneqConstraint(name = paste0(t, "_", bIdx, "_geq_v"), ineqs = newC)
+          # .. and <= 1:
+          newC <- -1 * newC
+          newC[length(newC)] <- -1
+          self$setLinIneqConstraint(name = paste0("-", t, "_", bIdx, "_geq_v"), ineqs = newC)
+        }
+      }
+      invisible(self)
+    },
+    
+    
+    computeRefData = function(limitYExtent = c(0,1), bbFlatIfBelow = 1e-3) { 
+      # Here, we need the calibrated boundaries -- we use them as the reference!
+      # I.e., these are superior to the user-set reference boundaries!
+      stopifnot(is.matrix(self$mlm$boundariesCalibrated) && !any(is.na(self$mlm$boundariesCalibrated)))
+      stopifnot(missing(limitYExtent) ||
+                (is.numeric(limitYExtent) && length(limitYExtent) == 2 && !any(is.na(limitYExtent))))
+      # Current values for all boundaries and y-intersections (in that order).
+      theta <- self$getTheta()
+      # Needed to re-slice the reference data.
+      refBounds <- sort(unique(c(0, 1, self$mlm$boundariesCalibrated[1, ])))
+      # The current bounds that are used to transform the reference data.
+      newBounds <- sort(unique(c(0, 1, theta[1:self$mlm$numBoundaries])))
+      refData <- NULL
+      
+      
+      for (t in levels(self$mlm$refData$t)) {
+        for (bIdx in 1:self$mlm$numIntervals) {
+          xyData <- self$refData[
+            self$refData$t == t & self$refData$interval == self$mlm$intervalNames[bIdx], ]
+          xyData <- xyData[order(xyData$x), ]
+          
+          xRange_ref <- range(xyData$x)
+          xExtent_ref <- xRange_ref[2] - xRange_ref[1]
+          bStart <- newBounds[bIdx]
+          bEnd <- newBounds[bIdx + 1]
+          xRange <- c(bStart, bEnd)
+          xExtent <- bEnd - bStart
+          xData <- xyData$x - xRange_ref[1]
+          if (xExtent_ref > 0) {
+            xData <- xData / xExtent_ref
+          }
+          if (xExtent > 0) {
+            xData <- xData * xExtent
+          }
+          
+          # For re-fitting Y, we do not need X.
+          yExtent_ref <- range(xyData$y)
+          yStart_ref <- xyData$y[1]
+          yEnd_ref <- xyData$y[length(xyData$y)]
+          yDiff_ref <- yEnd_ref - yStart_ref
+          
+          yStart_new <- theta[paste0(t, "_", bIdx)]
+          yEnd_new <- theta[paste0(t, "_", bIdx + 1)]
+          yDiff_new <- yEnd_new - yStart_new
+          yData <- xyData$y
+          
+          # If the reference bounding box is flat, the current
+          # sub-pattern should be regarded as a flat line. Otherwise,
+          # we may amplify small deviations of an otherwise flat line
+          # way beyond its proportions. So if we encounter a flat
+          # line, we change its slope rather doing a linear affine
+          # transformation with the sub-pattern.
+          if (abs(max(yData) - min(yData)) < bbFlatIfBelow) {
+            # Note that if yDiff_new is flat, we only squeeze
+            # the pattern, and the else-branch will work.
+            yDiffBefore <- yData[length(yData)] - yData[1]
+            yDiffAfter <- yEnd_new - yStart_new
+            yDiff <- yDiffBefore - yDiffAfter
+            yData <- yData - sapply(xData, function(x) {
+              x / xExtent * yDiff
+            })
+          } else {
+            yScale <- yDiff_new / yDiff_ref
+            yData <- yData * yScale
+          }
+          yData <- yData - yData[1] + yStart_new
+          
+          # Do this ALWAYS last!
+          xData <- xData + xRange[1]
+          
+          
+          # bStart_ref <- refBounds[bIdx]
+          # bEnd_ref <- refBounds[bIdx + 1]
+          # xRange_ref <- range(xyData$x)
+          # xExtent_ref <- xRange_ref[2] - xRange_ref[1]
+          # yLeft_ref <- xyData$y[1]
+          # yRight_ref <- tail(xyData$y, 1)
+          # yRange_ref <- range(xyData$y)
+          # yExtent_ref <- yRange_ref[2] - yRange_ref[1]
+          # 
+          # 
+          # bStart <- newBounds[bIdx]
+          # bEnd <- newBounds[bIdx + 1]
+          # xRange <- c(bStart, bEnd)
+          # xExtent <- bEnd - bStart
+          # yLeft <- theta[paste0(t, "_", bIdx)]
+          # yRight <- theta[paste0(t, "_", bIdx + 1)]
+          # yRange <- range(yLeft, yRight)
+          # yExtent <- yRange[2] - yRange[1]
+          # 
+          # xData <- xyData$x - xRange_ref[1]
+          # if (xExtent_ref > 0) {
+          #   xData <- xData / xExtent_ref
+          # }
+          # if (xExtent > 0) {
+          #   xData <- xData * xExtent
+          # }
+          # 
+          # 
+          # yData <- xyData$y - xyData$y[1]
+          # yDiffBefore <- yData[length(yData)] - yData[1]
+          # yDiffAfter <- yRight - yLeft
+          # yDiff <- yDiffBefore - yDiffAfter
+          # 
+          # 
+          # yData <- yData + yLeft
+          # yData <- yData - sapply(xData, function(x) {
+          #   x / xExtent * yDiff
+          # })
+          # xData <- xData + xRange[1]
+          # 
+          # # Check if we need to limit Y:
+          # if (is.numeric(limitYExtent)) {
+          #   yData[yData < limitYExtent[1]] <- limitYExtent[1]
+          #   yData[yData > limitYExtent[2]] <- limitYExtent[2]
+          # }
+          
+          refData <- rbind(refData, data.frame(
+            x = xData,
+            y = yData,
+            t = t,
+            interval = self$mlm$intervalNames[bIdx],
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+      
+      refData$interval <- factor(
+        x = refData$interval,
+        levels = levels(self$refData$interval),
+        ordered = is.ordered(self$refData$interval))
+      
+      refData$t <- factor(
+        x = refData$t,
+        levels = levels(self$refData$t),
+        ordered = is.ordered(self$refData$t))
+      
+      refData
+    },
+    
+    
+    #' Using the current theta, we derive the reference data, which
+    #' is then given to the MLM and its compute() is called.
+    compute = function(forceSeq = NULL) {
+      stopifnot(is.matrix(self$mlm$boundariesCalibrated) && !any(is.na(self$mlm$boundariesCalibrated)))
+      self$mlm$refBoundaries <- self$mlm$boundariesCalibrated[1, ]
+      
+      refData <- self$computeRefData()
+      self$mlm$setAllBoundaries(values = self$theta[1:self$mlm$numBoundaries])
+      self$mlm$refData <- refData
+      
+      # .. then compute using those!
+      cArgs <- list()
+      if (!missing(forceSeq)) {
+        cArgs[["forceSeq"]] <- forceSeq
+      }
+      do.call(what = self$mlm$compute, args = cArgs)
+    },
+    
+    #' Alters the underlying MLMs reference data and boundaries to
+    #' produce a best fit between the model and all of its data.
+    #' This method is extremely expensive and should probably never
+    #' be used directly, but rather called from an external optimization
+    #' process that sets theta and then calls compute in a highly
+    #' parallel fashion. We keep this method as a reference, but it is
+    #' mostly here for academic purposes.
+    fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "SANN")[1], callback = NULL) {
+      stopifnot(self$validateLinIneqConstraints())
+      # callback must take MLMRC, MLM, fitHist, score_raw
+      stopifnot(missing(callback) ||
+                (is.function(callback) && 4 == length(methods::formalArgs(callback))))
+      
+      histCols <- c("begin", "end", "duration", "score_raw", "score_log", names(self$theta))
+      fitHist <- matrix(nrow = 0, ncol = length(histCols))
+      colnames(fitHist) <- histCols
+      
+      beginOpt <- as.numeric(Sys.time())
+      optR <- stats::constrOptim(
+        control = list(
+          reltol = reltol,
+          maxit = 2e4
+        ),
+        method = method,
+        ui = self$getUi(),
+        theta = self$getTheta(),
+        ci = self$getCi(),
+        grad = NULL,
+        f = function(x) {
+          names(x) <- names(self$theta)
+          if (verbose) {
+            cat(paste0("Params (", length(x), "): ", paste0(sapply(x, function(p) {
+              format(x, nsmall = 3, digits = 3)
+            }), collapse = ", ")))
+          }
+          
+          # Set all parameters!
+          self$setTheta(x)
+          
+          begin <- as.numeric(Sys.time())
+          
+          scoreAgg <- self$compute()
+          score_raw <- private$scoreAggCallback(scoreAgg)
+          score_log <- -log(score_raw)
+          
+          finish <- as.numeric(Sys.time())
+          fitHist <<- rbind(fitHist, c(
+            begin, finish, finish - begin, score_raw, score_log, x
+          ))
+          
+          if (verbose) {
+            cat(paste0(" -- Value: ", format(score_log, digits = 10, nsmall = 5),
+                       " -- Duration: ", format(finish - begin, digits = 2, nsmall = 2), "s\n"))
+          }
+          
+          if (is.function(callback)) {
+            callback(self, self$mlm, fitHist, score_raw)
+          }
+          
+          score_log
+        }
+      )
+      finishOpt <- as.numeric(Sys.time())
+      
+      list(
+        begin = beginOpt,
+        end = finishOpt,
+        duration = finishOpt - beginOpt,
+        fitHist = fitHist,
+        optResult = optR
+      )
+    }
+  )
+)
+
+
+
+
 LinearInequalityConstraints <- R6Class(
   "LinearInequalityConstraints",
   
