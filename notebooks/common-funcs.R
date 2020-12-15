@@ -775,9 +775,12 @@ stat_diff_2_functions_symmetric_KL_sampled <- function(f1, f2, numSamples = 1e4)
 #' Note that both functions must return strictly
 #' positive (including 0) values because of their
 #' use in the logarithm.
-stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4, sampleOnError = TRUE) {
+stat_diff_2_functions_symmetric_KL <- function(
+  f1, f2, numSamples = 1e4, sampleOnError = TRUE,
+  useCubintegrate = TRUE
+) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2)
-  tol <- 1e-8
+  tol <- if (useCubintegrate) 0 else 1e-8
   
   PQ <- function(x) {
     f1x <- f1(x)
@@ -806,12 +809,21 @@ stat_diff_2_functions_symmetric_KL <- function(f1, f2, numSamples = 1e4, sampleO
   
   
   temp$value <- tryCatch({
-    stats::integrate(f = PQ, lower = tol, upper = 1 - tol,
-                     subdivisions = 10^log10(numSamples),
-                     stop.on.error = FALSE)$value +
-    stats::integrate(f = QP, lower = tol, upper = 1 - tol,
-                     subdivisions = 10^log10(numSamples),
-                     stop.on.error = FALSE)$value
+    if (useCubintegrate) {
+      cubature::cubintegrate(
+        f = PQ, lower = tol, upper = 1 - tol)$integral +
+      cubature::cubintegrate(
+        f = QP, lower = tol, upper = 1 - tol)$integral
+    } else {
+      stats::integrate(
+        f = PQ, lower = tol, upper = 1 - tol,
+        subdivisions = 10^log10(numSamples),
+        stop.on.error = FALSE)$value +
+      stats::integrate(
+        f = QP, lower = tol, upper = 1 - tol,
+        subdivisions = 10^log10(numSamples),
+        stop.on.error = FALSE)$value
+    }
   }, error = function(cond) {
     if (sampleOnError) {
       s <- seq(0, 1, len=numSamples)
@@ -840,9 +852,12 @@ stat_diff_2_functions_symmetric_JSD_sampled <- function(f1, f2, numSamples = 1e4
 
 
 #' https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
-stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sampleOnError = TRUE) {
+stat_diff_2_functions_symmetric_JSD <- function(
+  f1, f2, numSamples = 1e4, sampleOnError = TRUE,
+  useCubintegrate = TRUE
+) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
-  tol <- 1e-8
+  tol <- if (useCubintegrate) 0 else 1e-8
   
   M <- function(x) 1/2 * (f1(x) + f2(x))
   PM <- function(x) {
@@ -878,8 +893,13 @@ stat_diff_2_functions_symmetric_JSD <- function(f1, f2, numSamples = 1e4, sample
   JSD <- function(x) 1/2 * PM(x) + 1/2 * QM(x)
   
   temp$value <- tryCatch({
-    stats::integrate(
-      f = JSD, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
+    if (useCubintegrate) {
+      cubature::cubintegrate(
+        f = JSD, lower = tol, upper = 1 - tol)$integral
+    } else {
+      stats::integrate(
+        f = JSD, lower = tol, upper = 1 - tol, subdivisions = 10^log10(numSamples))$value
+    }
   }, error = function(cond) {
     if (sampleOnError) {
       useVals <- sapply(seq(0, 1, len=numSamples), JSD)
