@@ -953,16 +953,33 @@ stat_diff_2_functions_symmetric_JSD_score <- function(
 #' of [0,1]). It always uses the log-unit (ln).
 #' 
 #' @source {https://cran.r-project.org/web/packages/philentropy/vignettes/Information_Theory.html}
+#' @param skipNormalize default FALSE, should be set to true when computing
+#' distances that do not interpret the sampled data as probability vectors,
+#' such as "euclidean" or "manhattan". Since we mostly use this method for
+#' vectors of probabilities, FALSE is the default.
 stat_diff_2_functions_philentropy_sampled <- function(
-  f1, f2, numSamples = 1e4, method = philentropy::getDistMethods()[1])
-{
+  f1, f2, numSamples = 1e4,
+  method = philentropy::getDistMethods()[1],
+  skipNormalize = FALSE
+) {
   temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
   
   vec1 <- temp$dataF1[idx]
-  vec1 <- vec1 / sum(vec1)
+  if (!skipNormalize) {
+    s1 <- sum(vec1)
+    if (s1 > 0) {
+      vec1 <- vec1 / s1
+    }
+  }
+  
   vec2 <- temp$dataF2[idx]
-  vec2 <- vec2 / sum(vec2)
+  if (!skipNormalize) {
+    s2 <- sum(vec2)
+    if (s2 > 0) {
+      vec2 <- vec2 / s2
+    }
+  }
   
   temp$value <- suppressMessages({
     philentropy::distance(
