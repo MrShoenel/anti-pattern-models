@@ -5,11 +5,10 @@
 	 width="960px" height="560px" viewBox="0 0 960 560" enable-background="new 0 0 960 560" xml:space="preserve">
 <line fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" x1="44" y1="35" x2="44" y2="482"/>
 <line fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" x1="44" y1="482" x2="865" y2="482"/>
-<path fill="none" stroke="#FF0000" stroke-width="3" stroke-miterlimit="10" d="M848.25,482l-32.362-2.615l-4.388-0.51
-	c0,0-6.5-0.375-18-4.597c-8.865-3.255-9-14.778-9-14.778s-20.274-239.888-23.083-293.25c-0.75-14.25-1.667-18.083-1.667-18.083
-	s-0.917-10.583-10.75-10.454C740.812,137.82,733,154,733,154S579.181,408.508,569.833,425.834
-	c-5.483,10.163-10.646,13.479-20.208,14.479c-4.411,0.461-20.125,0.188-20.125,0.188H128l-17.75,1.5l-17.7,7.497l-11.747,7.347
-	L44,482.031"/>
+<path fill="none" stroke="#FF0000" stroke-width="3" stroke-miterlimit="10" d="M848,482l-32.1123-2.61523L811.5,478.875
+	c0,0-6.5-0.375-18-4.59668c-8.86523-3.25488-9-14.77832-9-14.77832l-26.375-312.125c0,0-0.75-9.63672-8.125-9.63672
+	c-7.75,0-11.36426,7.91455-11.36426,7.91455S580.08887,408.25195,569.83301,425.83398C564.01465,435.80859,562.5625,439,553,440
+	c-4.41113,0.46094-441,0-441,0s-8.63281,0.37207-15.49805,5c-11.00195,7.41699-20,13.83301-20,13.83301L44,482"/>
 <g>
 	<g>
 		<line fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" x1="750" y1="14" x2="750" y2="17"/>
@@ -42,23 +41,23 @@
 		<line fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" x1="848" y1="497" x2="848" y2="500"/>
 	</g>
 </g>
-<path fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" d="M200.333,300"/>
-<path fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" d="M433,326.333"/>
-<path fill="none" stroke="#39B54A" stroke-width="2" stroke-miterlimit="10" d="M848.25,482L809,473.625l-37.5-13.375l-40-15.25
-	l-31-13.5l-39.5-24l-61-42.999c0,0-7.125-8.251-30.625-22.751C563.879,338.358,554,339,554,339l-31.681-0.029L114,338.667
-	c0,0-3.917-1.834-11,3.333c-3.466,2.528-12.5,22-12.5,22L44,482"/>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" d="M200.3335,300"/>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" d="M433,326.33301"/>
+<path fill="none" stroke="#39B54A" stroke-width="2" stroke-miterlimit="10" d="M848,482l-39-8.375l-26.11133-9.31348L750,451.95215
+	c0,0-19.5-5.95215-49.5-20.45215c-32.12109-15.52539-43.25-24.5-43.25-24.5L600,364.50098c0,0-7.125-7.00098-30.625-21.50098
+	c-5.49609-3.3916-16.375-3-16.375-3H112c0,0-4.65039,0.76465-10.84961,6.96484C92.81934,355.29785,90.5,364,90.5,364L44,482"/>
 <line fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" x1="44" y1="95" x2="865" y2="95"/>
 <rect x="11" y="88.5" fill="none" width="26" height="26.5"/>
-<text transform="matrix(1 0 0 1 28.6577 99.2397)" font-family="'ArialMT'" font-size="15">1</text>
-<path fill="none" stroke="#FF00FF" stroke-width="2" stroke-miterlimit="10" d="M848.25,482l-17-8c0,0-11.25-5.75-25.75-16.25
-	c-10.531-7.626-13.25-31.25-13.25-31.25L775,171.5c0,0-4.25-46.962-10.25-61.509c-1.045-2.533-4.597-7.854-7-9.741
-	c-2.557-2.007-5.292-2.5-9.75-2.75c-0.029-0.001-1.948,0.488-3.542,1.542c-1.797,1.189-4.791,2.959-4.791,2.959
-	s-6.721,6.59-8.667,8.667c-31.992,34.134-106.519,125.278-141.667,156.999C575.667,280,553,280,553,280s-12.188,0-16.25,0
-	c-88.188,0-422.75,0-422.75,0s-12.828-1.076-17.25,6C85.5,304,44,482,44,482"/>
-<path fill="none" stroke="#0000FF" stroke-width="2" stroke-miterlimit="10" d="M846.75,184.75c-96.75-1-75.79-32.335-81.832-59.245
-	C759.5,101.375,750,102.75,750,102.75s-55.017,4.733-65.5,6c-24.643,2.977-40,7.25-40,7.25s-17.497,3.737-29.75,15.5
-	c-12.5,12-25.548,31.571-31.25,47.5c-7.875,22-31.429,22.777-31.429,22.777L158.333,203c0,0-20.583,2.25-35.583-15.25
-	C115.716,179.543,112,181,112,181H58v-0.5L44,482"/>
+<text transform="matrix(1 0 0 1 28.65771 99.23975)" font-family="'ArialMT'" font-size="15">1</text>
+<path fill="none" stroke="#FF00FF" stroke-width="2" stroke-miterlimit="10" d="M848,482l-16.75-8c0,0-11.25-5.75-25.75-16.25
+	c-10.53125-7.62598-13.25-31.25-13.25-31.25L775,171.5c0,0-4.02246-46.39111-10.02246-60.93799
+	C763.93262,108.02881,761.375,97.47461,750,97.5c-11.26758,0.02539-32.32422,26.72754-32.32422,26.72754
+	S624.48145,235.94531,589.33301,267.6665C575.66699,280,553,280,553,280H112c0,0-12.625-1-15.25,6C89.29688,305.875,44,482,44,482"
+	/>
+<path fill="none" stroke="#0000FF" stroke-width="2" stroke-miterlimit="10" d="M848,184.75
+	c-96.75-1-77.6123-32.11523-82.57422-59.24463C760.875,100.625,750.50781,102.75,750.50781,102.75s-55.0166,4.7334-65.5,6
+	c-24.64258,2.97705-40,7.25-40,7.25s-17.49707,3.7373-29.75,15.5c-12.5,12-25.5166,31.58252-31.25,47.5
+	c-9.66602,26.8335-30.5,25-30.5,25h-394.6665c0,0-20.5835,1.25-35.5835-16.25c-7.03418-8.20654-10.75-6.75-10.75-6.75H59L44,482"/>
 <g>
 	<g>
 		<line fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" x1="604" y1="303" x2="604" y2="306"/>
@@ -67,28 +66,28 @@
 		<line fill="none" stroke="#000000" stroke-width="2" stroke-miterlimit="10" x1="604" y1="499" x2="604" y2="502"/>
 	</g>
 </g>
-<rect x="24.667" y="504" fill="none" width="24.667" height="20.667"/>
-<text transform="matrix(1 0 0 1 40.9907 514.7402)" font-family="'ArialMT'" font-size="15">0</text>
-<rect x="108.667" y="506.333" fill="none" width="32" height="25.334"/>
-<text transform="matrix(1 0 0 1 119.8149 517.0732)" font-family="'ArialMT'" font-size="15">t_1</text>
-<rect x="538.333" y="508.334" fill="none" width="31.333" height="21.333"/>
-<text transform="matrix(1 0 0 1 543.5732 519.0742)" font-family="'ArialMT'" font-size="15">t_2</text>
-<rect x="587.333" y="508.334" fill="none" width="63.333" height="21.332"/>
-<text transform="matrix(1 0 0 1 591.9072 519.0742)" font-family="'ArialMT'" font-size="15">t_x-over</text>
+<rect x="24.6665" y="504" fill="none" width="24.6665" height="20.66699"/>
+<text transform="matrix(1 0 0 1 40.99072 514.74023)" font-family="'ArialMT'" font-size="15">0</text>
+<rect x="108.66699" y="506.33301" fill="none" width="32" height="25.33398"/>
+<text transform="matrix(1 0 0 1 119.81494 517.07324)" font-family="'ArialMT'" font-size="15">t_1</text>
+<rect x="538.33301" y="508.33398" fill="none" width="31.33301" height="21.33301"/>
+<text transform="matrix(1 0 0 1 543.57324 519.07422)" font-family="'ArialMT'" font-size="15">t_2</text>
+<rect x="587.33301" y="508.33398" fill="none" width="63.33301" height="21.33203"/>
+<text transform="matrix(1 0 0 1 591.90723 519.07422)" font-family="'ArialMT'" font-size="15">t_x-over</text>
 <rect x="703" y="507.375" fill="none" width="65.5" height="23.25"/>
-<text transform="matrix(1 0 0 1 716.9814 518.1152)" font-family="'ArialMT'" font-size="15">t_end</text>
-<rect x="826" y="507.834" fill="none" width="44.5" height="13"/>
-<text transform="matrix(1 0 0 1 837.8242 518.5742)" font-family="'ArialMT'" font-size="15">t_3</text>
+<text transform="matrix(1 0 0 1 716.98145 518.11523)" font-family="'ArialMT'" font-size="15">t_end</text>
+<rect x="826" y="507.83398" fill="none" width="44.5" height="13"/>
+<text transform="matrix(1 0 0 1 837.82422 518.57422)" font-family="'ArialMT'" font-size="15">t_3</text>
 <line fill="none" stroke="#FF0000" stroke-width="2" stroke-miterlimit="10" x1="66" y1="541" x2="105" y2="541"/>
-<rect x="114" y="533.834" fill="none" width="62.333" height="14.333"/>
-<text transform="matrix(1 0 0 1 116.811 544.5742)" font-family="'ArialMT'" font-size="15">adaptive</text>
+<rect x="114" y="533.83398" fill="none" width="62.3335" height="14.33301"/>
+<text transform="matrix(1 0 0 1 116.81104 544.57422)" font-family="'ArialMT'" font-size="15">adaptive</text>
 <line fill="none" stroke="#39B54A" stroke-width="2" stroke-miterlimit="10" x1="203" y1="541" x2="242" y2="541"/>
-<rect x="251" y="533.834" fill="none" width="64" height="14.333"/>
-<text transform="matrix(1 0 0 1 252.7803 544.5742)" font-family="'ArialMT'" font-size="15">corr+perf</text>
+<rect x="251" y="533.83398" fill="none" width="64" height="14.33301"/>
+<text transform="matrix(1 0 0 1 252.78027 544.57422)" font-family="'ArialMT'" font-size="15">corr+perf</text>
 <line fill="none" stroke="#FF00FF" stroke-width="2" stroke-miterlimit="10" x1="336" y1="541" x2="375" y2="541"/>
-<rect x="384" y="533.834" fill="none" width="86.667" height="14.333"/>
-<text transform="matrix(1 0 0 1 386.0757 544.5742)" font-family="'ArialMT'" font-size="15">commit freq.</text>
+<rect x="384" y="533.83398" fill="none" width="86.6665" height="14.33301"/>
+<text transform="matrix(1 0 0 1 386.07568 544.57422)" font-family="'ArialMT'" font-size="15">commit freq.</text>
 <line fill="none" stroke="#0000FF" stroke-width="2" stroke-miterlimit="10" x1="489" y1="541" x2="528" y2="541"/>
-<rect x="537" y="533.834" fill="none" width="86.666" height="14.333"/>
-<text transform="matrix(1 0 0 1 537.8086 544.5742)" font-family="'ArialMT'" font-size="15">code-density</text>
+<rect x="537" y="533.83398" fill="none" width="86.66602" height="14.33301"/>
+<text transform="matrix(1 0 0 1 537.80859 544.57422)" font-family="'ArialMT'" font-size="15">code-density</text>
 </svg>
