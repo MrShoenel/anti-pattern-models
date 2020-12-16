@@ -1155,27 +1155,6 @@ ScoreAggregator <- R6Class(
 
 
 
-
-MetaSubModel <- R6Class(
-  "MetaSubModel",
-  
-  inherit = SubModel,
-  
-  lock_objects = FALSE,
-  
-  public = list(
-    initialize = function(name, weight = 1) {
-      super$initialize(varName = "_META_", intervalName = name, weight = weight)
-    },
-    
-    isMetaModel = function() {
-      TRUE
-    }
-  )
-)
-
-
-
 SubModel <- R6Class(
   "SubModel",
   
@@ -1294,6 +1273,27 @@ SubModel <- R6Class(
     
     getQueryData = function() {
       self$queryData
+    }
+  )
+)
+
+
+
+
+MetaSubModel <- R6Class(
+  "MetaSubModel",
+  
+  inherit = SubModel,
+  
+  lock_objects = FALSE,
+  
+  public = list(
+    initialize = function(name, weight = 1) {
+      super$initialize(varName = "_META_", intervalName = name, weight = weight)
+    },
+    
+    isMetaModel = function() {
+      TRUE
     }
   )
 )
@@ -1696,24 +1696,13 @@ Stage2Meta <- R6Class(
   
   private = list(
     compareRatioDiffReferenceLengths = function(ref_l1, ref_l2, query_l1, query_l2) {
-      private$compareRatioDiff(
+      self$compareRatioDiff(
         ratio = query_l1 / (query_l1 + query_l2),
         targetRatio = ref_l1 / (ref_l1 + ref_l2))
     },
     
     compareRatioDiffLengths = function(l1, l2, targetRatio = 1) {
-      private$compareRatioDiff(ratio = l1 / (l1 + l2), targetRatio = targetRatio)
-    },
-    
-    compareRatioDiff = function(ratio, targetRatio = 1) {
-      stopifnot(all(!is.na(ratio)) && is.numeric(ratio) && ratio >= 0 && ratio <= 1)
-      
-      if (ratio > targetRatio) {
-        ratio <- ratio - targetRatio
-        return(ratio / (1 - targetRatio))
-      } else {
-        return(1 - (ratio / targetRatio))
-      }
+      self$compareRatioDiff(ratio = l1 / (l1 + l2), targetRatio = targetRatio)
     },
     
     checkTypes = function(types, ...) {
@@ -1733,6 +1722,17 @@ Stage2Meta <- R6Class(
       
       self$scoresLength <- list()
       self$scoresRatio <- list()
+    },
+    
+    compareRatioDiff = function(ratio, targetRatio = 1) {
+      stopifnot(all(!is.na(ratio)) && is.numeric(ratio) && ratio >= 0 && ratio <= 1)
+      
+      if (ratio > targetRatio) {
+        ratio <- ratio - targetRatio
+        return(ratio / (1 - targetRatio))
+      } else {
+        return(1 - (ratio / targetRatio))
+      }
     },
     
     #' Create a score for the length of an interval. It is assumed that
@@ -1787,6 +1787,13 @@ Stage2Meta <- R6Class(
             query_intervalName1, query_intervalType1, query_intervalName2, query_intervalType2, weight)
       
       invisible(self)
+    },
+    
+    addScoreMethod = function(scoreMethod, name) {
+      args <- methods::formalArgs(def = scoreMethod)
+      stopifnot(length(args) == 2 && all(c("stage1Result", "stage2Meta") %in% args))
+      
+      super$addScoreMethod(scoreMethod = scoreMethod, name = name)
     },
     
     computeScores = function(stage1Result) {
@@ -1856,10 +1863,23 @@ Stage2Meta <- R6Class(
           rawScore = RawScore$new(name = paste(sr, collapse = "_"), value = score, weight = weight))
       }
       
+      for (smName in names(self$scoreMethods)) {
+        sm <- self$scoreMethods[[smName]]
+        self$scoreAgg$setRawScore(
+          rawScore = RawScore$new(name = smName, value = do.call(what = sm, args = list(
+            stage1Result = stage1Result,
+            stage2Meta = self
+          )))
+        )
+      }
+      
       self$scoreAgg
     }
   )
 )
+Stage2Meta$undebug("computeScores")
+
+
 
 Stage2Rectifier <- R6Class(
   "Stage2Rectifier",
