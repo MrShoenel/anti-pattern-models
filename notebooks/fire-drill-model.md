@@ -49,7 +49,9 @@
     -   [Todo](#todo)
 -   [References](#references)
 
-<div style="background-color:#d00; color:#fff; padding:1em">**ATTENTION! After finishing almost all problems in this notebook, we
+<div style="background-color:#d00; color:#fff; padding:1em">
+
+**ATTENTION! After finishing almost all problems in this notebook, we
 realized two potentially major errors. This notebook is no further
 developed, and there is a copy of it called `fire-drill-model-fixed.Rmd`
 that corrects these errors.**
@@ -57,7 +59,9 @@ that corrects these errors.**
 The first error was normalizing the project data, without excluding the
 source code density, which should **not** have been normalized. The
 second error was that we did not add the right sub-models to the MLM,
-and that mistake was repeated subsequently.</div>
+and that mistake was repeated subsequently.
+
+</div>
 
     source("../helpers.R", echo = FALSE)
     source("./common-funcs.R", echo = FALSE)
