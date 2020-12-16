@@ -36,9 +36,10 @@ getDataset = function(dsName, removeUnwantedColums = TRUE) {
 doWithParallelCluster <- function(expr, errorValue = NULL, numCores = parallel::detectCores()) {
   cl <- parallel::makePSOCKcluster(numCores)
   doSNOW::registerDoSNOW(cl)
+  mev <- missing(errorValue)
   
   result <- tryCatch(expr, error=function(cond) {
-    if (!missing(errorValue)) {
+    if (!mev) {
       return(errorValue)
     }
     return(cond)
