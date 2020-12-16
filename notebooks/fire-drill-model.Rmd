@@ -20,9 +20,9 @@ output:
   word_document: default
 ---
 
-__ATTENTION! After finishing almost all problems in this notebook, we realized two potentially major errors. This notebook is no further developed, and there is a copy of it called `fire-drill-model-fixed.RMD` that corrects these errors.__
+<div style="background-color:#d00; color:#fff; padding:1em">__ATTENTION! After finishing almost all problems in this notebook, we realized two potentially major errors. This notebook is no further developed, and there is a copy of it called `fire-drill-model-fixed.RMD` that corrects these errors.__
 
-The first error was normalizing the project data, without excluding the source code density, which should __not__ have been normalized. The second error was that we did not add the right sub-models to the MLM, and that mistake was repeated subsequently.
+The first error was normalizing the project data, without excluding the source code density, which should __not__ have been normalized. The second error was that we did not add the right sub-models to the MLM, and that mistake was repeated subsequently.</div>
 
 ```{r}
 source("../helpers.R", echo = FALSE)
