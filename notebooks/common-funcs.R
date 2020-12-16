@@ -1505,3 +1505,102 @@ custom_interval_length_score <- function(mlm, interval, useA) {
 }
 
 
+
+#' @param patternData data.frame with columns 'x', 'y' and the
+#' two factor-columns 't' (type of variable) and 'interval'.
+#' @return list where each entry is a chunk of the patternData
+#' that corresponds to one type and one interval. The names of
+#' the entries in this list are in the format "t_interval".
+create_reference_data <- function(patternData) {
+  # First, we divide the original pattern according to the
+  # original boundaries, and store the reference signals.
+  # We use the same names in the list as we expect for the
+  # list of sub-models!
+  referenceSignalData <- list()
+  for (t in levels(patternData$t)) {
+    for (i in levels(patternData$interval)) {
+      varData <- patternData[
+        patternData$t == t & patternData$interval == i, ]
+      
+      referenceSignalData[[paste(t, i, sep = "_")]] <- varData
+    }
+  }
+  
+  referenceSignalData
+}
+
+
+
+#' TODO: Description
+#' 
+#' @param fireDrillProject the readily processed project that is
+#' suspected to contain a Fire Drill. Should have the same format
+#' as the data.frame 'fireDrillPattern'.
+#' @param listOfSubModels a list where each entry is a sub-model
+#' for a single variable in a single interval. Each sub-model is
+#' expected to return a score within [0,1] (where 1 is best) and
+#' is given the reference- and query-signals. The name of each
+#' sub-model in this list must follow this pattern:
+#' "VARIABLENAME_INTERVALNAME". Also, each submodel may carry a
+#' list of properties to be found in its attributes. Currently,
+#' only the attribute 'weight' is used.
+create_fire_drill_model <- function(
+  fireDrillProject, listOfSubModels)
+{ 
+  #' @param x is a vector with the current boundaries.
+  objectiveFunc <- function(x, returnAllScores = FALSE) {
+    
+    print(42)
+    
+    scores <- foreach::foreach(
+      varAndInterval = names(listOfSubModels),
+      .combine = c,
+      .inorder = FALSE,
+      .packages = c("dtw", "Metrics", "numDeriv",
+                    "philentropy", "pracma", "rootSolve",
+                    "SimilarityMeasures", "stats", "utils")
+    ) %dopar% {
+      boundaries <- sort(unique(c(0, 1, x)))
+      sp <- strsplit(varAndInterval, "_")[[1]]
+      vName <- sp[1]
+      iName <- sp[2]
+      
+      boundaryStart <- if (iName == "Begin") {
+        1 } else if (iName == "LongStretch") {
+          2 } else if (iName == "FireDrill") {
+            3 } else { 4 }
+      boundaryEnd <- boundaryStart + 1
+      
+      # The next step is to extract data from the project,
+      # according to the current boundaries and interval.
+      dataQuery <- fireDrillProject[
+        fireDrillProject$t == vName &
+          fireDrillProject$x >= boundaries[boundaryStart] &
+          fireDrillProject$x < boundaries[boundaryEnd], ]
+      
+      subModel <- listOfSubModels[[varAndInterval]]
+      subModelAttr <- attributes(subModel)
+      subModelWeight <- if ("weight" %in% names(subModelAttr)) subModelAttr$weight else 1
+      
+      # Everything is prepared, let's call the model!
+      vec <- c()
+      vec[varAndInterval] <-
+        subModelWeight * penalizeScore(subModel(dataQuery))
+      vec
+    }
+    
+    scores <- 1 + scores
+    
+    if (returnAllScores) {
+      # These are weighted and penalized!
+      scores
+    } else {
+      prod(scores)
+    }
+  }
+  
+  return(objectiveFunc)
+}
+
+
+
