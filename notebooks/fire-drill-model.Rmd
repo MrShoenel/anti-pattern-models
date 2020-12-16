@@ -20,9 +20,15 @@ output:
   word_document: default
 ---
 
+__ATTENTION! After finishing almost all problems in this notebook, we realized two potentially major errors. This notebook is no further developed, and there is a copy of it called `fire-drill-model-fixed.RMD` that corrects these errors.__
+
+The first error was normalizing the project data, without excluding the source code density, which should __not__ have been normalized. The second error was that we did not add the right sub-models to the MLM, and that mistake was repeated subsequently.
+
 ```{r}
 source("../helpers.R", echo = FALSE)
 source("./common-funcs.R", echo = FALSE)
+source("../models/models.R", echo = FALSE)
+source("../models/modelsR6.R")
 ```
 
 # Importing the pattern from file
@@ -37,28 +43,35 @@ We have previously designed our initial best guess as a vector graphic, and then
 ```{r}
 # scd is source code density
 fd_data <- read.csv("../data/Fire-Drill_first-best-guess.csv", sep = ";")
+
+normalizeX <- function(xData) {
+  xData <- xData - min(xData)
+  xData <- xData / max(xData)
+  xData
+}
+
 fd_data <- list(
   adaptive = stats::na.exclude(data.frame(
-    x = fd_data$gold_x,
-    y = fd_data$gold_y,
+    x = normalizeX(stats::na.omit(fd_data$gold_x)),
+    y = stats::na.omit(fd_data$gold_y),
     t = "A"
   )),
   
   corrPerf = stats::na.exclude(data.frame(
-    x = fd_data$green_x,
-    y = fd_data$green_y,
+    x = normalizeX(stats::na.omit(fd_data$green_x)),
+    y = stats::na.omit(fd_data$green_y),
     t = "CP"
   )),
   
   commFreq = stats::na.exclude(data.frame(
-    x = fd_data$indigo_x,
-    y = fd_data$indigo_y,
+    x = normalizeX(stats::na.omit(fd_data$indigo_x)),
+    y = stats::na.omit(fd_data$indigo_y),
     t = "FREQ"
   )),
   
   codeDens = stats::na.exclude(data.frame(
-    x = fd_data$coral_x,
-    y = fd_data$coral_y,
+    x = normalizeX(stats::na.omit(fd_data$coral_x)),
+    y = stats::na.omit(fd_data$coral_y),
     t = "SCD"
   ))
 )
@@ -72,30 +85,14 @@ fd_data_concat <- rbind(
 
 fd_data_concat$t <- factor(fd_data_concat$t, levels = unique(fd_data_concat$t), ordered = TRUE)
 
-# Also, let's already correct the x-axis a bit:
-fd_data_concat$x <- fd_data_concat$x - min(fd_data_concat$x)
-fd_data_concat$x <- fd_data_concat$x / max(fd_data_concat$x)
-
-# .. and since we're at it, let's do y:
+# Note that for Fire Drill, each variable covers the entirety
+# of the pattern (i.e., is supported over 0,1), and we have
+# already corrected each variable above using normalizeX().
+# However, we need to correct Y:
 fd_data_concat$y <- -1 * fd_data_concat$y - min(-1 * fd_data_concat$y)
 fd_data_concat$y <- fd_data_concat$y / max(fd_data_concat$y)
 ```
 
-Let's plot the original data (note that we take the negative y-values to conform to our coordinate system where `[0,0]` is in the __lower__ right corner):
-
-```{r}
-library(ggplot2)
-
-ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
-  geom_line() +
-  labs(color = "Data series") +
-  scale_x_continuous(
-    breaks = seq(0, 1, by = .05)
-  ) +
-  theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
-  scale_color_brewer(palette = "Set1")
-```
-Now the pattern is already in the unit-square (`[0,1]`). This is OK, as some variables in the pattern are defined to reach their absolute minimum or maximum. The other variables are designed relative to it, resulting in some space above or below.
 
 
 # Defining Intervals and sub-models
@@ -130,6 +127,43 @@ fd_data_boundaries <- c(
 Also, we need to define additional inequality constraints between the boundaries, so that we guarantee a minimum distance between boundaries. In general, we only want to impose the rather loose constraint of having at least `0.05` between any two boundaries. While `b1` and `b2` cannot cross and can never undercut this threshold, `b2` and `b3` can. The inequality constraint hence is `b3 - b2 >= 0.05`.
 
 
+The last step is to update the concatenated data and attach a factor column with the interval:
+
+```{r}
+fd_data_concat$interval <- sapply(fd_data_concat$x, function(x) {
+  if (x < fd_data_boundaries["b1"]) {
+    return("Begin")
+  } else if (x < fd_data_boundaries["b2"]) {
+    return("LongStretch")
+  } else if (x < fd_data_boundaries["b3"]) {
+    return("FireDrill")
+  }
+  return("Aftermath")
+})
+
+fd_data_concat$interval <- factor(
+  x = fd_data_concat$interval,
+  levels = c("Begin", "LongStretch", "FireDrill", "Aftermath"), ordered = TRUE)
+```
+
+Let's plot the original data (note that we take the negative y-values to conform to our coordinate system where `[0,0]` is in the __lower__ right corner):
+
+```{r}
+library(ggplot2)
+
+ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
+  geom_line() +
+  labs(color = "Data series") +
+  scale_x_continuous(
+    breaks = seq(0, 1, by = .05)
+  ) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
+  scale_color_brewer(palette = "Set1")
+```
+
+Now the pattern is already in the unit-square (`[0,1]`). This is OK, as some variables in the pattern are defined to reach their absolute minimum or maximum. The other variables are designed relative to it, resulting in some space above or below.
+
+
 The following plot includes the initial boundaries and their allowed ranges:
 
 ```{r}
@@ -137,7 +171,10 @@ plot_fullPattern <- ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) 
   geom_line() +
   labs(color = "Data series") +
   scale_x_continuous(
-    breaks = seq(0, 1, by = .05)
+    breaks = seq(0, 1, by = .05, xlim = c(0,1))
+  ) +
+  scale_y_continuous(
+    breaks = seq(0, 1, by = .05, ylim = c(0,1))
   ) +
   theme_light() +
   theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
@@ -158,25 +195,6 @@ plot_fullPattern
 ```
 
 ## Extracting all sub-patterns
-
-The last step is to update the concatenated data and attach a factor column with the interval:
-
-```{r}
-fd_data_concat$interval <- sapply(fd_data_concat$x, function(x) {
-  if (x < fd_data_boundaries["b1"]) {
-    return("Begin")
-  } else if (x < fd_data_boundaries["b2"]) {
-    return("LongStretch")
-  } else if (x < fd_data_boundaries["b3"]) {
-    return("FireDrill")
-  }
-  return("Aftermath")
-})
-
-fd_data_concat$interval <- factor(
-  x = fd_data_concat$interval,
-  levels = c("Begin", "LongStretch", "FireDrill", "Aftermath"), ordered = TRUE)
-```
 
 Now show a faceted plot:
 
@@ -375,6 +393,9 @@ dens_acp_data$t <- factor(x = dens_acp_data$t, levels = unique(dens_acp_data$t),
 dens_acp_data$x <- dens_acp_data$x - min(dens_acp_data$x)
 dens_acp_data$x <- dens_acp_data$x / max(dens_acp_data$x)
 
+# ERROR #1: Here we falsely normalize all data together, but it should have only been the
+# ERROR #1: densities, and NOT the source code density (because it's a metric).
+
 # Now that we have used the densities to get each variable's proportions
 # right, we limit our project data back to [0,1] in y, as the pattern's
 # definition lives in the same co-domain.
@@ -524,8 +545,6 @@ dataRefAll <- create_reference_data(patternData = fd_data_concat)
 Some obsolete code for ya:
 
 ```{r}
-source("../models/models.R", echo = FALSE)
-
 # listOfSubModels <- list(
 #   A_Begin = sub_model_no_model,
 #   A_LongStretch = sub_model_no_model, # TODO: This needs to be an LM!
@@ -737,6 +756,7 @@ sm_SCD_Aftermath <- create_submodel_special("SCD", "Aftermath", 1)
 Now add all models to our MLM!
 
 ```{r}
+# ERROR #2: Here we do not set all the correct sub-models!
 mlm$setAllSubModels(sm_A_Begin, sm_CP_Begin, sm_FREQ_Begin, sm_SCD_Begin)
 mlm$setAllSubModels(sm_A_LongStretch, sm_CP_LongStretch, sm_FREQ_LongStretch, sm_SCD_LongStretch)
 mlm$setAllSubModels(sm_A_FireDrill, sm_CP_FireDrill, sm_FREQ_FireDrill, sm_FREQ_FireDrill)
@@ -760,30 +780,80 @@ mlm$constrainBoundaryInterval(boundaryIndexOrName = 3, value = .98, op = "leq")
 ```
 
 ```{r}
-res4 <- doWithParallelCluster(expr = {
-  mlm$fit(verbose = TRUE, reltol = 1e-8)#, method = "SANN")
-}, numCores = 16)
+resFit <- loadResultsOrCompute(file = "../results/mlmFitRes.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    mlm$fit(verbose = TRUE)
+  })
+})
+```
+
+Fitting this took `r round(sum(resFit$fitHist[, "duration"]), 2)` seconds. The __optimal boundaries__ given the data are: `r round(resFit$optResult$par, 4)`. The initial score was `r round(resFit$fitHist[1, "score_log"], 4)` and the optimized score was `r round(resFit$optResult$value, 4)`.
+
+Here's a plot that depicts the -log score during optimization:
+
+```{r}
+plot(resFit$fitHist[, "score_log"], type="l")
 ```
 
 
 ```{r}
 plot_finalProject +
-  geom_vline(xintercept = res4$optResult$par[1], color = "blue", size = .5) +
-  geom_vline(xintercept = res4$optResult$par[2], color = "blue", size = .5) +
-  geom_vline(xintercept = res4$optResult$par[3], color = "blue", size = .5)
+  geom_vline(xintercept = resFit$optResult$par[1], color = "blue", size = .5) +
+  geom_vline(xintercept = resFit$optResult$par[2], color = "blue", size = .5) +
+  geom_vline(xintercept = resFit$optResult$par[3], color = "blue", size = .5) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.05), limits = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.10), limits = c(0, 1)) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0))
 ```
+
 So here is the first fit of the boundaries that sub-divide the pattern into intervals. I think that given the irregularities and noise in the data, it appears to be a good fit. Also it shows that (given this first project actually had a Fire Drill) we will have to adjust the pattern manifestation, and probably also have to adjust the weights not only of all models in one interval, but probably also of specific variables (for example, the source code density (SCD) in the first interval should probably be less important than the activities, or probably less important overall).
+
+Let's also attempt a fit using a numerically approximated gradient and the BFGS method:
+
+```{r}
+resFit_BFGS <- loadResultsOrCompute(file = "../results/mlmFitRes_BFGS.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    mlm$fit(verbose = TRUE, method = "BFGS")
+  })
+})
+```
+
+```{r}
+plot(resFit_BFGS$fitHist[, "score_log"], type="l")
+
+plot_finalProject +
+  geom_vline(xintercept = resFit_BFGS$optResult$par[1], color = "blue", size = .5) +
+  geom_vline(xintercept = resFit_BFGS$optResult$par[2], color = "blue", size = .5) +
+  geom_vline(xintercept = resFit_BFGS$optResult$par[3], color = "blue", size = .5) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.05), limits = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.10), limits = c(0, 1)) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0))
+```
+
+Now we have a bit of a problem. While the score of this fit is better, it appears that the choice of boundaries is worse: The beginning is very long, and the actual Fire Drill appears to be too short, while the Aftermath is probably too long as well. 
+
+We have to note as well that the optimization did not finish/converge technically, but given the better scores and the plot of the fitting process, it might have been close.
+
+The current problems (commit `#f02e7f9`) we see between the two optimization approaches are these:
+
+* The reference boundaries of the pattern are not currently aligned according the anecdotal descriptions of the Fire Drill (only approximately). E.g., the Fire Drill phase is described to be `1/6` the length of the Begin and the Long Stretch, and the length of the Aftermath is not described at all. We should probably use the `MultilevelModelReferenceCalibrator` to set the boundaries according to these and then re-adjust the reference pattern.
+  * Also, the current linear inequality constraints are chosen very loosely. That was done with the thought in mind to allow the optimization to virtually try almost all boundary positions, even if they would be very close to the infeasible region. For example, the minimum distance between two boundaries was chosen to be currently `0.025`. While globally that seems fine, it does not make much sense for some of the intervals. The Fire Drill phase in the latter fit is shorter than `0.05` (it is `r round(resFit_BFGS$optResult$par[3] - resFit_BFGS$optResult$par[2], 4)`), while the begin is longer than `0.35` (`r round(resFit_BFGS$optResult$par[1], 4)`). So it is clear that we need to chose these constraints more locally, carefully and consciously (or add additional constraints) - a Begin that long or a Fire Drill that short should be infeasible.
+* Currently, the `Stage2Rectifier` does not include a sub-score that scores the length of the selected query signal (or its ratio to the length of the reference signal). This is problematic if we look at the latter fit, where the ratios of all phases are quite off. We need to include a score for that, too.
+  * We had been using the custom score `custom_interval_length_score()` for the Long Stretch, that was higher, the longer the selected interval was, and look where it got us ;)
+  * We should however keep this score, but also add scores that maximize the ratios of the other intervals. Having both kinds of scores, some that maximize the length and some that maximize the ratio, should make for a good combination.
+
+However, the following sub-sections (everything until __Further Problems__) were based on this old configuration and the tests in these sub-sections showed that the sub-models and scores are working. We will hence make all adjustments and refactorings after these sub-sections and before __Further Problems__, to not interfere with these results.
 
 
 ### Test of fitting the pattern to itself
 
-The next test is to randomly initialize the boundaries and have the model attempt to fit them, not to the data but rather to the pattern itself. This is a dummy test to see if the model would converge to our suggested boundaries, given that the data would exactly look like we described it.
+The next test is to randomly initialize the boundaries and have the model attempt to fit them, not to the data but rather to the pattern itself. This is a validation test to see if the model would converge to our suggested boundaries, given that the data would exactly look like we described it.
 
 ```{r}
-mlmDummy <- mlm$clone(deep = TRUE)
+mlmValidate <- mlm$clone(deep = TRUE)
 # Set these to avoid potential errors.
-mlmDummy$constrainBoundaryInterval(boundaryIndexOrName = 1, value = .01, op = "geq")
-mlmDummy$constrainBoundaryInterval(boundaryIndexOrName = 3, value = .99, op = "leq")
+mlmValidate$constrainBoundaryInterval(boundaryIndexOrName = 1, value = .01, op = "geq")
+mlmValidate$constrainBoundaryInterval(boundaryIndexOrName = 3, value = .99, op = "leq")
 ```
 
 The following tests make sure that the boundaries converge to a near-optimal value, that must ideally be close to the reference boundaries. We set those manually, i.e., those were not calculated. However, given the sub-models, stages and scores we defined, we expect the calibration to select boundaries very close to the reference boundaries. We conduct three types of tests with different starting values: The reference boundaries, equidistant-spaced boundaries, and two times random boundaries (all adhering to the linear inequality constraints, of course).
@@ -809,112 +879,586 @@ For each set of boundaries, we will attempt to calibrate the model. The expectat
 ```{r}
 library(foreach)
 
-dummyResults <- doWithParallelCluster(expr = {
-  foreach::foreach(
-    rIdx = 1:nrow(testBoundaries),
-    .packages = c("dtw", "Metrics", "numDeriv",
-                      "philentropy", "pracma", "rootSolve",
-                      "SimilarityMeasures", "stats", "utils")
-  ) %dopar% {
-    for (sf in mlmDummy$sourceFiles) {
-      source(sf)
-    }
-    useMlm <- mlmDummy$clone(deep = TRUE)
-    
-    useMlm$refBoundaries <- testBoundaries[rIdx, ]
-    fitResult <- doWithParallelCluster(expr = {
-      useMlm$calibrate(requireAbsoluteConverge = FALSE, verbose = TRUE)
-    })
-    
-    scoreBefore <- NULL
-    if (R6::is.R6(useMlm$scoreRef)) {
-      scoreBefore <- useMlm$scoreRef$clone(deep = TRUE)
-    }
-    scoreAfter <- NULL
-    if (R6::is.R6(useMlm$scoreCalibrated)) {
-      scoreAfter <- useMlm$scoreCalibrated$clone(deep = TRUE)
-    }
-    
-    list(
-      scoreBefore = scoreBefore,
-      scoreAfter = scoreAfter,
-      fitResult = fitResult)
-  }  
+validateBoundaries <- function(method = c("Nelder-Mead", "SANN")[1]) {
+  doWithParallelCluster(expr = {
+    foreach::foreach(
+      rIdx = 1:nrow(testBoundaries),
+      .packages = c("dtw", "Metrics", "numDeriv",
+                    "philentropy", "pracma", "rootSolve",
+                    "SimilarityMeasures", "stats", "utils")
+    ) %dopar% {
+      for (sf in mlmValidate$sourceFiles) {
+        source(sf)
+      }
+      useMlm <- mlmValidate$clone(deep = TRUE)
+      
+      useMlm$refBoundaries <- testBoundaries[rIdx, ]
+      fitResult <- doWithParallelCluster(expr = {
+        useMlm$calibrate(requireAbsoluteConverge = FALSE, verbose = TRUE, method = method)
+      })
+      
+      scoreBefore <- NULL
+      if (R6::is.R6(useMlm$scoreRef)) {
+        scoreBefore <- useMlm$scoreRef$clone(deep = TRUE)
+      }
+      scoreAfter <- NULL
+      if (R6::is.R6(useMlm$scoreCalibrated)) {
+        scoreAfter <- useMlm$scoreCalibrated$clone(deep = TRUE)
+      }
+      
+      list(
+        scoreBefore = scoreBefore,
+        scoreAfter = scoreAfter,
+        fitResult = fitResult)
+    }  
+  })
+}
+
+validationResults <- loadResultsOrCompute(file = "../results/validationResults.rds", computeExpr = {
+  validateBoundaries()
 })
 
+validationResultsSANN <- loadResultsOrCompute(file = "../results/validationResultsSANN.rds", computeExpr = {
+  validateBoundaries(method = "SANN")
+})
 
-# for (rIdx in 1:nrow(testBoundaries)) {
-#   scoresBefore <- list()
-#   scoresAfter <- list()
-#   fitResults <- list()
-#   
-#   mlmDummy$refBoundaries <- testBoundaries[rIdx, ]
-#   temp <- doWithParallelCluster(expr = {
-#     mlmDummy$calibrate(requireAbsoluteConverge = FALSE, verbose = TRUE)
-#   })
-#   
-#   if (R6::is.R6(mlmDummy$scoreRef)) {
-#     scoresBefore[[paste0(rIdx)]] <- mlmDummy$scoreRef$clone(deep = TRUE)
-#   }
-#   if (R6::is.R6(mlmDummy$scoreCalibrated)) {
-#     scoresAfter[[paste0(rIdx)]] <- mlmDummy$scoreCalibrated$clone(deep = TRUE)
-#   }
-#   
-#   fitResults[[paste0(rIdx)]] <- temp
-# }
+validationResultsSANN[[]]$fitResult
+```
+
+Let's see the scores of the validation-results:
+
+```{r}
+validationResultsAggCols <- c("method", "error", "duration", "logScore_before", "logScore_after", "b1", "b2", "b3", "b1_new", "b2_new", "b3_new")
+validationResultsAgg <- data.frame(matrix(nrow = 0, ncol = length(validationResultsAggCols)))
+colnames(validationResultsAgg) <- validationResultsAggCols
+
+validationResultsAll <- append(validationResults, validationResultsSANN)
+for (i in 1:length(validationResultsAll)) {
+  vr <- validationResultsAll[[i]]
+  fh <- vr$fitResult$fitHist
+  fhBest <- which.min(fh[, "score_log"])
+  didConv <- vr$fitResult$optResult$convergence == 0
+  duration <- sum(fh[, "duration"])
+  hadErr <- !R6::is.R6(vr$scoreBefore) || "error" %in% class(vr$fitResult)
+  
+  sBef <- if (hadErr) NA else -log(vr$scoreBefore$aggregateUsing_Honel())
+  sAft <- if (hadErr) NA else -log(vr$scoreAfter$aggregateUsing_Honel())
+  
+  newRow <- data.frame(matrix(nrow = 1, ncol = length(validationResultsAggCols)))
+  colnames(newRow) <- validationResultsAggCols
+  newRow$method <- if (i <= length(validationResults)) "N-M" else "SANN"
+  newRow$error <- hadErr
+  lv <- length(validationResults)
+  newRow[, 3:length(validationResultsAggCols)] <- c(
+    duration, sBef, sAft, testBoundaries[if (0 == (i %% lv)) lv else i %% lv, ],
+    if (is.null(fh)) rep(NA, 3) else fh[fhBest, c("b1", "b2", "b3")]
+  )
+  validationResultsAgg <- rbind(validationResultsAgg, newRow)
+}
+
+validationResultsAgg
 ```
 
 
+Now we have shown 3 things:
+
+* Our initial, manually-set reference boundaries were very precise. Some of the optimizations converged very close to it or even selected the same boundaries.
+* For each of the four examples for random start reference boundaries the model was able to converge -- This is very important for later when we use more real-world data and have to pick initial boundaries. It appears that no best guess is needed, and that it is sufficient to, e.g., just place each boundary somewhere in its feasible region.
+* The entire model with its sub-models and metrics in use is suited for the task at hand, as only the aggregated scores from all these were used to find optimal boundaries. In other words, we can go ahead and fit the entire model in its current configuration to data of this kind.
+
+
+# Re-adjusting the pattern
+
+This section was introduced later and picks up right at the end of sub-section __Fitting our model__, as we did not want to interfere with the results obtained. In this section now, we are going to implement some of the changes (e.g., more strict boundaries or interval-lengths, additional ratio-scores etc.).
+
+Also, we are adjusting the reference pattern w.r.t. the current anecdotal description first.
+
+## Adjusting the reference pattern
+
+The reference pattern for the Fire Drill does __not__ currently use the boundaries as described in the literature. The boundaries used are close, but not accurate. What we need to do is to move the boundaries, while keeping the shape/course of each variable in its interval. We can use the class `MultilevelModelReferenceCalibrator` for that.
+
+@brown1998refactoring describes the Fire Drill phase to be of length one month (four weeks), while everything before takes about half a year. While projects differ greatly in their actual length from start to finish, this is the best indication as to how long these phases are relative to each other.
+
+The length of the Begin is not described, either. In a project as described by Brown et al., this phase however should occupy the first one or two weeks. We will hence set this phase to have an optimal duration of `1/12` of the Long Stretch's length, which equals two weeks if the Long Stretch is 24 weeks.
+
+The Aftermath is a phase we added, mostly for increasing the characteristic of the entire pattern's manifestation. After meeting the final deadline, the project will wrap up quickly, typically within a few days or up to a week. We will set the default length to be one week, but eventually we optimize this interval to be short.
+
+Total length: 2 weeks (Begin) + 22 weeks (Long Stretch) + 4 weeks (Fire Drill) + 1 week (Aftermath) = __29 weeks__. We need this number to set the relative boundary positions at:
+
+* __b1__: `2/29` (`r round(2/29, 4)`)
+* __b2__: `24/29` (`r round(24/29, 4)`)
+* __b3__: `28/29` (`r round(28/29, 4)`)
+
+The interval lengths hence are:
+
+* __Begin__: ~`6.9`% (`r round(100*2/29, 2)`)
+* __Long Stretch__: ~`75.9`% (`r round(100*22/29, 2)`)
+* __Fire Drill__: ~`13.8`% (`r round(100*4/29, 2)`)
+* __Aftermath__: ~`3.5`% (`r round(100*1/29, 2)`)
 
 ```{r}
-mlmDummy$refBoundaries <- c(1/4, 1/2, 3/4)
-# Let's set some the reference or dummy boundaries:
-mlmDummy$setAllBoundaries(fd_data_boundaries)
-#mlmDummy$setAllBoundaries(c(1/4, 1/2, 3/4))
+adj_fd_data_boundaries <- c(
+  "b1" = 2/29,
+  "b2" = 24/29,
+  "b3" = 28/29
+)
 
-if (!is.environment(mlmDummy$calibratedScore)) {
-  mlmDummy <- doWithParallelCluster(expr = {
-    mlmDummy$calibrate(requireConverge = FALSE, verbose = TRUE)
-  }, numCores = 16)
+adjMlm <- MultilevelModel$new(
+  referenceData = fd_data_concat,
+  referenceBoundaries = fd_data_boundaries)
+# This is important, as these are the boundaries that are moved:
+adjMlm$boundariesCalibrated[1, ] <- validationResults[[1]]$fitResult$optResult$par
+
+adjMlmrc <- MultilevelModelReferenceCalibrator$new(
+  mlm = adjMlm)
+adjMlmrc$theta[1:length(adj_fd_data_boundaries)] <- adj_fd_data_boundaries
+
+adj_fd_data_concat <- adjMlmrc$computeRefData()
+
+adjMlm <- MultilevelModel$new(
+  referenceData = adj_fd_data_concat,
+  referenceBoundaries = adj_fd_data_boundaries)
+# We have been adjusting the reference pattern using the calibrated
+# boundaries, so the calibrated boundaries are now equal to the new
+# reference boundaries!
+adjMlm$boundariesCalibrated[1, ] <- adj_fd_data_boundaries
+
+adjMlm$plot()
+```
+
+The next step would be the re-definition of min- and max-distances between all pairs of boundaries. Those were previously too extreme, but this was for the sake of reducing the constraints of the optimization. Before we go ahead and define the practical allowed interval lengths, we must define the minimum distance between two boundaries (or: the minimum interval length).
+
+From our second optimization we learned that the used minimum may be too small for some of the phases. We hence define these new minimum boundary distances:
+
+* __b3, end__ (Aftermath): Original=1w. The maximum is ten days (__10/7w__), and the minimum is 2 days (__2/7w__).
+* __b2, b3__ (Fire Drill): Original=4w. Given a project of ~7 months, even the shortest of Fire Drills cannot deliver all the necessary work in an even much smaller fraction of the time, such as only a few days. We therefore set the minimum to __two weeks__. The maximum length however may be quite longer, if a Fire Drill were to be much softer. Still, the pattern would be distinguishable from the other parts of the project that had less activity. However longer, the Fire Drill needs to remain the second-longest phase, and we allow it to be sixteen weeks __(16w)__.
+* __b1, b2__ (Long Stretch): Since we expect a somewhat long phase with low activity (regarding the linear model), the minimum is a month (4 weeks). Given a project length of 29 weeks, with a 2-week Fire Drill, 2-day Aftermath and 5d Begin, the Long Stretch could last up to __25w__.
+* __start, b1__ (Begin): Original=2w, this phase must be a few days at least, and we suggest to use a minimum of one work-week __(5d)__. __Begin__ and __Long Stretch__ are not distinguished in literature, and could thus have virtually any ratio. We introduced the distinction mainly because all of the variables we use should start at (almost) zero. It is an additional characteristic that is not to be found in the Long Stretch. We recommend allowing the begin to be as long as the Long Stretch (minus the minimum boundary distance). Remember that we are mostly interested in detecting the better-described Fire Drill phase, so if we allow a smooth transition between the first two phases it allows us to focus on that. However, for practical reasons however, we limit the begin to be __half__ of the maximum of the Long Stretch (__12.5w__).
+
+This translates to (scaled using the above described 29-week-long project):
+
+```{r}
+adjMlm$flushLinIneqConstraints()
+
+# First boundary/Interval (BG):
+adjMlm$constrainBoundaryInterval(boundaryIndexOrName = 1, value = (5/7)/29, op = "geq")
+adjMlm$constrainBoundaryInterval(boundaryIndexOrName = 1, value = 12.5/29, op = "leq")
+# Last Boundary/Interval (AM):
+adjMlm$constrainBoundaryInterval(boundaryIndexOrName = 3, value = 1 - ((10/7)/29), op = "geq")
+adjMlm$constrainBoundaryInterval(boundaryIndexOrName = 3, value = 1 - ((2/7)/29), op = "leq")
+
+# Second Interval (LS):
+adjMlm$constrainBoundaryDistance(
+  boundary1_IndexOrName = 1, boundary2_IndexOrName = 2, value = 2/29, op = "geq")
+adjMlm$constrainBoundaryDistance(
+  boundary1_IndexOrName = 1, boundary2_IndexOrName = 2, value = 25/29, op = "leq")
+# Third Interval (FD):
+adjMlm$constrainBoundaryDistance(
+  boundary1_IndexOrName = 2, boundary2_IndexOrName = 3, value = 2/29, op = "geq")
+adjMlm$constrainBoundaryDistance(
+  boundary1_IndexOrName = 2, boundary2_IndexOrName = 3, value = 16/29, op = "leq")
+
+adjMlm$linIneqs
+adjMlm$getUi() %*% adjMlm$getTheta() - adjMlm$getCi()
+```
+
+## Adding a meta sub-model
+
+Previously, we added a single specific score for the Long Stretch phase, that was just returning the length of the selected query window -- in other words, the longer the selection, the better. While we want to keep this custom score, we would also like to add others, for scoring the ratio between selected query- and reference-length. For that, we decided to implement an extra type of `Stage1`, which computes meta-properties of the data, such as current interval-lengths, instead of operating on the actual data. We also add an extra kind of `Stage2` for this purpose.
+
+```{r}
+sm_meta <- MetaSubModel$new(name = "Lengths_Ratios")
+s1_meta <- Stage1Meta$new()
+s2_meta <- Stage2Meta$new()
+
+# Add a score that maximizes the selected interval for Long Stretch
+s2_meta$addSubScoreFor_length(intervalName = "LongStretch", intervalType = "current", maximize = TRUE)
+
+# Add scores for all other intervals that score the differences in reference (here: calibrated)
+# and selected/query ("current") ranges. I.e., the closer the currently selected length to the
+# reference, the higher the score.
+s2_meta$addSubScoreFor_ratio(
+  intervalName1 = "Begin", intervalType1 = "calibrated", intervalType2 = "current", targetRatio = 1)
+s2_meta$addSubScoreFor_ratio(
+  intervalName1 = "FireDrill", intervalType1 = "calibrated", intervalType2 = "current", targetRatio = 1)
+s2_meta$addSubScoreFor_ratio(
+  intervalName1 = "Aftermath", intervalType1 = "calibrated", intervalType2 = "current", targetRatio = 1)
+
+# Also, we allowed the Fire Drill to be 16 weeks long, which would be more than half of the
+# project's total length. The Fire Drill is originally described to be one month in a seven
+# month-project. We hence define this as target ratio.
+s2_meta$addScoreMethod(name = "FireDrill_Ratio", scoreMethod = function(stage1Result, stage2Meta) {
+  s1r <- stage1Result
+  len_Begin <- s1r[s1r$type == "current" & s1r$interval == "Begin", ]$len
+  len_LongStretch <- s1r[s1r$type == "current" & s1r$interval == "LongStretch", ]$len
+  l1 <- len_Begin + len_LongStretch
+  l2 <- s1r[s1r$type == "current" & s1r$interval == "FireDrill", ]$len
+  
+  stage2Meta$compareRatioDiff(ratio = l1 / (l1 + l2), targetRatio = 6/7)
+})
+
+sm_meta$setStage1(s1_meta)
+sm_meta$setStage2(s2_meta)
+```
+
+### Re-create the other sub-models
+
+Here we will largely do what we did before, except for leaving out the custom scores, as we have the extra meta sub-model for that now.
+
+```{r}
+# We do not change the function 'create_submodel_special()'.
+# However, we do replace create_submodel_ordinary():
+adj_create_submodel_ordinary <- function(varName, intervalName, weight) {
+  sm <- SubModel$new(varName = varName, intervalName = intervalName, weight = weight)
+  sm$setStage1(stage1_ordinary$clone(deep = TRUE))
+  sm$setStage2(stage2_ordinary$clone(deep = TRUE))
 }
 
-if (inherits(mlmDummy$calibratedScore, 'ScoreAggregator')) {
-  # TODO: Make all this prettier...
-  temp <- doWithParallelCluster({
-    list(
-      mlmDummy$setAllBoundaries(mlmDummy$refBoundaries)$compute(),
-      mlmDummy$setAllBoundaries(mlmDummy$calibratedBoundaries[1, ])$compute())
+# We also re-create all these for A) not to interfere with
+# the others and for B) to change the weights.
+adj_sm_A_Begin <- create_submodel_special("A", "Begin", 1)
+adj_sm_CP_Begin <- create_submodel_special("CP", "Begin", 1)
+adj_sm_FREQ_Begin <- create_submodel_special("FREQ", "Begin", 1)
+adj_sm_SCD_Begin <- create_submodel_special("SCD", "Begin", 1)
+
+adj_sm_A_LongStretch <- adj_create_submodel_ordinary("A", "LongStretch", .8)
+adj_sm_CP_LongStretch <- adj_create_submodel_ordinary("CP", "LongStretch", .8)
+adj_sm_FREQ_LongStretch <- adj_create_submodel_ordinary("FREQ", "LongStretch", .8)
+adj_sm_SCD_LongStretch <- adj_create_submodel_ordinary("SCD", "LongStretch", .8)
+
+adj_sm_A_FireDrill <- create_submodel_special("A", "FireDrill", 1)
+adj_sm_CP_FireDrill <- create_submodel_special("CP", "FireDrill", 1)
+adj_sm_FREQ_FireDrill <- create_submodel_special("FREQ", "FireDrill", 1)
+adj_sm_SCD_FireDrill <- create_submodel_special("SCD", "FireDrill", 1)
+
+adj_sm_A_Aftermath <- create_submodel_special("A", "Aftermath", 1)
+adj_sm_CP_Aftermath <- create_submodel_special("CP", "Aftermath", 1)
+adj_sm_FREQ_Aftermath <- create_submodel_special("FREQ", "Aftermath", 1)
+adj_sm_SCD_Aftermath <- create_submodel_special("SCD", "Aftermath", 1)
+```
+
+Now add all models to our MLM!
+
+```{r}
+# ERROR #2: Here we do not set all the correct sub-models!
+adjMlm$setAllSubModels(adj_sm_A_Begin, adj_sm_CP_Begin, adj_sm_FREQ_Begin, adj_sm_SCD_Begin)
+adjMlm$setAllSubModels(adj_sm_A_LongStretch, adj_sm_CP_LongStretch, adj_sm_FREQ_LongStretch, adj_sm_SCD_LongStretch)
+adjMlm$setAllSubModels(adj_sm_A_FireDrill, adj_sm_CP_FireDrill, adj_sm_FREQ_FireDrill, adj_sm_FREQ_FireDrill)
+adjMlm$setAllSubModels(adj_sm_A_Aftermath, adj_sm_CP_Aftermath, adj_sm_FREQ_Aftermath, adj_sm_FREQ_Begin)
+
+# NEW! Add the meta Sub-Model:
+adjMlm$setSubModel(model = sm_meta)
+
+adjMlm$setQueryData(series = "ALL", queryData = dens_acp_data)
+adjMlm$sourceFiles <- c("common-funcs.R", "../models/modelsR6.R")
+```
+
+## Fitting the adjusted model to the data
+
+The main reason for us to go back and reiterate the reference pattern was that we got very different results from either of the fitting processes. One used Nelder-Mead and the other BFGS and an approximated gradient. While both results were good in their own way, it became apparent that adjustments are needed. Now all of these have been made, and we are ready to try to fit everything using both methods again, with hopefully more consistent results.
+
+### Using Nelder-Mead
+
+```{r}
+adj_resFit <- loadResultsOrCompute(file = "../results/adj_mlmFitRes.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    adjMlm$fit(verbose = TRUE)
   })
-  
-  saBefore <- temp[[1]]
-  saAfter <- temp[[2]]
-  
-  cat("We found more optimal boundaries!\n")
-  cat(paste0("Before: ", paste0(mlmDummy$refBoundaries, collapse = ", "), "\n"))
-  cat(paste0("After: ", paste0(round(mlmDummy$calibratedBoundaries[1, ], 6), collapse = ", "), "\n\n"))
-  
-  print(paste0("Scores before: ", saBefore$aggregateUsing_Honel(), " (aggregated), each: ", paste0(sapply(saBefore$rawScores, function(rs) {
-    paste0(rs$name, ": ", round(rs$value, 4))
-  }), collapse = ", ")))
-  print(paste0("Scores after: ", saAfter$aggregateUsing_Honel(), " (aggregated), each: ", paste0(sapply(saAfter$rawScores, function(rs) {
-    paste0(rs$name, ": ", round(rs$value, 4))
-  }), collapse = ", ")))
-}
+})
 ```
 
+```{r}
+plot(adj_resFit$fitHist[, "score_log"], type="l")
+```
 
+```{r}
+plot_finalProject +
+  geom_vline(xintercept = adj_resFit$optResult$par[1], color = "blue", size = .5) +
+  geom_vline(xintercept = adj_resFit$optResult$par[2], color = "blue", size = .5) +
+  geom_vline(xintercept = adj_resFit$optResult$par[3], color = "blue", size = .5) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.05), limits = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.10), limits = c(0, 1)) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0))
+```
+
+Those results look already better -- also, the fitting process seemed to converge in a more structured way, and the resulting boundaries look very plausible. However, the 2nd boundary was not moved around much within its interval, so there may be room for improvement.
+
+
+### Using BFGS with numerical gradient
+
+```{r}
+# Re-set the boundaries:
+adjMlm$setAllBoundaries(values = adj_fd_data_boundaries)
+
+adj_resFit_BFGS <- loadResultsOrCompute(file = "../results/adj_mlmFitRes_BFGS.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    adjMlm$fit(verbose = TRUE, method = "BFGS")
+  })
+})
+```
+
+```{r}
+plot(adj_resFit_BFGS$fitHist[, "score_log"], type="l")
+
+plot_finalProject +
+  geom_vline(xintercept = adj_resFit_BFGS$optResult$par[1], color = "blue", size = .5) +
+  geom_vline(xintercept = adj_resFit_BFGS$optResult$par[2], color = "blue", size = .5) +
+  geom_vline(xintercept = adj_resFit_BFGS$optResult$par[3], color = "blue", size = .5) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.05), limits = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.10), limits = c(0, 1)) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0))
+```
+
+Well, while that didn't take long, and BFGS did not find a better optimum. In fact, it only improved insignificantly over the unadjusted boundaries. Let's try this again with some randomized initial boundaries.
+
+```{r}
+set.seed(16)
+adjMlm$setAllBoundaries(values = c(
+  runif(1, 0, 1/3),
+  runif(1, .4, .9),
+  runif(1, .95, 1)
+))
+
+adj_resFit_BFGS2 <- loadResultsOrCompute(file = "../results/adj_mlmFitRes_BFGS2.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    adjMlm$fit(verbose = TRUE, method = "BFGS")
+  })
+})
+```
+
+```{r}
+plot(adj_resFit_BFGS2$fitHist[, "score_log"], type="l")
+
+plot_finalProject +
+  geom_vline(xintercept = adj_resFit_BFGS2$optResult$par[1], color = "blue", size = .5) +
+  geom_vline(xintercept = adj_resFit_BFGS2$optResult$par[2], color = "blue", size = .5) +
+  geom_vline(xintercept = adj_resFit_BFGS2$optResult$par[3], color = "blue", size = .5) +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.05), limits = c(0, 1)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.10), limits = c(0, 1)) +
+  theme(axis.text.x = element_text(angle = -45, vjust = 0))
+```
+
+While the now found score is much better, it is still well worse then the Nelder-Mead fit. Interestingly, the BFGS fit chose the Fire Drill to occur earlier. This is interesting, because when looking at the project's data, these two alternatives seem like possible candidates. We will now compare more in detail what the score for each fit in each phase was.
+
+```{r}
+adj_resFitsAgg <- loadResultsOrCompute(file = "../results/adj_resFitsAgg.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    adj_resFits <- list(adj_resFit, adj_resFit_BFGS, adj_resFit_BFGS2)
+    
+    foreach::foreach(
+      rfIdx = 1:length(adj_resFits),
+      .combine = rbind
+    ) %dopar% {
+      r <- adj_resFits[[rfIdx]]
+      
+      useMlm <- adjMlm$clone(deep = TRUE)
+      useMlm$setAllBoundaries(values = r$optResult$par)
+      tempSa <- useMlm$compute()
+      
+      # Let's aggregate scores:
+      
+      tempf <- function(pat) {
+        sum(unlist(lapply(tempSa$rawScores, function(rs) {
+          if (grepl(pat, rs$name)) rs$value else 0
+        })))
+      }
+      
+      methods <- c("Nelder-Mead", "BFGS", "BFGS (2)")
+      tempdf <- data.frame(
+        method = methods[rfIdx],
+        duration = r$duration,
+        steps = nrow(r$fitHist),
+        Begin = tempf("Begin"),
+        LongStretch = tempf("LongStretch"),
+        FireDrill = tempf("FireDrill"),
+        Aftermath = tempf("Aftermath"),
+        SumAllIntervals = 0,
+        LogScoreEntireModel = r$optResult$value
+      )
+      tempdf$SumAllIntervals <- sum(tempdf[, useMlm$intervalNames])
+      tempdf
+    }
+  })
+})
+
+adj_resFitsAgg
+```
+
+These are some interesting results, esp. the alternative for the Fire Drill chosen by BFGS -- the score is not that much worse than what we thought it would be.
+
+
+# Further Problems
+
+We have additional problems that we want to solve with our new techniques (Multilevel-Models, Sub-Models and Stages, Metrics and Scores etc.).
+
+## Adjusting the pattern, also to more than one ground truth
+
+We need to suggest and implement at least one solution to this for our first publication. The problem more in detail:
+
+* We have defined the Fire Drill pattern as a collection of variables and their course over time, as the pattern and its phases progress. This definition was done involving all the a priori knowledge we had at that point (i.e., without having looked at any data).
+* While we have shown that our definition can be used to potentially find the pattern and the beginning/end of its sub-phases in the data, we should improve the pattern to bring it closer to the real-world data. This will improve the goodness-of-fit and simultaneously reduce the fit for false positives.
+* As of writing this, we have one ground truth, and by the end we will have a few, all of which have confidences. This implies that we would require some kind of weights when producing an average pattern.
+
+
+We have an interest in keeping the Fire Drill pattern similar to how we defined it initially, as it was based on descriptions from literature. It would however also be possible, to throw it away entirely and to produce a new pattern, that is a (weighted) average over all ground truths we will have. A middle ground, where we only partially replace our initial pattern by such averages may also be feasible.
+
+However, given only few ground truths -- we do not expect to have many more than four our five, producing a new pattern solely from data will probably overfit and not generalize well. In other words, given not enough data, a pattern derived from it is likely to capture too much of the noise in it. At this point we recommend to continue using patterns that are close to their description in literature, as this should provide better generalizability.
+
+
+### Option 1: Adjust existing pattern
+
+This option is simple to implement, as we only add some degrees of freedom. It allows us to fit the pattern to multiple weighted ground truths simultaneously. In each interval (and for each variable), we keep the original shape. However, not only do we allow fitting the boundaries, but also the magnitude of each variable. In each interval, each variable's curve enters the interval at $y_1$ and exits it at $y_2$. We allow the pattern to adjust these, too. So in our case, having three boundaries and four variables, we will end up with $23$ degrees of freedom. In general, this approach has $|\boldsymbol B| + |\boldsymbol V| * (|\boldsymbol B| + 2)$ degrees of freedom, where $\boldsymbol B$ is the set of boundaries, and $\boldsymbol V$ the set of variables, and assuming the two boundaries $0,1$ are in $\boldsymbol B$.
+
+In order to implement and conduct this approach, we need to do this:
+
+* ..
 
 
 ```{r}
-res <- mlm$fit(verbose = TRUE)
+mlmc <- mlmValidate$clone(deep = TRUE)
+# Let's use the ones from the validation earlier!
+mlmc$boundariesCalibrated[1, ] <- validationResults[[1]]$fitResult$optResult$par
+mlmrc <- MultilevelModelReferenceCalibrator$new(mlm = mlmc)
+
+# Let's plot the original MLM:
+mlmc$plot()
+
+# .. and let's move the boundaries plus some y-values:
+mlmrc$theta[1:mlmc$numBoundaries] <- c(.2, .4, .7)
+mlmrc$theta["A_1"] <- .9
+mlmrc$theta["A_2"] <- .575
+mlmrc$theta["A_3"] <- .2
+mlmrc$theta["A_4"] <- .5
+mlmrc$theta["CP_3"] <- .15
+mlmrc$theta["CP_4"] <- .015
+mlmrc$theta["FREQ_3"] <- .45
+mlmrc$theta["FREQ_4"] <- .525
+mlmrc$theta["SCD_3"] <- .6
+mlmrc$theta["SCD_4"] <- .65
+mlmrc$theta["SCD_5"] <- 1
+
+mlmc$setAllBoundaries(values = mlmrc$theta[1:mlmc$numBoundaries])
+mlmc$refData <- mlmrc$computeRefData(bbFlatIfBelow = 1e-3)
+mlmc$plot()
 ```
 
+So it is clear now, that we can move the boundaries of the reference pattern, as well as set the y-intersect for each variable with each boundary (including the virtual $0,1$ boundaries). The above plot is an extreme albeit valid example of what the optimization may do to the pattern during optimization.
+
+```{r}
+#########
+DISABLE_MLMRC_FIT <- TRUE
+#########
+
+mlmc <- mlmValidate$clone(deep = TRUE)
+# Let's use the ones from the validation earlier!
+mlmc$boundariesCalibrated[1, ] <- validationResults[[1]]$fitResult$optResult$par
+mlmrc <- MultilevelModelReferenceCalibrator$new(mlm = mlmc)
+mlmrc$addDefaultVariableYConstraints()
+mlmrc$copyBoundaryConstraints()
+# We gotta do this or it won't validate
+mlmrc$theta[mlmrc$theta == 0] <- .Machine$double.eps
+set.seed(1337)
+mlmrc$theta[(mlmc$numBoundaries+1):length(mlmrc$theta)] <-
+  runif(n = length(mlmrc$theta) - mlmc$numBoundaries, min = .05, max = .95)
+
+rcRes <- if (DISABLE_MLMRC_FIT) NA else doWithParallelCluster(expr = {
+  cnt <- 0
+  mlmrc$fit(verbose = FALSE, callback = function(mlmrc, mlm, fitHist, score_raw) {
+    thePlot <- suppressWarnings({
+      mlm$plot() +
+      scale_y_continuous(breaks = seq(0, 1, by = .1), limits = c(0, 1)) +
+      scale_x_continuous(breaks = seq(0, 1, by = .05), limits = c(0, 1)) +
+      geom_text(x = 1.1, y = -.1, label = paste0("Score -log:\n", sprintf("%.7f", -log(score_raw))),
+                hjust = 0, inherit.aes = FALSE, show.legend = FALSE) +
+      coord_cartesian(clip = "off")
+    })
+    
+    ggsave(filename = paste0(sprintf("../results/mlmrc-plots/progress_%05d", cnt), ".png"),
+           plot = thePlot, width = unit(6, "cm"), height = unit(3, "cm"))
+    cat(paste0("Score -log / raw: ", sprintf("%.10f", -log(score_raw)), " -- ", sprintf("%.10f", score_raw), "\n"))
+    
+    cnt <<- cnt + 1
+  })
+}, numCores = 20)
+```
+
+
+#### Affine transformation tests.
+
+I used these to test affine transformations. Let's keep them for reference.
+
+```{r}
+xData <- (seq(-pi, 2*pi, length.out = 300) + pi) / (3 * pi)
+tempf <- function(x) sin(x) - abs(x)
+tempd <- sapply(seq(-pi, 2*pi, length.out = 300), tempf)
+yData <- tempd - min(tempd)
+yData <- yData / max(yData) * .6 + .2
+xyData <- data.frame(
+  x = xData, y = yData)
+
+plot(x=xyData$x, y=xyData$y, ylim=c(0,.8))
+```
+
+```{r}
+# The goal is now to make the signal begin at .25 and end at .05,
+# using affine linear transformations.
+
+yExtent_ref <- range(xyData$y)
+yStart_ref <- xyData$y[1]
+yEnd_ref <- xyData$y[length(xyData$y)]
+yDiff_ref <- yEnd_ref - yStart_ref
+
+yStart_new <- .25
+yEnd_new <- .05
+yDiff_new <- yEnd_new - yStart_new
+
+yScale <- yDiff_new / yDiff_ref
+Yflipped <- 0 == sum(sign(yStart_ref - yEnd_ref), sign(yStart_new - yEnd_new))
+stopifnot(!Yflipped)
+
+yData_new <- xyData$y * yScale
+yData_new <- yData_new - yData_new[1] + yStart_new
+plot(x=xyData$x, y=yData_new, ylim=c(0,.8))
+```
+```{r}
+# Now we do the same, but we flip yleft and yright
+yStart_new <- .15
+yEnd_new <- .3
+
+yDiff_new <- yEnd_new - yStart_new
+
+yScale <- yDiff_new / yDiff_ref
+Yflipped <- 0 == sum(sign(yStart_ref - yEnd_ref), sign(yStart_new - yEnd_new))
+stopifnot(Yflipped)
+
+yData_new <- xyData$y * yScale
+yData_new <- yData_new - yData_new[1] + yStart_new
+plot(x=xyData$x, y=yData_new)
+```
+
+
+
+
+
+### Option 2: Partially replace existing pattern
+
+
+### Option 3: Fully replace existing pattern
+
+
+## Using the pattern to find current progress of it in a project
+
+
+## Forecasting
+
+This is an entirely new problem, which requires more work. Forecasting will most likely be our future work.
 
 
 ## Todo
 
 * Make sure that fitting the model to itself yields the original boundaries (or very close to it)
 * After fitting the model to the project, compare boundary positions and deviations.
+* Describe (in paper), why some measurements do not make for good metrics, for example, the KS-test. (The reason is that some measurements capture only very few or just one property, while disregarding too much other information)
 
 
 # References {-}
