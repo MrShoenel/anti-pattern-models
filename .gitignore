@@ -5,3 +5,4 @@
 *.pdf
 *.html
 my.cnf
+**/__pycache__/*
