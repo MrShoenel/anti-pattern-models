@@ -3,6 +3,77 @@ library(foreach)
 library(ggplot2)
 
 
+
+FitResult <- R6Class(
+  "FitResult",
+  
+  lock_objects = FALSE,
+  
+  private = list(
+    fitHist = NULL,
+    beginStep = NULL
+  ),
+  
+  public = list(
+    initialize = function(paramNames) {
+      cols <- c("begin", "end", "duration", paramNames)
+      private$fitHist <- matrix(nrow = 0, ncol = length(cols))
+      colnames(private$fitHist) <- cols
+      private$beginStep <- NA
+      
+      self$begin <- NA
+      self$end <- NA
+      self$duration <- NA
+      self$optResult <- NA
+    },
+    
+    start = function() {
+      self$begin <- as.numeric(Sys.time())
+      invisible(self)
+    },
+    
+    finish = function() {
+      self$end <- as.numeric(Sys.time())
+      self$duration <- self$end - self$begin
+      invisible(self)
+    },
+    
+    setOptResult = function(optResult) {
+      self$optResult <- optResult
+      invisible(self)
+    },
+    
+    startStep = function(verbose = FALSE) {
+      now <- Sys.time()
+      if (verbose) {
+        cat(paste0("Starting step at ", now, "\n"))
+      }
+      private$beginStep <- as.numeric(now)
+      invisible(self)
+    },
+    
+    stopStep = function(resultParams, verbose = FALSE) {
+      end <- Sys.time()
+      if (verbose) {
+        cat(paste0("Stopping step at ", end, ", with resultParams of: ", paste0(round(resultParams, 5), collapse = ", "), "\n"))
+      }
+      duration <- end - private$beginStep
+      private$fitHist <- rbind(private$fitHist, c(private$beginStep, end, duration, resultParams))
+      invisible(self)
+    },
+    
+    lastStep = function() {
+      utils::tail(private$fitHist)
+    },
+    
+    getFitHist = function() {
+      private$fitHist
+    }
+  )
+)
+
+
+
 MultilevelModelReferenceCalibrator <- R6Class(
   "MultilevelModelReferenceCalibrator",
   
