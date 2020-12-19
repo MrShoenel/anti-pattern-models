@@ -82,7 +82,8 @@ MultilevelModelReferenceCalibrator <- R6Class(
   inherit = LinearInequalityConstraints,
   
   private = list(
-    scoreAggCallback = NULL
+    scoreAggCallback = NULL,
+    lastTandemStep = NA
   ),
   
   public = list(
@@ -100,15 +101,16 @@ MultilevelModelReferenceCalibrator <- R6Class(
       # Needed later in fit()
       private$scoreAggCallback <- scoreAggCallback
       
-      theta <- mlm$getTheta()
+      stopifnot(length(mlm$refBoundaries) > 0 && all(is.numeric(mlm$refBoundaries) & !is.na(mlm$refBoundaries)))
       bounds <- sort(unique(c(0, 1, mlm$refBoundaries)))
       # For each variable, we add the current intercept with each boundary
       # from left to right, including the 0,1 boundaries.
       # Each variable has 'numIntervals' + 1 y-values we can adjust.
+      theta <- mlm$boundaries[1, ]
       for (t in levels(mlm$refData$t)) {
         tFunc <- (function() {
           d <- mlm$refData[mlm$refData$t == t, ]
-          f <- stats::approxfun(x = d$x, y = d$y)
+          f <- stats::approxfun(x = d$x, y = d$y, ties = "ordered")
           return(function(x) {
             if (x < min(d$x)) d$y[1]
             if (x > max(d$x)) utils::tail(d$y, 1)
@@ -125,6 +127,15 @@ MultilevelModelReferenceCalibrator <- R6Class(
       super$initialize(theta = theta)
       self$refTheta <- theta
       colnames(self$linIneqs) <- c(names(theta), "CI")
+      
+      
+      # Can be written to from outside. These files will be
+      # sourced in the parallel foreach loop.
+      self$sourceFiles <- c()
+    },
+    
+    resetTheta = function() {
+      self$setTheta(theta = self$refTheta)
     },
     
     #' Transfers over the MLM's boundary constraints into our matrix.
@@ -133,7 +144,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
         newC <- rep(0, ncol(self$linIneqs))
         newC[1:self$mlm$numBoundaries] <- self$mlm$linIneqs[rIdx, 1:self$mlm$numBoundaries]
         newC[length(newC)] <- self$mlm$linIneqs[rIdx, self$mlm$numBoundaries + 1]
-        mlmrc$setLinIneqConstraint(name = rIdx, ineqs = newC)
+        self$setLinIneqConstraint(name = rIdx, ineqs = newC)
       }
       invisible(self)
     },
@@ -161,12 +172,12 @@ MultilevelModelReferenceCalibrator <- R6Class(
     },
     
     
-    computeRefData = function(limitYExtent = c(0,1), bbFlatIfBelow = 1e-3) { 
+    computeRefData = function(bbFlatIfBelow = 1e-3, onlyForVar = NA) {
+      hasOnlyVar <- !missing(onlyForVar) || !is.na(onlyForVar) 
+      stopifnot(!hasOnlyVar || onlyForVar %in% levels(self$refData$t))
       # Here, we need the calibrated boundaries -- we use them as the reference!
       # I.e., these are superior to the user-set reference boundaries!
       stopifnot(is.matrix(self$mlm$boundariesCalibrated) && !any(is.na(self$mlm$boundariesCalibrated)))
-      stopifnot(missing(limitYExtent) ||
-                (is.numeric(limitYExtent) && length(limitYExtent) == 2 && !any(is.na(limitYExtent))))
       # Current values for all boundaries and y-intersections (in that order).
       theta <- self$getTheta()
       # Needed to re-slice the reference data.
@@ -175,8 +186,8 @@ MultilevelModelReferenceCalibrator <- R6Class(
       newBounds <- sort(unique(c(0, 1, theta[1:self$mlm$numBoundaries])))
       refData <- NULL
       
-      
-      for (t in levels(self$mlm$refData$t)) {
+      varNames <- if (hasOnlyVar) onlyForVar else levels(self$mlm$refData$t)
+      for (t in varNames) {
         for (bIdx in 1:self$mlm$numIntervals) {
           xyData <- self$refData[
             self$refData$t == t & self$refData$interval == self$mlm$intervalNames[bIdx], ]
@@ -231,53 +242,6 @@ MultilevelModelReferenceCalibrator <- R6Class(
           # Do this ALWAYS last!
           xData <- xData + xRange[1]
           
-          
-          # bStart_ref <- refBounds[bIdx]
-          # bEnd_ref <- refBounds[bIdx + 1]
-          # xRange_ref <- range(xyData$x)
-          # xExtent_ref <- xRange_ref[2] - xRange_ref[1]
-          # yLeft_ref <- xyData$y[1]
-          # yRight_ref <- tail(xyData$y, 1)
-          # yRange_ref <- range(xyData$y)
-          # yExtent_ref <- yRange_ref[2] - yRange_ref[1]
-          # 
-          # 
-          # bStart <- newBounds[bIdx]
-          # bEnd <- newBounds[bIdx + 1]
-          # xRange <- c(bStart, bEnd)
-          # xExtent <- bEnd - bStart
-          # yLeft <- theta[paste0(t, "_", bIdx)]
-          # yRight <- theta[paste0(t, "_", bIdx + 1)]
-          # yRange <- range(yLeft, yRight)
-          # yExtent <- yRange[2] - yRange[1]
-          # 
-          # xData <- xyData$x - xRange_ref[1]
-          # if (xExtent_ref > 0) {
-          #   xData <- xData / xExtent_ref
-          # }
-          # if (xExtent > 0) {
-          #   xData <- xData * xExtent
-          # }
-          # 
-          # 
-          # yData <- xyData$y - xyData$y[1]
-          # yDiffBefore <- yData[length(yData)] - yData[1]
-          # yDiffAfter <- yRight - yLeft
-          # yDiff <- yDiffBefore - yDiffAfter
-          # 
-          # 
-          # yData <- yData + yLeft
-          # yData <- yData - sapply(xData, function(x) {
-          #   x / xExtent * yDiff
-          # })
-          # xData <- xData + xRange[1]
-          # 
-          # # Check if we need to limit Y:
-          # if (is.numeric(limitYExtent)) {
-          #   yData[yData < limitYExtent[1]] <- limitYExtent[1]
-          #   yData[yData > limitYExtent[2]] <- limitYExtent[2]
-          # }
-          
           refData <- rbind(refData, data.frame(
             x = xData,
             y = yData,
@@ -304,9 +268,11 @@ MultilevelModelReferenceCalibrator <- R6Class(
     
     #' Using the current theta, we derive the reference data, which
     #' is then given to the MLM and its compute() is called.
-    compute = function(forceSeq = NULL) {
+    compute = function(verbose = FALSE, forceSeq = NULL) {
       stopifnot(is.matrix(self$mlm$boundariesCalibrated) && !any(is.na(self$mlm$boundariesCalibrated)))
-      self$mlm$refBoundaries <- self$mlm$boundariesCalibrated[1, ]
+      # This is not that important, because the MLM does not slice the reference
+      # data according to these, but rather by the 't'-column in it.
+      self$mlm$refBoundaries <- self$theta[1:self$mlm$numBoundaries]
       
       refData <- self$computeRefData()
       self$mlm$setAllBoundaries(values = self$theta[1:self$mlm$numBoundaries])
@@ -314,6 +280,9 @@ MultilevelModelReferenceCalibrator <- R6Class(
       
       # .. then compute using those!
       cArgs <- list()
+      if (!missing(verbose)) {
+        cArgs[["verbose"]] <- verbose
+      }
       if (!missing(forceSeq)) {
         cArgs[["forceSeq"]] <- forceSeq
       }
@@ -352,7 +321,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
           names(x) <- names(self$theta)
           if (verbose) {
             cat(paste0("Params (", length(x), "): ", paste0(sapply(x, function(p) {
-              format(x, nsmall = 3, digits = 3)
+              format(p, nsmall = 3, digits = 3)
             }), collapse = ", ")))
           }
           
@@ -391,6 +360,290 @@ MultilevelModelReferenceCalibrator <- R6Class(
         fitHist = fitHist,
         optResult = optR
       )
+    },
+    
+    
+    #' Part of the fit-tandom approach, in which we either fit the
+    #' reference's boundaries, or the Y-intersections of each variable
+    #' with its boundaries.
+    #' 
+    #' In this method, we fit the reference's boundaries, and treat
+    #' all Y-intersections as constant.
+    fit_refBoundaries = function(verbose = FALSE, method = c("Nelder-Mead", "BFGS", "SANN")[1], forceSeq = NULL) {
+      nb <- self$mlm$numBoundaries
+      ui <- self$getUi()[, 1:nb]
+      uiInUse <- rownames(ui)[apply(ui, 1, function(r) sum(r != 0) > 0)]
+      ui <- ui[uiInUse, ]
+      ci <- self$getCi()[uiInUse]
+      theta <- self$getTheta()[1:nb]
+      theta[theta == 0] <- .Machine$double.eps
+      
+      cArgs <- list(verbose = FALSE)
+      if (!missing(forceSeq)) {
+        cArgs[["forceSeq"]] <- forceSeq
+      }
+      
+      fr <- FitResult$new(paramNames = c("is_grad", "score_raw", "score_log", colnames(ui)))
+      fr$start()
+      
+      objF <- function(x, isGrad = FALSE) {
+        if (verbose && !isGrad) {
+          cat(paste0("Boundaries (", length(x), "): ", paste0(sapply(x, function(p) {
+            format(p, nsmall = 3, digits = 3)
+          }), collapse = ", ")))
+        }
+        
+        fr$startStep()
+        
+        # Only sets the boundaries, the other params are held constant!
+        self$theta[1:nb] <- x
+        
+        scoreAgg <- do.call(what = self$compute, args = cArgs)
+        score_raw <- private$scoreAggCallback(scoreAgg)
+        score_log <- -log(score_raw)
+        fr$stopStep(resultParams = c(if (isGrad) 1 else 0, score_raw, score_log, x))
+        lastStep <- fr$lastStep()
+        
+        if (verbose) {
+          cat(paste0(" -- Value: ", format(score_log, digits = 10, nsmall = 5),
+                     " -- Duration: ", format(lastStep[, "duration"], digits = 2, nsmall = 2), "s\n"))
+        }
+        
+        score_log
+      }
+      
+      optRes <- stats::constrOptim(
+        theta = theta, ui = ui, ci = ci,
+        control = list(maxit = 5000), # TODO
+        f = objF, method = method, grad = function(x) {
+          numDeriv::grad(func = objF, x = x, isGrad = TRUE)
+        })
+      
+      fr$finish()$setOptResult(optResult = optRes)
+    },
+    
+    #' Part of the fit-tandom approach, in which we either fit the
+    #' reference's boundaries, or the Y-intersections of each variable
+    #' with its boundaries.
+    #' 
+    #' In this method, we fit the Y-intersections with the boundaries,
+    #' and treat the boundaries as constant.
+    fit_refYIntercepts = function(
+      varNames = levels(self$refData$t),
+      verbose = FALSE,
+      method = c("Nelder-Mead", "BFGS", "SANN")[1],
+      nestedParallel = 0,
+      forceSeq = NULL
+    ) {
+      stopifnot(all(varNames %in% levels(self$refData$t)))
+      
+      cArgs <- list(verbose = verbose, method = method)
+      if (!missing(forceSeq)) {
+        cArgs[["forceSeq"]] <- forceSeq
+      }
+      
+      foreachOp <- if (missing(forceSeq) || forceSeq != TRUE) foreach::`%dopar%` else foreach::`%do%`
+      varFrs <- foreachOp(foreach::foreach(
+        varName = varNames, # we can optimize each variable independently,
+        .inorder = FALSE, # .. in any order
+        .verbose = verbose,
+        .export = c("self"),
+        .packages = c("dtw", "Metrics", "numDeriv",
+                      "philentropy", "pracma", "rootSolve",
+                      "SimilarityMeasures", "stats", "utils")
+      ), {
+        for (file in self$sourceFiles) {
+          fileAbs <- normalizePath(file, mustWork = FALSE)
+          if (!file.exists(fileAbs) || file.access(fileAbs, mode = 4) != 0) {
+            stop(paste0("Cannot source file: ", file, " -- cwd: ", getwd()))
+          }
+          source(file = file)
+        }
+        
+        res <- list()
+        if (nestedParallel > 0) {
+          res[[varName]] <- doWithParallelCluster(expr = {
+            for (f in self$sourceFiles) {
+              source(file = f, echo = FALSE)
+            }
+            do.call(self$fit_variable, args = append(cArgs, list(name = varName)))
+          }, numCores = nestedParallel)
+        } else {
+          res[[varName]] <- do.call(
+            self$fit_variable, args = append(cArgs, list(name = varName)))
+        }
+        
+        res
+      })
+      
+      # Now we have a list of FitResult objects, one for each variable. However,
+      # the list is nested and the indexes currently are numeric, so let's remove
+      # one level in this list, so that the resulting list's keys are the variables'
+      # names and the value is the FitResult.
+      
+      unlist(varFrs)
+    },
+    
+    fit_variable = function(name, verbose = FALSE, method = c("Nelder-Mead", "BFGS", "SANN")[1], forceSeq = NULL) {
+      refVars <- levels(self$refData$t)
+      stopifnot(name %in% refVars)
+      
+      cArgs <- list()
+      if (!missing(forceSeq)) {
+        cArgs[["forceSeq"]] <- forceSeq
+      }
+      
+      # When this function is entered, we assume that all other thetas
+      # have been set to their designated value, which will be held
+      # constant over time.
+      mlmrc <- self$clone(deep = TRUE)
+      
+      mlmV <- mlmrc$mlm
+      mlmVModels <- mlmV$getSubModelsInUse()
+      rmModels <- mlmVModels[!grepl(pattern = paste0(name, "_"), x = mlmVModels)]
+      for (rmModel in rmModels) {
+        mlmV$removeSubModel(mlmV$getSubModel(name = rmModel))
+      }
+      
+      # Now that we have our stripped-down model, let's also strip
+      # down the constraints to those we actually need. The names of
+      # the constraints follow the scheme VAR_IDX.
+      numBounds <- mlmV$numBoundaries + 2 # 0, .., 1
+      uiVars <- paste0(paste0(name, "_"), 1:numBounds)
+      ui <- self$getUi()[, uiVars]
+      uiInUse <- rownames(ui)[apply(ui, 1, function(r) sum(r != 0) > 0)]
+      ui <- ui[uiInUse, ]
+      ci <- self$getCi()[uiInUse]
+      thetaVars <- self$getTheta()[uiVars]
+      # Strictly zero is not allowed.
+      thetaVars[thetaVars == 0] <- .Machine$double.eps
+      
+      fr <- FitResult$new(paramNames = c("is_grad", "score_raw", "score_log", colnames(ui)))
+      fr$start()
+      
+      objF <- function(x, isGrad = FALSE) {
+        if (verbose && !isGrad) {
+          cat(paste0("Var (", name, "): ", paste0(sapply(x, function(p) {
+            format(p, nsmall = 3, digits = 3)
+          }), collapse = ", ")))
+        }
+        
+        fr$startStep()
+        
+        
+        theta <- mlmrc$getTheta()
+        theta[uiVars] <- x
+        mlmrc$setTheta(theta = theta)
+        
+        scoreAgg <- do.call(mlmrc$compute, args = cArgs)
+        score_raw <- private$scoreAggCallback(scoreAgg)
+        score_log <- -log(score_raw)
+        
+        fr$stopStep(resultParams = c(if (isGrad) 1 else 0, score_raw, score_log, x))
+        lastStep <- fr$lastStep()
+        
+        if (verbose && !isGrad) {
+          cat(paste0(" -- Value: ", format(score_log, digits = 10, nsmall = 5),
+                     " -- Duration: ", format(lastStep[, "duration"], digits = 2, nsmall = 2), "s\n"))
+        }
+        
+        score_log
+      }
+      
+      
+      optRes <- stats::constrOptim(
+        theta = thetaVars, ui = ui, ci = ci, method = method,
+        control = list(maxit = 5000), # TODO
+        f = objF, grad = function(x) {
+          numDeriv::grad(func = objF, x = x)
+        })
+      
+      fr$finish()$setOptResult(optResult = optRes)
+    },
+    
+    fit_tandem = function(updateThetaAfter = TRUE, nestedParallel = 0) {
+      res <- NULL
+      if (is.na(private$lastTandemStep) || private$lastTandemStep == "y") {
+        res <- self$fit_refBoundaries()
+        private$lastTandemStep <- "b" # so the next step is "y"
+        
+        if (updateThetaAfter) {
+          theta <- self$getTheta()
+          nb <- self$mlm$numBoundaries
+          # Named vector ahead:
+          varTheta <- res$optResult$par
+          theta[names(varTheta)] <- varTheta
+          self$setTheta(theta = theta)
+          self$compute() # .. to apply the theta!
+        }
+      } else {
+        res <- self$fit_refYIntercepts(nestedParallel = nestedParallel)
+        private$lastTandemStep <- "y" # so the next step is "b"
+        
+        if (updateThetaAfter) {
+          # res is a list where the keys are the variables' names,
+          # and each is a FitResult. We need to update theta with
+          # the results of the optimization of each variable.
+          theta <- self$getTheta()
+          nb <- self$mlm$numBoundaries + 2 # 0, .., 1
+          for (varName in names(res)) {
+            # This is a named vector.
+            varTheta <- res[[varName]]$optResult$par
+            theta[names(varTheta)] <- varTheta
+          }
+          self$setTheta(theta = theta)
+          self$compute() # .. to apply the theta!
+        }
+      }
+      res
+    },
+    
+    fit_tandem_iter = function(verbose = TRUE, nestedParallel = 0, maxSteps = 10, beginStep = c("b", "y")[1], stopIfImproveBelow = NA_real_) {
+      stopifnot(beginStep %in% c("b", "y"))
+      
+      # If we want to begin in b, the last step would have been y, and vice versa
+      private$lastTandemStep <- if (beginStep == "b") "y" else "b"
+      
+      fr <- FitResult$new(
+        paramNames = c("score_raw", "score_log", names(self$getTheta())))
+      fr$start()
+      
+      # Store the initial score:
+      fr$startStep(verbose = verbose)
+      tempSa <- self$compute()
+      score <- private$scoreAggCallback(tempSa)
+      fr$stopStep(resultParams = c(score, -log(score), self$getTheta()), verbose = verbose)
+      if (verbose) {
+        cat(paste0("Computed initial score of -- ", score, ", log-score of -- ", -log(score), ", -- using parameters: ", paste0(round(self$getTheta(), 5), collapse = ", "), "\n"))
+      }
+      
+      
+      lastScore <- score
+      for (i in 1:maxSteps) {
+        if (verbose) {
+          cat(paste0("Starting next type of step: ", if (private$lastTandemStep == "b") "Y-Intercepts" else "Boundaries", "\n"))
+        }
+        fr$startStep(verbose = verbose)
+        
+        frTandem <- self$fit_tandem(
+          nestedParallel = nestedParallel, updateThetaAfter = TRUE)
+        # Note the last step was setting the theta, but the computation
+        # is missing. The computation is necessary to actually update
+        # the reference data.
+        tempSa <- self$compute(verbose = verbose)
+        score <- private$scoreAggCallback(tempSa)
+        fr$stopStep(
+          resultParams = c(score, -log(score), self$getTheta()), verbose = verbose)
+        
+        # Also check if we should stop:
+        if (is.numeric(stopIfImproveBelow) && stopIfImproveBelow > 0 &&
+            (score < lastScore) && ((lastScore - score) < stopIfImproveBelow)) {
+          break
+        }
+        lastScore <- score
+      }
+      
+      fr$finish()
     }
   )
 )
@@ -542,7 +795,7 @@ MultilevelModel <- R6Class(
       
       # Now that we know the amount of boundaries, we can
       # initialize a structure for the linear inequalities:
-      super$initialize(theta = if (missing(referenceBoundaries)) rep(NA, self$numBoundaries) else referenceBoundaries)
+      super$initialize(theta = if (missing(referenceBoundaries)) rep(NA_real_, self$numBoundaries) else referenceBoundaries)
       
       
       # Next step is to generate slots for the sub-models.
@@ -879,6 +1132,10 @@ MultilevelModel <- R6Class(
       self$boundaries[1, indexOrName]
     },
     
+    getAllBoundaries = function() {
+      self$boundaries[1, ]
+    },
+    
     setBoundary = function(indexOrName, value) {
       stopifnot(self$hasBoundary(indexOrName = indexOrName))
       stopifnot(value >= 0, value <= 1)
@@ -898,7 +1155,7 @@ MultilevelModel <- R6Class(
     },
     
     
-    fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "SANN")[1], forceSeq = NULL) {
+    fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "BFGS", "SANN")[1], forceSeq = NULL) {
       stopifnot(self$validateLinIneqConstraints())
       
       histCols <- c("begin", "end", "duration", "score_raw", "score_log", colnames(self$boundaries))
@@ -947,7 +1204,7 @@ MultilevelModel <- R6Class(
       optR <- stats::constrOptim(
         control = list(
           reltol = reltol,
-          maxit = 3000 # TODO
+          maxit = 5000 # TODO
         ),
         method = method,
         ui = self$getUi(),
@@ -979,11 +1236,15 @@ MultilevelModel <- R6Class(
       
       # smAggs <- list()
       # for (subModelName in self$getSubModelsInUse(includeOrdinarySubModels = TRUE, includeMetaSubModels = TRUE)) {
+      smsInUse <- self$getSubModelsInUse(
+        includeOrdinarySubModels = TRUE, includeMetaSubModels = TRUE)
+      if (length(smsInUse) == 0) {
+        stop("No Sub-Models were added, cannot compute anything!")
+      }
       
       foreachOp <- if (missing(forceSeq) || forceSeq != TRUE) foreach::`%dopar%` else foreach::`%do%`
       smAggs <- foreachOp(foreach::foreach(
-        subModelName = self$getSubModelsInUse(
-          includeOrdinarySubModels = TRUE, includeMetaSubModels = TRUE),
+        subModelName = smsInUse,
         .inorder = FALSE,
         .verbose = verbose,
         .export = c("self", "private"),
@@ -1061,25 +1322,43 @@ MultilevelModel <- R6Class(
       sa
     },
     
-    plot = function() {
+    plot = function(showQueryDataSeries = "ALL", showBoundaries = FALSE, showRefBoundaries = TRUE, showCalibratedBoundaries = TRUE) {
+      hasQds <- is.character(showQueryDataSeries) && showQueryDataSeries %in% names(self$queryData)
+      
       plot_fullPattern <- ggplot(data = self$refData, aes(x = x, y = y, color = t)) +
         geom_line() +
         labs(color = "Variable") +
-        scale_x_continuous(
-          breaks = seq(0, 1, by = .05)
-        ) +
+        scale_x_continuous(breaks = seq(0, 1, by = .05), limits = c(0, 1)) +
+        scale_y_continuous(breaks = seq(0, 1, by = .1), limits = c(0, 1)) +
         theme_light() +
         theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
         scale_color_brewer(palette = "Set1")
       
+      if (hasQds) {
+        plot_fullPattern <- plot_fullPattern +
+          labs(fill = "Variable") +
+          geom_ribbon(
+            data = self$queryData[[showQueryDataSeries]],
+            mapping = aes(ymax = y, ymin = 0, fill = t), alpha = 0.2) +
+          scale_fill_brewer(palette = "Set1")
+      }
+      
       for (bName in colnames(self$boundaries)) {
-        if (!is.na(self$boundaries[1, bName])) {
+        if (showBoundaries && !any(is.na(self$boundaries[1, bName]))) {
           plot_fullPattern <- plot_fullPattern +
             geom_vline(xintercept = self$boundaries[1, bName], color = "blue", size = .4)
         }
       }
       
-      if (!any(is.na(self$boundariesCalibrated))) {
+      for (i in 1:length(self$refBoundaries)) {
+        if (showRefBoundaries && !any(is.na(self$refBoundaries))) {
+          plot_fullPattern <- plot_fullPattern +
+            geom_vline(xintercept = self$getBoundary(indexOrName = i), color = "green", size = .4)
+          
+        }
+      }
+      
+      if (showCalibratedBoundaries && !any(is.na(self$boundariesCalibrated))) {
         for (bName in colnames(self$boundariesCalibrated)) {
           plot_fullPattern <- plot_fullPattern +
             geom_vline(xintercept = self$boundariesCalibrated[1, bName], color = "red", size = .6)
@@ -1092,6 +1371,8 @@ MultilevelModel <- R6Class(
     }
   )
 )
+MultilevelModel$undebug("compute")
+MultilevelModel$undebug("fit")
 
 
 
@@ -2166,11 +2447,9 @@ Stage2Rectifier <- R6Class(
         aggregateSubScores("f_ref_warp-vs-f_query_warp", refVsQueryMethods, f1, f2)
       }
       
-      self$scoreAgg
+      # finally, also compute ordinary scores:
+      super$computeScores()
     }
   )
 )
-
-
-
 
