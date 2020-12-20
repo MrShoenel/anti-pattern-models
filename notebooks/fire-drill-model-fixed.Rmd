@@ -1300,38 +1300,42 @@ mlmTandem$sourceFiles <- c("../helpers.R", "common-funcs.R", "../models/modelsR6
 mlmTandem$linIneqs <- adjMlm$linIneqs[, ]
 mlmTandem$validateLinIneqConstraints()
 
-stage2_special_tandem <- stage2_special$clone(deep = TRUE)
-stage2_special_tandem$addScoreMethod(
-  name = "Area", scoreMethod = area_diff_2_functions_score())
-stage2_special_tandem$addScoreMethod(
-  name = "Angle", scoreMethod = stat_diff_2_functions_lm_score(
-    expectAngleDeg = 0, numSamples = 1e3))
 
-stage2_ordinary_tandem <- stage2_ordinary$clone(deep = TRUE)
-stage2_ordinary_tandem$addScoreMethod(
-  name = "Area", scoreMethod = area_diff_2_functions_score())
+create_stage1_tandem <- function() {
+  s1 <- Stage1NoModel$new(approxRefFun = TRUE, approxQueryFun = TRUE)
+  s1$setYLimitsRef(yLimits = "self")$setYLimitsQuery(yLimits = "self") }
+create_stage2_tandem <- function() {
+  s2 <- Stage2$new()
+  s2$addScoreMethod(name = "Area", scoreMethod = area_diff_2_functions_score()) }
+create_sm_tandem <- function(smProto) {
+  sm <- smProto$clone()
+  sm$stage1 <- create_stage1_tandem()
+  sm$stage2 <- create_stage2_tandem()
+  sm }
+
 
 # We use the same sub-models with their same weight.
 mlmTandem$setAllSubModels(
-  adj_sm_A_Begin$clone()$setStage2(stage2_special_tandem),
-  adj_sm_CP_Begin$clone()$setStage2(stage2_special_tandem),
-  adj_sm_FREQ_Begin$clone()$setStage2(stage2_special_tandem),
-  adj_sm_SCD_Begin$clone()$setStage2(stage2_special_tandem))
+  create_sm_tandem(adj_sm_A_Begin),
+  create_sm_tandem(adj_sm_CP_Begin),
+  create_sm_tandem(adj_sm_FREQ_Begin),
+  create_sm_tandem(adj_sm_SCD_Begin))
 mlmTandem$setAllSubModels(
-  adj_sm_A_LongStretch$clone()$setStage2(stage2_ordinary_tandem),
-  adj_sm_CP_LongStretch$clone()$setStage2(stage2_ordinary_tandem),
-  adj_sm_FREQ_LongStretch$clone()$setStage2(stage2_ordinary_tandem),
-  adj_sm_SCD_LongStretch$clone()$setStage2(stage2_ordinary_tandem))
+  create_sm_tandem(adj_sm_A_LongStretch),
+  create_sm_tandem(adj_sm_CP_LongStretch),
+  create_sm_tandem(adj_sm_FREQ_LongStretch),
+  create_sm_tandem(adj_sm_SCD_LongStretch))
 mlmTandem$setAllSubModels(
-  adj_sm_A_FireDrill$clone()$setStage2(stage2_special_tandem),
-  adj_sm_CP_FireDrill$clone()$setStage2(stage2_special_tandem),
-  adj_sm_FREQ_FireDrill$clone()$setStage2(stage2_special_tandem),
-  adj_sm_SCD_FireDrill$clone()$setStage2(stage2_special_tandem))
+  create_sm_tandem(adj_sm_A_FireDrill),
+  create_sm_tandem(adj_sm_CP_FireDrill),
+  create_sm_tandem(adj_sm_FREQ_FireDrill),
+  create_sm_tandem(adj_sm_SCD_FireDrill))
 mlmTandem$setAllSubModels(
-  adj_sm_A_Aftermath$clone()$setStage2(stage2_special_tandem),
-  adj_sm_CP_Aftermath$clone()$setStage2(stage2_special_tandem),
-  adj_sm_FREQ_Aftermath$clone()$setStage2(stage2_special_tandem),
-  adj_sm_SCD_Aftermath$clone()$setStage2(stage2_special_tandem))
+  create_sm_tandem(adj_sm_A_Aftermath),
+  create_sm_tandem(adj_sm_CP_Aftermath),
+  create_sm_tandem(adj_sm_FREQ_Aftermath),
+  create_sm_tandem(adj_sm_SCD_Aftermath))
+
 mlmTandem$setSubModel(model = sm_meta)
 ```
 
