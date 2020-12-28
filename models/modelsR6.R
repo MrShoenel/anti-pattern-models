@@ -599,10 +599,10 @@ MultilevelModelReferenceCalibrator <- R6Class(
       fr$finish()$setOptResult(optResult = optRes)
     },
     
-    fit_tandem = function(updateThetaAfter = TRUE, nestedParallel = 0) {
+    fit_tandem = function(updateThetaAfter = TRUE, nestedParallel = 0, methodRefBounds = c("Nelder-Mead", "BFGS")[1], methodRefYIntercepts = c("BFGS", "Nelder-Mead")[1]) {
       res <- NULL
       if (is.na(private$lastTandemStep) || private$lastTandemStep == "y") {
-        res <- self$fit_refBoundaries()
+        res <- self$fit_refBoundaries(method = methodRefBounds)
         private$lastTandemStep <- "b" # so the next step is "y"
         
         if (updateThetaAfter) {
@@ -615,7 +615,8 @@ MultilevelModelReferenceCalibrator <- R6Class(
           self$compute() # .. to apply the theta!
         }
       } else {
-        res <- self$fit_refYIntercepts(nestedParallel = nestedParallel)
+        res <- self$fit_refYIntercepts(
+          nestedParallel = nestedParallel, method = methodRefYIntercepts)
         private$lastTandemStep <- "y" # so the next step is "b"
         
         if (updateThetaAfter) {
@@ -636,7 +637,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
       res
     },
     
-    fit_tandem_iter = function(verbose = TRUE, nestedParallel = 0, maxSteps = 10, beginStep = c("b", "y")[1], stopIfImproveBelow = NA_real_) {
+    fit_tandem_iter = function(verbose = TRUE, nestedParallel = 0, maxSteps = 10, beginStep = c("b", "y")[1], stopIfImproveBelow = NA_real_, callback = NA, methodRefBounds = c("Nelder-Mead", "BFGS")[1], methodRefYIntercepts = c("BFGS", "Nelder-Mead")[1]) {
       stopifnot(beginStep %in% c("b", "y"))
       
       # If we want to begin in b, the last step would have been y, and vice versa
@@ -650,13 +651,14 @@ MultilevelModelReferenceCalibrator <- R6Class(
       fr$startStep(verbose = verbose)
       tempSa <- self$compute()
       score <- private$scoreAggCallback(tempSa)
-      fr$stopStep(resultParams = c(score, -log(score), self$getTheta()), verbose = verbose)
+      score_log <- -log(score)
+      fr$stopStep(resultParams = c(score, score_log, self$getTheta()), verbose = verbose)
       if (verbose) {
-        cat(paste0("Computed initial score of -- ", score, ", log-score of -- ", -log(score), ", -- using parameters: ", paste0(round(self$getTheta(), 5), collapse = ", "), "\n"))
+        cat(paste0("Computed initial score of -- ", score, ", log-score of -- ", score_log, ", -- using parameters: ", paste0(round(self$getTheta(), 5), collapse = ", "), "\n"))
       }
       
       
-      lastScore <- score
+      lastScore <- score_log
       for (i in 1:maxSteps) {
         if (verbose) {
           cat(paste0("Starting next type of step: ", if (private$lastTandemStep == "b") "Y-Intercepts" else "Boundaries", "\n"))
@@ -664,21 +666,28 @@ MultilevelModelReferenceCalibrator <- R6Class(
         fr$startStep(verbose = verbose)
         
         frTandem <- self$fit_tandem(
-          nestedParallel = nestedParallel, updateThetaAfter = TRUE)
+          nestedParallel = nestedParallel, updateThetaAfter = TRUE,
+          methodRefBounds = methodRefBounds,
+          methodRefYIntercepts = methodRefYIntercepts)
         # Note the last step was setting the theta, but the computation
         # is missing. The computation is necessary to actually update
         # the reference data.
         tempSa <- self$compute(verbose = verbose)
         score <- private$scoreAggCallback(tempSa)
+        score_log <- -log(score)
         fr$stopStep(
-          resultParams = c(score, -log(score), self$getTheta()), verbose = verbose)
+          resultParams = c(score, score_log, self$getTheta()), verbose = verbose)
+        
+        if (is.function(callback)) {
+          callback(fr)
+        }
         
         # Also check if we should stop:
         if (is.numeric(stopIfImproveBelow) && stopIfImproveBelow > 0 &&
-            (score < lastScore) && ((lastScore - score) < stopIfImproveBelow)) {
+            ((lastScore - score_log) < stopIfImproveBelow)) {
           break
         }
-        lastScore <- score
+        lastScore <- score_log
       }
       
       fr$finish()
