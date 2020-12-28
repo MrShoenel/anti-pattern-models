@@ -152,6 +152,15 @@ caretFitOneModeltoAllData <- function(method, tuneGrid, data) {
 }
 
 
+saveAndPlotAsEPS <- function(ggplotInstance, fileName, width = 241.14749 / 72.27 * 2.54, height = 5 / 2.54) {
+  ggplot2::ggsave(fileName, ggplotInstance,
+         width = floor(width * 100) / 100,
+         height = floor(height * 100) / 100,
+         limitsize = F, device = cairo_pdf)
+  ggplotInstance
+}
+
+
 
 
 
