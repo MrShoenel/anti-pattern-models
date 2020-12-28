@@ -133,6 +133,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
       
       self$setMLMforRef_YInterceptFit(mlm = mlmYInterceptFit)
       
+      private$computeResult <- NA
       
       # Can be written to from outside. These files will be
       # sourced in the parallel foreach loop.
@@ -162,7 +163,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
     
     addDefaultVariableYConstraints = function() {
       idxOffset <- length(self$mlm$getTheta())
-      bounds <- sort(unique(c(0, 1, mlm$refBoundaries)))
+      bounds <- sort(unique(c(0, 1, self$mlm$refBoundaries)))
       lvls <- levels(self$mlm$refData$t)
       
       for (t in lvls) {
@@ -297,7 +298,10 @@ MultilevelModelReferenceCalibrator <- R6Class(
       if (!missing(forceSeq)) {
         cArgs[["forceSeq"]] <- forceSeq
       }
-      do.call(what = self$mlm$compute, args = cArgs)
+      
+      sa <- do.call(what = self$mlm$compute, args = cArgs)
+      private$computeResult <- sa
+      sa
     },
     
     #' Alters the underlying MLMs reference data and boundaries to
@@ -316,6 +320,9 @@ MultilevelModelReferenceCalibrator <- R6Class(
       histCols <- c("begin", "end", "duration", "score_raw", "score_log", names(self$theta))
       fitHist <- matrix(nrow = 0, ncol = length(histCols))
       colnames(fitHist) <- histCols
+      
+      scoreAgg_best <- NA
+      score_raw_best <- 0
       
       beginOpt <- as.numeric(Sys.time())
       optR <- stats::constrOptim(
@@ -337,7 +344,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
           }
           
           # Set all parameters!
-          self$setTheta(x)
+          self$setTheta(theta = x)
           
           begin <- as.numeric(Sys.time())
           
@@ -359,10 +366,20 @@ MultilevelModelReferenceCalibrator <- R6Class(
             callback(self, self$mlm, fitHist, score_raw)
           }
           
+          # Let's update the compute-result: we set it to the current best
+          if (!R6::is.R6(scoreAgg_best) || (score_raw > score_raw_best)) {
+            scoreAgg_best <- scoreAgg
+            score_raw_best <- score_raw
+          }
+          
           score_log
         }
       )
       finishOpt <- as.numeric(Sys.time())
+      
+      # Set compute-result to best fit and also update boundaries:
+      private$computeResult <- scoreAgg_best
+      self$setTheta(theta = optR$par)
       
       list(
         begin = beginOpt,
@@ -612,7 +629,6 @@ MultilevelModelReferenceCalibrator <- R6Class(
           varTheta <- res$optResult$par
           theta[names(varTheta)] <- varTheta
           self$setTheta(theta = theta)
-          self$compute() # .. to apply the theta!
         }
       } else {
         res <- self$fit_refYIntercepts(
@@ -631,7 +647,6 @@ MultilevelModelReferenceCalibrator <- R6Class(
             theta[names(varTheta)] <- varTheta
           }
           self$setTheta(theta = theta)
-          self$compute() # .. to apply the theta!
         }
       }
       res
@@ -644,7 +659,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
       private$lastTandemStep <- if (beginStep == "b") "y" else "b"
       
       fr <- FitResult$new(
-        paramNames = c("score_raw", "score_log", names(self$getTheta())))
+        paramNames = c("AIC", "AICc", "BIC", "BICc", "score_raw", "score_log", names(self$getTheta())))
       fr$start()
       
       # Store the initial score:
@@ -659,6 +674,8 @@ MultilevelModelReferenceCalibrator <- R6Class(
       
       
       lastScore <- score_log
+      bestTheta <- self$getTheta()
+      bestCompute <- tempSa
       for (i in 1:maxSteps) {
         if (verbose) {
           cat(paste0("Starting next type of step: ", if (private$lastTandemStep == "b") "Y-Intercepts" else "Boundaries", "\n"))
@@ -666,9 +683,11 @@ MultilevelModelReferenceCalibrator <- R6Class(
         fr$startStep(verbose = verbose)
         
         frTandem <- self$fit_tandem(
-          nestedParallel = nestedParallel, updateThetaAfter = TRUE,
+          nestedParallel = nestedParallel,
+          updateThetaAfter = TRUE,
           methodRefBounds = methodRefBounds,
           methodRefYIntercepts = methodRefYIntercepts)
+        
         # Note the last step was setting the theta, but the computation
         # is missing. The computation is necessary to actually update
         # the reference data.
@@ -676,7 +695,12 @@ MultilevelModelReferenceCalibrator <- R6Class(
         score <- private$scoreAggCallback(tempSa)
         score_log <- -log(score)
         fr$stopStep(
-          resultParams = c(score, score_log, self$getTheta()), verbose = verbose)
+          resultParams = c(
+            stats::AIC(self), # classic AIC
+            self$AICc(countAllObs = FALSE),
+            stats::BIC(self),
+            self$BICc(),
+            score, score_log, self$getTheta()), verbose = verbose)
         
         if (is.function(callback)) {
           callback(fr)
@@ -687,13 +711,60 @@ MultilevelModelReferenceCalibrator <- R6Class(
             ((lastScore - score_log) < stopIfImproveBelow)) {
           break
         }
+        
+        if (score_log < lastScore) {
+          bestTheta <- self$getTheta()
+          bestCompute <- tempSa
+        }
+        
         lastScore <- score_log
       }
       
+      # Set compute-result to best fit and also update all params:
+      self$setTheta(theta = bestTheta)
+      private$computeResult <- bestCompute
+      
       fr$finish()
+    },
+    
+    logLik = function(countAllObs = FALSE) {
+      stopifnot(R6::is.R6(private$computeResult))
+      ll <- log(private$scoreAggCallback(private$computeResult))
+      attr(ll, "df") <- self$npar()
+      attr(ll, "nobs") <- self$nobs(countAllObs = countAllObs)
+      ll
+    },
+    
+    npar = function() {
+      self$numParams
+    },
+    
+    nobs = function(countAllObs = FALSE) {
+      self$mlm$nobs(countAllObs = countAllObs)
+    },
+    
+    AICc = function(countAllObs = FALSE) {
+      aic <- stats::AIC(self)
+      k <- self$npar()
+      n <- self$nobs(countAllObs = countAllObs)
+      denom <- n - k - 1
+      if (denom == 0) {
+        denom <- .Machine$double.eps
+      }
+      aic + ((2 * k^2 + 2 * k) / denom)
+    },
+    
+    BICc = function() {
+      stats::AIC(self, k = log(self$nobs(countAllObs = TRUE)))
     }
   )
 )
+
+#' S3-method for the logLik()-method of an MLM.
+logLik.MultilevelModelReferenceCalibrator <- function(mlmrc, ...) mlmrc$logLik(...)
+
+#' S3-method for the nobs()-method of an MLM.
+nobs.MultilevelModelReferenceCalibrator <- function(mlmrc, ...) mlmrc$nobs(...)
 
 
 
@@ -1217,7 +1288,7 @@ MultilevelModel <- R6Class(
     ) {
       stopifnot(self$validateLinIneqConstraints())
       
-      histCols <- c("begin", "end", "duration", "score_raw", "score_log", colnames(self$boundaries))
+      histCols <- c("begin", "end", "duration", "AIC", "AICc", "BIC", "BICc", "score_raw", "score_log", colnames(self$boundaries))
       fitHist <- matrix(nrow = 0, ncol = length(histCols))
       colnames(fitHist) <- histCols
       
@@ -1252,7 +1323,12 @@ MultilevelModel <- R6Class(
         
         if (!isGrad) {
           fitHist <<- rbind(fitHist, c(
-            begin, finish, finish - begin, score_raw, score_log, x
+            begin, finish, finish - begin,
+            stats::AIC(self),
+            self$AICc(countAllObs = FALSE),
+            stats::BIC(self),
+            self$BICc(),
+            score_raw, score_log, x
           ))
         }
         
