@@ -1439,7 +1439,7 @@ stat_diff_custom_score <- function(callback, ...) {
   # This is UTMOST important, as otherwise, the scope might not
   # be longer accessible at later run-time!
   useArgs <- list(...)
-  stopifnot(all(argNames %in% names(useArgs)))
+  stopifnot(length(useArgs) == 0 || all(argNames %in% names(useArgs)))
   
   
   return(function(f1, f2) {
