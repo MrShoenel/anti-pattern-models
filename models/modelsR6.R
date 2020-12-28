@@ -1203,7 +1203,18 @@ MultilevelModel <- R6Class(
     },
     
     
-    fit = function(verbose = FALSE, reltol = sqrt(.Machine$double.eps), method = c("Nelder-Mead", "BFGS", "SANN")[1], forceSeq = NULL) {
+    #' Fits this MLM, meaning that a search for the best boundaries is performed.
+    #' 'Best' refers to the state, where the aggregated score from all sub-models
+    #' is maximized.
+    #' 
+    #' @note After this method is done, it sets the boundaries and the internal
+    #' compute-result NOT to the last, but to the best fit, as one would expect.
+    #' This means that the MLM's state is altered, and it is necessary for, e.g.,
+    #' the AIC and BIC to work properly.
+    fit = function(
+      verbose = FALSE, reltol = sqrt(.Machine$double.eps),
+      method = c("Nelder-Mead", "BFGS", "SANN")[1], forceSeq = NULL
+    ) {
       stopifnot(self$validateLinIneqConstraints())
       
       histCols <- c("begin", "end", "duration", "score_raw", "score_log", colnames(self$boundaries))
@@ -1215,6 +1226,8 @@ MultilevelModel <- R6Class(
         cArgs[["forceSeq"]] <- forceSeq
       }
       
+      scoreAgg_best <- NA
+      score_raw_best <- 0
       
       objF <- function(x, isGrad = FALSE) {
         if (verbose && !isGrad) {
@@ -1223,15 +1236,19 @@ MultilevelModel <- R6Class(
           }), collapse = ", ")))
         }
         
-        for (idx in 1:length(x)) {
-          self$setBoundary(indexOrName = idx, value = x[idx])
-        }
+        self$setAllBoundaries(values = x)
         
         begin <- as.numeric(Sys.time())
         scoreAgg <- do.call(what = self$compute, args = cArgs)
         score_raw <- private$scoreAggCallback(scoreAgg)
         score_log <- -log(score_raw)
         finish <- as.numeric(Sys.time())
+        
+        # Let's update the compute-result: we set it to the current best
+        if (!R6::is.R6(scoreAgg_best) || (score_raw > score_raw_best)) {
+          scoreAgg_best <- scoreAgg
+          score_raw_best <- score_raw
+        }
         
         if (!isGrad) {
           fitHist <<- rbind(fitHist, c(
@@ -1267,6 +1284,10 @@ MultilevelModel <- R6Class(
         }
       )
       finishOpt <- as.numeric(Sys.time())
+      
+      # Set compute-result to best fit and also update boundaries:
+      private$computeResult <- scoreAgg_best
+      self$setAllBoundaries(values = optR$par)
       
       list(
         begin = beginOpt,
