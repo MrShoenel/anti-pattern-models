@@ -149,6 +149,8 @@ Let's plot the original data (note that we take the negative y-values to conform
 
 ```{r}
 library(ggplot2)
+library(tikzDevice)
+options(tikzLatexPackages = c(getOption("tikzLatexPackages"),"\\usepackage{amsmath}", "\\usepackage{amsfonts}"))
 
 ggplot(data = fd_data_concat, aes(x = x, y = y, color = t)) +
   geom_line() +
@@ -703,6 +705,76 @@ Here's a plot that depicts the -log score during optimization:
 ```{r}
 plot(resFit$fitHist[, "score_log"], type="l")
 ```
+
+Let's try this as ggplot, and also plot the boundaries' course:
+
+```{r}
+QPAL <- "Set1"
+QPAL_Brewer <- scales::brewer_pal(type = "div", palette = QPAL)
+QPAL_Colors <- QPAL_Brewer(n = 9)
+
+
+resFitFh <- as.data.frame(resFit$fitHist)
+resFitFh$step <- 1:nrow(resFitFh)
+plot_resFitScoreLog <- ggplot(data = resFitFh, aes(x = step)) +
+  geom_line(aes(y = score_log)) +
+  scale_x_continuous(breaks = seq(0, nrow(resFitFh), by = 100), labels = seq(0, nrow(resFitFh), by = 100), minor_breaks = seq(0, nrow(resFitFh), by = 50)) +
+  theme_light(base_size = 10) +
+  xlab("Optimization step") +
+  ylab("$-\\ln{\\text(score\\char`_raw)}$") +
+  theme(
+    axis.title.x = element_text(margin = margin(t=4), size = 8),
+    axis.title.y = element_text(margin = margin(r=4), size = 8))
+plot_resFitScoreLog
+```
+
+```{r}
+tikzDevice::tikz(file = "resFitScoreLog.tex", width = 3.46, height = 2.7)
+plot_resFitScoreLog
+dev.off()
+```
+
+
+```{r}
+resFitBounds <- data.frame(
+  x = rep(resFitFh$step, 3),
+  y = c(resFitFh$b1, resFitFh$b2, resFitFh$b3),
+  Boundary = c(rep("Boundary 1", nrow(resFitFh)), rep("Boundary 2", nrow(resFitFh)), rep("Boundary 3", nrow(resFitFh)))
+)
+resFitBounds$Boundary <- factor(x = resFitBounds$Boundary, levels = rev(sort(unique(resFitBounds$Boundary))), ordered = TRUE)
+
+plot_resFitBounds <- ggplot(data = resFitBounds, aes(x = x, y = y, color = Boundary)) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(0, nrow(resFitBounds), by = 100), labels = seq(0, nrow(resFitBounds), by = 100), minor_breaks = seq(0, nrow(resFitBounds), by = 50)) +
+  facet_wrap(Boundary ~., ncol = 1, scales = "free_y") +
+  theme_light(base_size = 10) +
+  scale_color_brewer(palette = QPAL) +
+  xlab("Optimization step") + ylab("Boundary position") +
+  theme(
+    axis.title.x = element_text(margin = margin(t=4), size = 8),
+    axis.title.y = element_text(margin = margin(r=4), size = 8),
+    legend.position = "bottom",
+    legend.margin = margin(-5, 0, 0, 0),
+    strip.background = element_rect(fill="#dfdfdf"),
+    strip.text = element_text(color="black", size = 6, margin = margin(b=1.5, t=1.5)))
+plot_resFitBounds
+```
+
+```{r}
+tikzDevice::tikz(file = "resFitBounds.tex", width = 3.46, height = 2.7)
+plot_resFitScoreLog
+dev.off()
+```
+
+```{r}
+tikzDevice::tikz(file = "resFit.tex", width = 3.46, height = 3.6)
+ggpubr::ggarrange(
+  plot_resFitScoreLog + theme(axis.title.x = element_blank()),
+  plot_resFitBounds,
+  ncol = 1, heights = c(1,2.25), common.legend = TRUE, legend = "bottom")
+dev.off()
+```
+
 
 
 ```{r}
