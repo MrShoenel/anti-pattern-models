@@ -1373,47 +1373,133 @@ mlmTandem$linIneqs <- adjMlm$linIneqs[, ]
 mlmTandem$validateLinIneqConstraints()
 
 
-create_stage1_tandem <- function() {
-  s1 <- Stage1NoModel$new(approxRefFun = TRUE, approxQueryFun = TRUE)
-  s1$setYLimitsRef(yLimits = "self")$setYLimitsQuery(yLimits = "self") }
-create_stage2_tandem <- function() {
-  s2 <- Stage2$new()
-  s2$addScoreMethod(name = "Area", scoreMethod = area_diff_2_functions_score()) }
-create_sm_tandem <- function(smProto) {
-  sm <- smProto$clone()
-  sm$stage1 <- create_stage1_tandem()
-  sm$stage2 <- create_stage2_tandem()
-  sm }
+#### NEW!
+# We need TWO MLMs: the ordinary one that is a clone of the adjusted MLM,
+# which will be used for fitting the reference boundaries. Then, we need
+# a second MLM with sub-models that are more suitable for fitting the Y-
+# intercepts.
+#
+# Below, we first finish defining the first MLM:
 
+stage2_special_tandem <- stage2_special$clone(deep = TRUE)
+stage2_special_tandem$addScoreMethod(
+  name = "Area", scoreMethod = area_diff_2_functions_score())
+stage2_special_tandem$addScoreMethod(
+  name = "Angle", scoreMethod = stat_diff_2_functions_lm_score(
+    expectAngleDeg = 0, numSamples = 1e3))
+
+stage2_ordinary_tandem <- stage2_ordinary$clone(deep = TRUE)
+stage2_ordinary_tandem$addScoreMethod(
+  name = "Area", scoreMethod = area_diff_2_functions_score())
 
 # We use the same sub-models with their same weight.
 mlmTandem$setAllSubModels(
-  create_sm_tandem(adj_sm_A_Begin),
-  create_sm_tandem(adj_sm_CP_Begin),
-  create_sm_tandem(adj_sm_FREQ_Begin),
-  create_sm_tandem(adj_sm_SCD_Begin))
+  adj_sm_A_Begin$clone()$setStage2(stage2_special_tandem),
+  adj_sm_CP_Begin$clone()$setStage2(stage2_special_tandem),
+  adj_sm_FREQ_Begin$clone()$setStage2(stage2_special_tandem),
+  adj_sm_SCD_Begin$clone()$setStage2(stage2_special_tandem))
 mlmTandem$setAllSubModels(
-  create_sm_tandem(adj_sm_A_LongStretch),
-  create_sm_tandem(adj_sm_CP_LongStretch),
-  create_sm_tandem(adj_sm_FREQ_LongStretch),
-  create_sm_tandem(adj_sm_SCD_LongStretch))
+  adj_sm_A_LongStretch$clone()$setStage2(stage2_ordinary_tandem),
+  adj_sm_CP_LongStretch$clone()$setStage2(stage2_ordinary_tandem),
+  adj_sm_FREQ_LongStretch$clone()$setStage2(stage2_ordinary_tandem),
+  adj_sm_SCD_LongStretch$clone()$setStage2(stage2_ordinary_tandem))
 mlmTandem$setAllSubModels(
-  create_sm_tandem(adj_sm_A_FireDrill),
-  create_sm_tandem(adj_sm_CP_FireDrill),
-  create_sm_tandem(adj_sm_FREQ_FireDrill),
-  create_sm_tandem(adj_sm_SCD_FireDrill))
+  adj_sm_A_FireDrill$clone()$setStage2(stage2_special_tandem),
+  adj_sm_CP_FireDrill$clone()$setStage2(stage2_special_tandem),
+  adj_sm_FREQ_FireDrill$clone()$setStage2(stage2_special_tandem),
+  adj_sm_SCD_FireDrill$clone()$setStage2(stage2_special_tandem))
 mlmTandem$setAllSubModels(
-  create_sm_tandem(adj_sm_A_Aftermath),
-  create_sm_tandem(adj_sm_CP_Aftermath),
-  create_sm_tandem(adj_sm_FREQ_Aftermath),
-  create_sm_tandem(adj_sm_SCD_Aftermath))
-
+  adj_sm_A_Aftermath$clone()$setStage2(stage2_special_tandem),
+  adj_sm_CP_Aftermath$clone()$setStage2(stage2_special_tandem),
+  adj_sm_FREQ_Aftermath$clone()$setStage2(stage2_special_tandem),
+  adj_sm_SCD_Aftermath$clone()$setStage2(stage2_special_tandem))
 mlmTandem$setSubModel(model = sm_meta)
+
+
+#### NEW!
+# Create a new kind of stage 1 that creates 2 functions that
+# are the LM of their input functions.
+Stage1LM <- R6Class(
+  "Stage1LM",
+  inherit = Stage1NoModel,
+  lock_objects = FALSE,
+  public = list(
+    initialize = function() {
+      super$initialize(approxRefFun = TRUE, approxQueryFun = TRUE)
+      
+      self$setYLimitsRef(yLimits = "self")
+      self$setYLimitsQuery(yLimits = "self")
+    },
+    
+    compute = function() {
+      s1nmr <- super$compute()
+      
+      # Update our Sub-Model's weight!
+      private$subModel$setWeight(
+        weight = sqrt(
+          private$subModel$getMLM()$getCurrentIntervalRange(
+            intervalIndexOrName = private$subModel$intervalName)))
+      
+      # Get the 2 LMs of the approximated functions:
+      templm <- stat_diff_2_functions_lm(s1nmr$fnRef, s1nmr$fnQuery)
+      
+      # Now create functions from these LMs:
+      c1 <- stats::coef(templm$value$lm1)
+      f1 <- stats::approxfun(x = c(0,1), y = c(c1[[1]], c1[[1]] + c1[[2]]))
+      c2 <- stats::coef(templm$value$lm2)
+      f2 <- stats::approxfun(x = c(0,1), y = c(c2[[1]], c2[[1]] + c2[[2]]))
+      # Last step is to replace these functions in current results:
+      
+      s1nmr$fnRef <- f1
+      s1nmr$fnQuery <- f2
+      s1nmr
+    }
+  )
+)
+
+# Now for the second MLM.
+mlmTandemForRefY <- mlmTandem$clone(deep = TRUE)
+
+create_stage2_tandem_refY <- function() {
+  s2 <- Stage2$new()
+  s2$addScoreMethod(name = "Area_custom", scoreMethod = stat_diff_custom_score(
+    callback = function(f1, f2) {
+      # ^.5 to make it a bit more sensitive
+      1 - sqrt(area_diff_2_functions(f1 = f1, f2 = f2)$value) } )) }
+create_sm_tandem_refY <- function(smProto) {
+  sm <- smProto$clone()
+  sm$setStage1(stage1 = Stage1LM$new())
+  sm$setStage2(stage2 = create_stage2_tandem_refY())
+  sm$setWeight(weight = 1) }
+
+# We use the same sub-models with their same weight.
+mlmTandemForRefY$setAllSubModels(
+  create_sm_tandem_refY(adj_sm_A_Begin),
+  create_sm_tandem_refY(adj_sm_CP_Begin),
+  create_sm_tandem_refY(adj_sm_FREQ_Begin),
+  create_sm_tandem_refY(adj_sm_SCD_Begin))
+mlmTandemForRefY$setAllSubModels(
+  create_sm_tandem_refY(adj_sm_A_LongStretch),
+  create_sm_tandem_refY(adj_sm_CP_LongStretch),
+  create_sm_tandem_refY(adj_sm_FREQ_LongStretch),
+  create_sm_tandem_refY(adj_sm_SCD_LongStretch))
+mlmTandemForRefY$setAllSubModels(
+  create_sm_tandem_refY(adj_sm_A_FireDrill),
+  create_sm_tandem_refY(adj_sm_CP_FireDrill),
+  create_sm_tandem_refY(adj_sm_FREQ_FireDrill),
+  create_sm_tandem_refY(adj_sm_SCD_FireDrill))
+mlmTandemForRefY$setAllSubModels(
+  create_sm_tandem_refY(adj_sm_A_Aftermath),
+  create_sm_tandem_refY(adj_sm_CP_Aftermath),
+  create_sm_tandem_refY(adj_sm_FREQ_Aftermath),
+  create_sm_tandem_refY(adj_sm_SCD_Aftermath))
+# Note we don't have a meta-model here!
 ```
 
 
 ```{r}
-mlmrcTandem <- MultilevelModelReferenceCalibrator$new(mlm = mlmTandem)
+mlmrcTandem <- MultilevelModelReferenceCalibrator$new(
+  mlm = mlmTandem, mlmYInterceptFit = mlmTandemForRefY)
 # Use these so we can start fitting Y
 mlmrcTandem$theta[names(adj_resFit$optResult$par)] <- adj_resFit$optResult$par
 mlmrcTandem$copyBoundaryConstraints()
@@ -1421,16 +1507,47 @@ mlmrcTandem$addDefaultVariableYConstraints()
 mlmrcTandem$sourceFiles <- c(mlmTandem$sourceFiles)
 ```
 
-```{r}
-resTandem <- loadResultsOrCompute(file = "../results/resTandem.rds", computeExpr = {
-  doWithParallelCluster(expr = {
-    mlmrcTandem$fit_tandem_iter(
-      verbose = TRUE, maxSteps = 10,
-      stopIfImproveBelow = 1e-5,
-      beginStep = "y", nestedParallel = 8)
-  })
+```{r tandem}
+# We have run below code in 4 different configurations (w.r.t. the optimization algorithms),
+# and the best one is NM-NM, which we load instead of running this code here:
+resTandem <- readRDS(file = "../results/resTandem_NMNM.rds")
+
+fh <- resTandem$getFitHist()
+fhBest <- which.min(fh[, "score_log"])
+thetaBest <- fh[fhBest, names(mlmrcTandem$getTheta())]
+mlmrcTandem$setTheta(theta = thetaBest)
+saMlmrcTandem <- doWithParallelCluster({
+  mlmrcTandem$compute()
 })
+round(fh[fhBest, 3:5], 6)
+
+# resTandem <- loadResultsOrCompute(file = "../results/resTandem.rds", computeExpr = {
+#   doWithParallelCluster(expr = {
+#     mlmrcTandem$fit_tandem_iter(
+#       verbose = TRUE, maxSteps = 10,
+#       #stopIfImproveBelow = 1e-5,
+#       stopIfImproveBelow = -1, # disables it
+#       beginStep = "y", nestedParallel = 16,
+#       methodRefBounds = "Nelder-Mead",
+#       methodRefYIntercepts = "BFGS",
+#       callback = function(fr) {
+#         saveRDS(fr, file = paste0("../results/resTandem_fr_", as.numeric(Sys.time()), ".rds"))
+#       })
+#   }, numCores = 8)
+# })
 ```
+
+```{r}
+mlmrcTandem$mlm$plot(showQueryDataSeries = NA, showCalibratedBoundaries = FALSE)
+```
+
+
+
+
+### Option 2: Partially replace existing pattern
+
+
+### Option 3: Fully replace existing pattern
 
 
 
@@ -1489,12 +1606,6 @@ plot(x=xyData$x, y=yData_new)
 
 
 
-
-
-### Option 2: Partially replace existing pattern
-
-
-### Option 3: Fully replace existing pattern
 
 
 ## Using the pattern to find current progress of it in a project
