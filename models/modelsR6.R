@@ -876,7 +876,7 @@ MultilevelModel <- R6Class(
       self$scoreRef <- NA
       
       private$scoreAggCallback <- scoreAggCallback
-      private$lastComputeResult <- NA
+      private$computeResult <- NA
       
       
       # Can be written to from outside. These files will be
@@ -1367,13 +1367,13 @@ MultilevelModel <- R6Class(
           name = smAgg$prefix, value = private$scoreAggCallback(smAgg), weight = sm$weight))
       })
       
-      private$lastComputeResult <- sa
+      private$computeResult <- sa
       sa
     },
     
     logLik = function(countAllObs = FALSE) {
-      stopifnot(R6::is.R6(private$lastComputeResult))
-      ll <- log(private$scoreAggCallback(private$lastComputeResult))
+      stopifnot(R6::is.R6(private$computeResult))
+      ll <- log(private$scoreAggCallback(private$computeResult))
       attr(ll, "df") <- self$npar()
       attr(ll, "nobs") <- self$nobs(countAllObs = countAllObs)
       ll
