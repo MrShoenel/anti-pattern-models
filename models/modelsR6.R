@@ -1371,6 +1371,48 @@ MultilevelModel <- R6Class(
       sa
     },
     
+    logLik = function(countAllObs = FALSE) {
+      stopifnot(R6::is.R6(private$lastComputeResult))
+      ll <- log(private$scoreAggCallback(private$lastComputeResult))
+      attr(ll, "df") <- self$npar()
+      attr(ll, "nobs") <- self$nobs(countAllObs = countAllObs)
+      ll
+    },
+    
+    npar = function() {
+      self$numBoundaries
+    },
+
+    nobs = function(countAllObs = FALSE) {
+      nobs <- 0
+      for (series in names(self$queryData)) {
+        qd <- self$queryData[[series]]
+        tb <- table(qd$t)
+        tb <- tb[tb > 0]
+        if (countAllObs) {
+          nobs <- nobs + sum(tb)
+        } else {
+          nobs <- nobs + length(names(tb))
+        }
+      }
+      nobs
+    },
+    
+    AICc = function(countAllObs = FALSE) {
+      aic <- stats::AIC(self)
+      k <- self$npar()
+      n <- self$nobs(countAllObs = countAllObs)
+      denom <- n - k - 1
+      if (denom == 0) {
+        denom <- .Machine$double.eps
+      }
+      aic + ((2 * k^2 + 2 * k) / denom)
+    },
+    
+    BICc = function() {
+      stats::AIC(self, k = log(self$nobs(countAllObs = TRUE)))
+    },
+    
     plot = function(showQueryDataSeries = "ALL", showBoundaries = FALSE, showRefBoundaries = TRUE, showCalibratedBoundaries = TRUE) {
       hasQds <- is.character(showQueryDataSeries) && showQueryDataSeries %in% names(self$queryData)
       
@@ -1420,8 +1462,12 @@ MultilevelModel <- R6Class(
     }
   )
 )
-MultilevelModel$undebug("compute")
-MultilevelModel$undebug("fit")
+
+#' S3-method for the logLik()-method of an MLM.
+logLik.MultilevelModel <- function(mlm, ...) mlm$logLik(...)
+
+#' S3-method for the nobs()-method of an MLM.
+nobs.MultilevelModel <- function(mlm, ...) mlm$nobs(...)
 
 
 
