@@ -87,7 +87,10 @@ MultilevelModelReferenceCalibrator <- R6Class(
   ),
   
   public = list(
-    initialize = function(mlm, scoreAggCallback = function(sa) sa$aggregateUsing_Honel()) {
+    initialize = function(
+      mlm, scoreAggCallback = function(sa) sa$aggregateUsing_Honel(),
+      mlmYInterceptFit = NA
+    ) {
       stopifnot(inherits(mlm, "MultilevelModel") && R6::is.R6(mlm))
       stopifnot(is.matrix(mlm$boundariesCalibrated) && !any(is.na(mlm$boundariesCalibrated)))
       stopifnot(is.function(scoreAggCallback) && length(methods::formalArgs(scoreAggCallback)) == 1)
@@ -128,10 +131,18 @@ MultilevelModelReferenceCalibrator <- R6Class(
       self$refTheta <- theta
       colnames(self$linIneqs) <- c(names(theta), "CI")
       
+      self$setMLMforRef_YInterceptFit(mlm = mlmYInterceptFit)
+      
       
       # Can be written to from outside. These files will be
       # sourced in the parallel foreach loop.
       self$sourceFiles <- c()
+    },
+    
+    setMLMforRef_YInterceptFit = function(mlm = NA) {
+      stopifnot((inherits(mlm, "MultilevelModel") && R6::is.R6(mlm)) || is.na(mlm))
+      self$mlmYIntercepts <- mlm
+      invisible(self)
     },
     
     resetTheta = function() {
@@ -484,7 +495,7 @@ MultilevelModelReferenceCalibrator <- R6Class(
       unlist(varFrs)
     },
     
-    fit_variable = function(name, verbose = FALSE, method = c("Nelder-Mead", "BFGS", "SANN")[1], forceSeq = NULL) {
+    fit_variable = function(name, ignoreOtherVars = TRUE, ignoreMetaModels = TRUE, verbose = FALSE, method = c("BFGS", "Nelder-Mead", "SANN")[1], forceSeq = NULL) {
       refVars <- levels(self$refData$t)
       stopifnot(name %in% refVars)
       
@@ -498,12 +509,39 @@ MultilevelModelReferenceCalibrator <- R6Class(
       # constant over time.
       mlmrc <- self$clone(deep = TRUE)
       
+      # It could be that we have an extra configured MLM just for this
+      # task of fitting the Y-Intercepts. If this is the case, then we
+      # will copy over all of its sub-models and replace the one of the
+      # default MLM.
       mlmV <- mlmrc$mlm
-      mlmVModels <- mlmV$getSubModelsInUse()
-      rmModels <- mlmVModels[!grepl(pattern = paste0(name, "_"), x = mlmVModels)]
-      for (rmModel in rmModels) {
-        mlmV$removeSubModel(mlmV$getSubModel(name = rmModel))
+      
+      if (R6::is.R6(mlmrc$mlmYIntercepts)) {
+        if (verbose) {
+          cat("Using extra MLM for Y-intercepts.\n")
+        }
+        # First, let's remove all sub-models:
+        for (smName in mlmV$getSubModelsInUse(
+          includeOrdinarySubModels = TRUE, includeMetaSubModels = TRUE)) {
+          mlmV$removeSubModel(model = mlmV$getSubModel(name = smName))
+        }
+        # .. then, add those from the extra model:
+        for (smName in mlmrc$mlmYIntercepts$getSubModelsInUse(
+          includeOrdinarySubModels = TRUE, includeMetaSubModels = TRUE)) {
+          mlmV$setSubModel(model = mlmrc$mlmYIntercepts$getSubModel(name = smName))
+        }
       }
+      
+      # Let's conditionally remove unwanted sub-models:
+      if (ignoreOtherVars || ignoreMetaModels) {
+        mlmVModels <- mlmV$getSubModelsInUse(
+          includeOrdinarySubModels = ignoreOtherVars, includeMetaSubModels = ignoreMetaModels)
+        rmModels <- mlmVModels[!grepl(pattern = paste0(name, "_"), x = mlmVModels)]
+        
+        for (rmModel in rmModels) {
+          mlmV$removeSubModel(mlmV$getSubModel(name = rmModel))
+        }
+      }
+      
       
       # Now that we have our stripped-down model, let's also strip
       # down the constraints to those we actually need. The names of
@@ -829,6 +867,7 @@ MultilevelModel <- R6Class(
       self$scoreRef <- NA
       
       private$scoreAggCallback <- scoreAggCallback
+      private$lastComputeResult <- NA
       
       
       # Can be written to from outside. These files will be
@@ -1319,6 +1358,7 @@ MultilevelModel <- R6Class(
           name = smAgg$prefix, value = private$scoreAggCallback(smAgg), weight = sm$weight))
       })
       
+      private$lastComputeResult <- sa
       sa
     },
     
