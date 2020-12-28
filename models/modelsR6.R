@@ -1568,13 +1568,12 @@ SubModel <- R6Class(
   public = list(
     initialize = function(varName, intervalName, referenceData = NA, weight = 1) {
       stopifnot(all(is.character(c(varName, intervalName))))
-      stopifnot(is.numeric(weight) || weight >= 0 || weight <= 1)
       
+      self$setWeight(weight = weight)
       self$varName <- varName
       self$intervalName <- intervalName
       self$name <- paste(varName, intervalName, sep = "_")
       self$setReferenceData(referenceData = referenceData)
-      self$weight <- weight
       
       # A reference to the MLM, to be set by it
       private$mlm <- NA
@@ -1582,6 +1581,12 @@ SubModel <- R6Class(
     
     isMetaModel = function() {
       FALSE
+    },
+    
+    setWeight = function(weight = 1) {
+      stopifnot(is.numeric(weight) || weight >= 0 || weight <= 1)
+      self$weight <- weight
+      invisible(self)
     },
     
     setMLM = function(mlm = NA) {
