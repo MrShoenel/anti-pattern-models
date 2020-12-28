@@ -2376,6 +2376,10 @@ Stage2Rectifier <- R6Class(
       
       
       
+      # first, let's compute ordinary scores:
+      self$scoreAgg$flushRawScores()
+      super$computeScores(stage1Result = stage1Result)
+      
       ex <- stage1Result$ex
       paw <- stage1Result$paw
       dtwFuncs <- stage1Result$dtwFuncs
@@ -2501,8 +2505,7 @@ Stage2Rectifier <- R6Class(
         aggregateSubScores("f_ref_warp-vs-f_query_warp", refVsQueryMethods, f1, f2)
       }
       
-      # finally, also compute ordinary scores:
-      super$computeScores()
+      self$scoreAgg
     }
   )
 )
