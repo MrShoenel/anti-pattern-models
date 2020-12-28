@@ -1395,14 +1395,14 @@ MultilevelModel <- R6Class(
       for (bName in colnames(self$boundaries)) {
         if (showBoundaries && !any(is.na(self$boundaries[1, bName]))) {
           plot_fullPattern <- plot_fullPattern +
-            geom_vline(xintercept = self$boundaries[1, bName], color = "blue", size = .4)
+            geom_vline(xintercept = self$boundaries[1, bName], color = "red", size = .4)
         }
       }
       
       for (i in 1:length(self$refBoundaries)) {
         if (showRefBoundaries && !any(is.na(self$refBoundaries))) {
           plot_fullPattern <- plot_fullPattern +
-            geom_vline(xintercept = self$getBoundary(indexOrName = i), color = "green", size = .4)
+            geom_vline(xintercept = self$getBoundary(indexOrName = i), color = "black", size = .4)
           
         }
       }
@@ -1410,7 +1410,7 @@ MultilevelModel <- R6Class(
       if (showCalibratedBoundaries && !any(is.na(self$boundariesCalibrated))) {
         for (bName in colnames(self$boundariesCalibrated)) {
           plot_fullPattern <- plot_fullPattern +
-            geom_vline(xintercept = self$boundariesCalibrated[1, bName], color = "red", size = .6)
+            geom_vline(xintercept = self$boundariesCalibrated[1, bName], color = "purple", size = .6)
         }
       }
       
