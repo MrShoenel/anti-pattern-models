@@ -1,6 +1,23 @@
 ---
 title: "Boundary Time Warping"
-output: html_notebook
+bibliography: ../inst/REFERENCES.bib
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  word_document: default
 ---
 
 
@@ -8,15 +25,135 @@ output: html_notebook
 
 We have previously developed the Multilevel-Model, sub-models and stages that allow us to warp a query to a reference, by moving boundaries around. Our only option was to try some boundaries, then use DTW to rectify the query within, and to calculate an error subsequently. DTW itself uses dynamic programming, and it is not differentiable. That means that our entire model is not differentiable, even if the metrics or scores were.
 
-We introduce a new algorithm, __Boundary Time Warping__, which has the following features:
+We introduce a new algorithm, __Boundary Time Warping__. Given a reference signal that we want to align a query signal to, the idea is to subdivide the query signal into arbitrary many sub-intervals (no equal spacing required), and then to alter the extent of each interval during optimization, such that the warped query is becoming closest to the reference signal. For each interval, we obtain a set of parameters that is used to locally translate and scale the query. After convergence, these adjusted parameters are then used to build a warping path that is minimal w.r.t. the chosen cost function. The section captured in each interval of the query signal is constant, the boundaries are only used for translation and scaling. For a given $x$, the model determines which interval (given the currently used warp-boundaries) it falls into, then selects the corresponding scaling- and translation parameters and returns a warped $y$.
+
+
+## Features of BTW
+
+__BTW__ has the following features:
 
 BTW is differentiable, as it relies on the given signal being differentiable. It works both with continuous and discrete signals. In most cases, the given signal is not a function, but rather a discrete vector of values. In these cases, a numerical gradient and Hessian can be computed. If the given signal is analytically differentiable however, then this will increase the precision of the gradient and the Hessian.
 
 BTW can be fit using gradient-based and (quasi-)Newtonian methods. Below, we will do some tests of what works best using a synthetic and a random signal.
 
-BTW allows to use virtually any error function, while DTW does not not and always only optimizes for the shortest distance between two signals. This is often needed, but not always. Also, BTW allows to combine any number of (weighted) error functions for optimization, such that more than one optimization goal may be pursued. An important property is also that we can perform _maximization_ with BTW -- this may be useful in scenarios when we need to find an upper bound (scoring for example).
+BTW allows to use virtually any error function, while DTW does not and always only optimizes for the shortest distance between two signals. This is often needed, but not always. Also, BTW allows to combine any number of (weighted) error functions for optimization, such that more than one optimization goal may be pursued. An important property is also that we can perform _maximization_ with BTW -- this may be useful in scenarios when we need to find an upper bound (scoring for example).
 
 BTW can use arbitrary many boundaries/intervals, resulting in arbitrary warping precision. Also, boundaries do not need to be equally spaced, so that it is possible to capture sections with higher interest with more degrees of freedom. BTW is a classical optimization algorithm, so that information criteria may be computed. These can be used to find the optimal amount of boundaries or a trade-off between model complexity and generalizability.
+
+## Formal description of the model
+
+Each signal is modeled as a function over time, $\mathcal{X}$, such that $t(x),\,x\in\mathcal{X}$ returns the magnitude of the time series $t$ at $x$. The user may have an actual analytical function for their signal, or they choose to approximate it using, e.g., linear or spline interpolation.
+
+In the following, an arbitrary choice for the query boundaries, $\mathbf{\theta_q}$, is made. For example, one may choose a set of equidistantly-spaced boundaries. With an increasing amount of boundaries, the choice becomes less important. Then, the function representing the query signal, below $f(x)$, is subdivided into intervals according to the chosen boundaries. For each interval, we usually want to internally create a function that scales and translates $f(x)$, such that its support is $[0,1]$. That way later, we can comfortably compute $m(x,s,t)$. Computing the gradient will tell us how to move each boundary, effectively translating and scaling each captured interval. The model determines the correct interval (and hence the corresponding parameters $s,t$) by $x$.
+
+
+$$
+\begin{aligned}
+  r(x) &= \dots\;\text{, a function over the reference signal,}
+  \\
+  f(x) &= \dots\;\text{, a function over the query signal,}
+  \\[1em]
+  m(x,s,t) &= f(s\times (x-t))\;\text{, model that locally translates and scales the query,}
+  \\[1em]
+  \text{RSSC} &= \int_{\mathcal{X}} (f(x) - m(x,s,t))^2\;\text{, RSSC for continuous case,}
+  \\[1em]
+  \text{RSS} &= \sum_{i=1}^{N} (\mathbf{y}_i - m(x_i,s,t))^2\;\text{, RSS for discrete case,}
+  \\[1em]
+  \text{RSS}_m &= \Bigg[ \frac{\partial\;\text{RSS}_m}{\partial\;s}, \frac{\partial\;\text{RSS}_m}{\partial\;t} \Bigg]\;\text{,}
+  \\[1em]
+  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x)\times (\mathbf{y}_i-f(s\times (x_i-t)))\times f'(s\times (x_i-t))\;\text{,}
+  \\[1em]
+  \frac{\partial\;\text{RSS}_m}{\partial\;t} &= \sum_{i=1}^{N} 2s\times (\mathbf{y}_i - f(s\times(x_i-t)))\times f'(s\times(x_i-t))\text{.}
+\end{aligned}
+$$
+
+It becomes apparent, that we can use any error-function, if we were to pre-compute $\mathbf{\hat{y}}, \mathbf{\hat{y}}'$ and $\mathbf{\hat{y}}''$. The loss of the model requires $\mathbf{\hat{y}}$, the gradient additionally $\mathbf{\hat{y}}'$, and for the Hessian, we would additionally need $\mathbf{\hat{y}}''$. Pre-computing these vectors let's us plug in any error function effortlessly, i.e.,
+
+
+$$
+\begin{aligned}
+  \mathbf{\hat{y}}_{s,t} &= m(\mathbf{x},s,t)\;\text{,}
+  \\
+  &= f(s\times (\mathbf{x}-t))\;\text{, all y of the current model,}
+  \\[1em]
+  \mathbf{\hat{y}}'_{s,t} &= f'(s\times (\mathbf{x}-t))\;\text{, and}
+  \\
+  \mathbf{\hat{y}}''_{s,t} &= f''(s\times (\mathbf{x}-t))\;\text{,}
+  \\[1em]
+  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x)\times (\mathbf{y}_i-\mathbf{\hat{y}}^{s,t}_i)\times \mathbf{\hat{y}}'^{s,t}_i\text{.}
+\end{aligned}
+$$
+
+
+Let's make another example, using the Kullback-Leibler divergence. We will assume that $\mathbf{y},\mathbf{\hat{y}}$ represent vectors of discrete probabilities, each summing to $1$.
+
+
+$$
+\begin{aligned}
+  D_{\text{KL}}(P\,\|\,Q) &= \sum_{x\in \mathcal{X}} P(x) \log{\frac{P(x)}{Q(x)}}\;\text{, or, in our case,}
+  \\[1em]
+  &= \sum_{i=1}^{N} \mathbf{y}_i\log{\frac{\mathbf{y}_i}{f(s\times (x-t))}}\;\text{, using vectors:}
+  \\[1em]
+  &= \sum_{i=1}^{N} \mathbf{y}_i\log{\frac{\mathbf{y}_i}{\mathbf{\hat{y}}^{s,t}_i}}\;\text{; with the derivative for s being}
+  \\[1em]
+  \frac{\partial\;D_{\text{KL}_m}}{\partial\;s} &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\times (t-x)\times f'(s\times (x-t))}{f(s\times (x-t))}\;\text{, or, using vectors,}
+  \\[1em]
+  &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\,\mathbf{\hat{y}}'^{s,t}_i\times (t-x)}{\mathbf{\hat{y}}^{s,t}_i}\;\text{(notice the ' in the numerator).}
+\end{aligned}
+$$
+
+
+The 2nd derivative (differentiated here twice for $s$) would be:
+
+$$
+\begin{aligned}
+  \frac{\partial^2\;D_{\text{KL}_m}}{\partial^2\;s} &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\times (t-x)^2\times \Big( f'(s\times (x-t))^2 - f(s\times (x-t))\times f''(s\times (x-t))\Big)}{f(s\times (x-t))^2}\;\text{, or, using vectors,}
+  \\[1em]
+  &= \sum_{i=1}^{N} \mathbf{y}_i\times (t-x)^2\times\Big( \big(\mathbf{\hat{y}}\prime^{s,t}_i\big)^2\,-\;\mathbf{\hat{y}}^{s,t}_i\, \mathbf{\hat{y}}''^{s,t}_i \Big)\times\big(\mathbf{\hat{y}}^{s,t}_i\big)^{-2}\;\text{.}
+\end{aligned}
+$$
+
+
+So any once- or twice- (for Hessian-based optimization) -differentiable error function can be used.
+
+
+# Optimization of BTW
+
+BTW supports gradient-based optimization, and can optionally use a Hessian for Newton-based optimization. Theoretically, BTW does not need to constrain the boundaries, which could result in overlapping intervals. Also, the reference boundaries may chosen in a way such that the reference intervals would overlap. This is not something that DTW allows, and it is probably an unlikely use-case for BTW, too. However, we design BTW in a way that we leave this up to the user, as well as whether it makes sense for their scenario or not.
+
+While overlapping reference intervals are less critical, problems arise for when query intervals overlap, as then the model is not bijective any longer (i.e., $x$ falls into more than one interval, and hence we obtain a $y$ for each interval that applies). Again, we will let the user chose how to deal with such cases that break bijection, using some decision function that picks or derives a single $\hat{y}\in\mathbf{\hat{y}}$. In general, _constrained optimization_ should be chosen, with constraints that ensure that any boundary $b_n<b_{n+1}$.
+
+
+## Minimization and maximization
+
+
+## Finding the optimal amount of boundaries
+
+Since we have a classical statistical model that produces a likelihood $\mathcal{L}$ for a given set of parameters $\mathbf{\theta}$ (of which we know the cardinality), we can calculate some information criterion (such as `AIC`) and compare fitted models. Then, according to Occam's razor, we choose the one with the best trade-off between amount of parameters and log-likelihood.
+
+I could think of two ways, heuristically and using some kind of optimization. In the following, both are briefly described (I will expand on this later).
+
+
+### Heuristic search with Log2 runtime
+
+Very short description:
+
+* Start fitting two models with two differently sized sets of boundaries, where one set has double the cardinality of the other (i.e., $|S_a| = 2|S_b|$).
+* Choose set-sizes that are in some way appropriate to the length of the time-series, e.g., $10$ and $20$. I do believe that the initial choice is rather unimportant, and maybe we find a way to estimate a initial set strength $s$, such that $|S_a|=\frac{s}{2},\;|S_b|=s+\frac{s}{2}$.
+* Use an information criterion to compare which of the two models is a better fit.
+* Estimate two new models, one in between the two current sets, and one smaller or larger than the smaller/larger set (depending on which one is better).
+* Repeat until the information criterion does not signal further improvement or choices are exhausted (the solution space is discrete and final).
+
+Since we are basically halving the solution space in each step, this algorithm should converge in approximately Log2-time.
+
+
+### Hessian Boundary Pruning/Collapsing
+
+If we have twice-differentiable model- and error-functions, we can use the Hessian to jump to a set of boundaries that minimizes (or maximizes) the current model error. However, this method cannot facilitate any constraints, and may jump into an infeasible region, if the user does not allow overlapping intervals. We can use these overlaps to either prune or collapse boundaries that appear to be superfluous. After doing that, we fit the model again using the remaining boundaries. This process is repeated until the amount of boundaries remaining is minimized (i.e., the chosen information criterion does not signal an improvement of the model).
+
+Contrary to the previously proposed heuristic search, this method is only one-way, as it does not add new boundaries. It may be useful for reducing overfit that is introduced by using too many boundaries. It may be feasible to combine both methods, e.g., use this approach first to remove superfluous boundaries, then further optimize using the other approach.
+
+
 
 
 
