@@ -1,0 +1,147 @@
+---
+title: "Boundary Time Warping"
+output: html_notebook
+---
+
+
+# Boundary Time Warping
+
+We have previously developed the Multilevel-Model, sub-models and stages that allow us to warp a query to a reference, by moving boundaries around. Our only option was to try some boundaries, then use DTW to rectify the query within, and to calculate an error subsequently. DTW itself uses dynamic programming, and it is not differentiable. That means that our entire model is not differentiable, even if the metrics or scores were.
+
+We introduce a new algorithm, __Boundary Time Warping__, which has the following features:
+
+BTW is differentiable, as it relies on the given signal being differentiable. It works both with continuous and discrete signals. In most cases, the given signal is not a function, but rather a discrete vector of values. In these cases, a numerical gradient and Hessian can be computed. If the given signal is analytically differentiable however, then this will increase the precision of the gradient and the Hessian.
+
+BTW can be fit using gradient-based and (quasi-)Newtonian methods. Below, we will do some tests of what works best using a synthetic and a random signal.
+
+BTW allows to use virtually any error function, while DTW does not not and always only optimizes for the shortest distance between two signals. This is often needed, but not always. Also, BTW allows to combine any number of (weighted) error functions for optimization, such that more than one optimization goal may be pursued. An important property is also that we can perform _maximization_ with BTW -- this may be useful in scenarios when we need to find an upper bound (scoring for example).
+
+BTW can use arbitrary many boundaries/intervals, resulting in arbitrary warping precision. Also, boundaries do not need to be equally spaced, so that it is possible to capture sections with higher interest with more degrees of freedom. BTW is a classical optimization algorithm, so that information criteria may be computed. These can be used to find the optimal amount of boundaries or a trade-off between model complexity and generalizability.
+
+
+
+```{r}
+btwRef <- list(
+  x = seq(0, 1, length.out = 1e3),
+  y = sin(seq(0, pi, length.out = 1e3))
+)
+plot(btwRef, xlim = c(0,1), ylim = c(0,1), type = "l")
+```
+
+```{r}
+btwDist <- list(
+  x = c(
+    seq(0, .2, length.out = 1e2),
+    seq(.2, .5, length.out = 2e2),
+    seq(.5, .6, length.out = 3e2),
+    seq(.6, .8, length.out = 1e2),
+    seq(.8, 1, length.out = 3e2)
+  ),
+  y = sin(seq(0, pi, length.out = 1e3))
+)
+plot(btwDist, xlim = c(0,1), ylim = c(0,1), type = "l")
+```
+
+
+Let's define our boundaries: equally spaced in `[0,1]` (`0,1` are not included as we are trying closed begin/end time warping):
+
+```{r}
+btwBoundsRef <- seq(0.1, 0.9, by = 0.1)
+btwBoundsRef
+```
+
+```{r}
+btwRef_f <- stats::approxfun(x = btwRef$x, y = btwRef$y)
+
+btwXPrime <- function(br, boundsQuery, bqIdx) {
+  x <- seq(br - 0.1, br, length.out = 1e2) / 0.1 # slice out x, translate and scale
+  
+  start <- if (bqIdx == 1) 0 else boundsQuery[bqIdx - 1]
+  end <- if (bqIdx == length(boundsQuery)) 1 else boundsQuery[bqIdx]
+  ext <- end - start
+  
+  # x' is the scaled x + the offset
+  x * ext + start
+}
+```
+
+
+
+```{r}
+temp <- sin(seq(0, pi/1.5, length.out = 1e2))
+tempf <- approxfun(x = seq(0, 1, length.out = 1e2), y = temp)
+plot(temp)
+curve(tempf, 0, 1)
+curve(tempf, .75, 1)
+```
+
+```{r}
+offR <- .75
+endR <- 1
+offQ <- .50
+extQ <- .4
+trans <- offR - offQ
+scale <- 1 / (extQ / (endR - offR))
+
+tempf2 <- (function() {
+  function(x) {
+    tempf(((x - offQ) * scale) + offR)
+  }
+})()
+
+tempf3 <- (function() {
+  function(x) {
+    tempf(x * scale + offR)
+  }
+})()
+
+tempf4 <- (function() {
+  function(x) {
+    tempf((x - offQ) / scale)
+  }
+})()
+
+curve(tempf2, offQ, offQ + extQ)
+curve(tempf3, 0, extQ)
+curve(tempf4, offQ, 1 / offR)
+```
+
+Now we want to pre-translate and pre-scale the reference function to the interval `[0,1]`, so that we make a closure over all model-constant parameters, and the final function is a function over only the parameters derived from the current query-interval (the query boundaries).
+
+```{r}
+tempfPrime <- function(x) {
+  tempf(x * (1 - offR) + offR)
+}
+
+curve(tempfPrime, 0, 1)
+```
+
+So, here's the final function that only needs the absolute start and end of the query-interval, to properly translate and scale.
+
+```{r}
+# We use this transform so we can multiply!
+extQm <- 1 / extQ
+
+tempf2Prime <- function(x) {
+  tempfPrime((x - offQ) * extQm)
+}
+
+curve(tempf2Prime, offQ, offQ + extQ)
+```
+
+```{r}
+plot(loess.smooth(x=seq(.51, .89, len=500), y=sapply(seq(.51, .89, len=500), function(x) numDeriv::grad(tempf2Prime, x))))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
