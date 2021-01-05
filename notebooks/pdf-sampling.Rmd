@@ -1,0 +1,261 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+source("./common-funcs.R", echo = FALSE)
+```
+
+
+```{r}
+idx2 <- seq(0,6.28,len=100)
+query2 <- 2*sin((idx2 + 1)[1:60])
+reference2 <- sin(idx2)
+signal_mat_query2 <- signal_ex_query2$data
+signal_mat_query_f2 <- pattern_approxfun(signal_mat_query2)
+signal_mat_ref_f2 <- pattern_approxfun(reference2[signal_ex_query2$start_ref:signal_ex_query2$end_ref])
+```
+
+```{r}
+plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
+```
+
+Now the above functions are supposed to represent PDFs, and we do not actually have values for generating them. A further problem is, that the above functions do __not__ integrate to 1, and we need to normalize them first:
+
+```{r}
+int_ref <- cubature::cubintegrate(
+  f = signal_mat_ref_f2, lower = 0, upper = 1)$integral
+int_query <- cubature::cubintegrate(
+  f = signal_mat_query_f2, lower = 0, upper = 1)$integral
+
+print(c(int_ref, int_query))
+
+signal_mat_ref_f2 <- (function() {
+  org <- signal_mat_ref_f2
+  function(x) org(x) / int_ref
+})()
+signal_mat_query_f2 <- (function() {
+  org <- signal_mat_query_f2
+  function(x) org(x) / int_query
+})()
+
+plot_2_functions(signal_mat_ref_f2, signal_mat_query_f2)
+```
+
+
+
+Let's implement a quick Monte Carlo approach to generate data for a given PDF:
+
+```{r}
+gen_data_from_PDF_Monte_carlo <- function(pdf, support = c(0,1), coDomain = c(0,1), numSamples = 1e5) {
+  
+  #set.seed(1337)
+  #rx <- runif(n = numSamples, min = support[1], max = support[2])
+  rx <- seq(support[1], support[2], length.out = numSamples)
+  #ry <- runif(n = numSamples, min = coDomain[1], max = coDomain[2])
+  ry <- rep(seq(coDomain[1], coDomain[2], length.out = 1e3), numSamples / 5e2)
+  
+  data <- sapply(1:numSamples, function(i) {
+    y <- pdf(rx[i])
+    if (ry[i] <= y) rx[i] else -1
+  })
+  
+  data <- data[data >= 0]
+  data
+}
+```
+
+Let's generate some data for the reference signal:
+
+```{r}
+data_mc_ref <- gen_data_from_PDF_Monte_carlo(
+  pdf = signal_mat_ref_f2, numSamples = 5e5, coDomain = c(0, 1 / int_ref))
+dens_mc_ref <- stats::density(
+  data_mc_ref, from = 0, to = 1, n = 2^20, bw = "SJ")
+dens_mc_ref_f <- stats::approxfun(
+  x = dens_mc_ref$x, y = dens_mc_ref$y, ties = mean)
+plot(dens_mc_ref)
+plot(stats::ecdf(gen_data_from_PDF_Monte_carlo(
+  pdf = signal_mat_ref_f2, numSamples = 5e5)))
+```
+
+It appears the estimated (empirical) CDF is quite a bit smoother than the PDF estimated from MC-sampled data. We can use the eCDF to obtain a quantile function, using the _probability integral transform_.
+
+```{r}
+ePDF_to_eQuantile_PIT <- function(pdf, support = c(0,1), coDomain = c(0,1), numSamples = 1e5) {
+  
+  eCDF <- stats::ecdf(gen_data_from_PDF_Monte_carlo(
+    pdf = pdf, support = support, coDomain = coDomain, numSamples = numSamples))
+  
+  # To generate a quantile-function, the eCDF needs to be inversed.
+  # That means, x and y need to be swapped.
+  x <- seq(support[1], support[2], length.out = 1e5)
+  y <- sapply(x, eCDF)
+  
+  stats::approxfun(x = y, y = x, ties = mean)
+}
+```
+
+```{r}
+quant_pit_ref_f <- ePDF_to_eQuantile_PIT(
+  pdf = signal_mat_ref_f2, numSamples = 5e5, coDomain = c(0, 1 / int_ref))
+curve(quant_pit_ref_f, 0, 1)
+```
+
+```{r}
+tempdata <- sapply(seq(0, 1, length.out = 5e5), quant_pit_ref_f)
+dens_pit_ref <- stats::density(
+  tempdata, from = 0, to = 1, n = 2^20, bw = "SJ", na.rm = TRUE)
+dens_pit_ref_f <- stats::approxfun(
+  x = dens_pit_ref$x, y = dens_pit_ref$y, ties = mean)
+plot(dens_pit_ref)
+```
+
+Okay, those look like they're the same. We should probably sample from all 3 curves and compare numerically which has the lowest deviation (residuals).
+
+```{r}
+test_idx <- seq(0, 1, length.out = 5e5)
+data_org <- sapply(test_idx, signal_mat_ref_f2)
+data_mc <- sapply(test_idx, dens_mc_ref_f)
+data_pit <- sapply(test_idx, dens_pit_ref_f)
+```
+
+```{r}
+c(Metrics::rmse(data_org[5e3:5e5], data_mc[5e3:5e5]), Metrics::rmse(data_org[5e3:5e5], data_pit[5e3:5e5]))
+# same as:
+c(sqrt(sum(((data_org - data_mc)^2)/length(data_org))), sqrt(sum(((data_org - data_pit)^2)/length(data_org))))
+# MAE:
+c(mean(abs(data_org - data_mc)), mean(abs(data_org - data_pit)))
+```
+
+```{r}
+plot_2_functions(signal_mat_ref_f2, dens_mc_ref_f)
+plot_2_functions(signal_mat_ref_f2, dens_pit_ref_f)
+```
+
+It appears that the probability integral transform is slightly better. Let's sample from the query's PDF, and then we can estimate a 2-D kernel.
+
+```{r}
+quant_pit_query_f <- ePDF_to_eQuantile_PIT(
+  pdf = signal_mat_query_f2, numSamples = 5e5, coDomain = c(0, 1 / int_query))
+tempdata_query <- sapply(seq(0, 1, length.out = 5e5), quant_pit_query_f)
+```
+
+```{r}
+dens_pit_query <- stats::density(
+  tempdata_query, from = 0, to = 1, n = 2^20, bw = "SJ", na.rm = TRUE)
+dens_pit_query_f <- stats::approxfun(
+  x = dens_pit_query$x, y = dens_pit_query$y, ties = mean)
+
+plot_2_functions(dens_pit_ref_f, dens_pit_query_f)
+```
+
+
+For 2-D KDE, we need to down-sample the data.
+
+```{r}
+library(MASS)
+
+dens_2d <- kde2d(
+  x = na.omit(tempdata),
+  y = na.omit(tempdata_query),
+  n = 1000)
+```
+
+
+```{r}
+persp(dens_2d, theta = 30)
+persp(dens_2d, theta = 150, phi = 30)
+```
+
+
+```{r}
+dens_2d_f <- function(x, y) {
+  fields::interp.surface(dens_2d, loc = matrix(data=c(x, y), nrow = 1))
+}
+```
+
+```{r}
+dens_2d_int <- loadResultsOrCompute(file = "../results/dens_2d_int.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    cubature::cubintegrate(f = function(y) {
+      foreach::foreach(
+        y_ = y,
+        .combine = c,
+        .export = c("dens_2d", "dens_2d_f")
+      ) %dopar% {
+        cubature::cubintegrate(function(x) {
+          temp <- dens_2d_f(x, y_)
+          if (is.na(temp)) {
+            return(0)
+            #stop(paste0(c(x, y_), collapse = ", "))
+          }
+          temp
+        }, 0, 1)$integral
+      }
+    }, 0, 1)
+  })
+})
+
+dens_2d_int
+```
+
+Nice! The integral is close to 1, even considering our hacky if-error-than-zero workaround.
+
+Ok, now that we got all that working, we will attempt to manually implement the mutual information!
+
+```{r}
+support <- seq(0, 1, length.out = dim(dens_2d$z)[1])
+
+P_X <- sapply(support, dens_pit_ref_f)
+P_X <- P_X / sum(P_X)
+P_X[P_X == 0] <- .Machine$double.eps
+
+P_Y <- sapply(support, dens_pit_query_f)
+P_Y <- P_Y / sum(P_Y)
+P_Y[P_Y == 0] <- .Machine$double.eps
+
+P_XY <- dens_2d$z[,]
+P_XY <- P_XY / sum(P_XY)
+P_XY[P_XY == 0] <- .Machine$double.eps
+
+H_X <- 0
+H_Y <- 0
+H_pq <- 0 # Cross-entropy
+DKL_pq <- 0 # KL-div
+for (i in 1:length(support)) {
+  H_X <- H_X - (P_X[i] * log2(P_X[i]))
+  H_Y <- H_Y - (P_Y[i] * log2(P_Y[i]))
+  H_pq <- H_pq - (P_X[i] * log2(P_Y[i]))
+  DKL_pq <- DKL_pq + (P_X[i] * log2(P_X[i] / P_Y[i]))
+}
+
+I_XY <- 0 # MI
+H_XY <- 0 # Joint-entropy
+
+
+for (y in 1:length(support)) {
+  for (x in 1:length(support)) {
+    p_xy <- P_XY[x, y]
+    if (is.na(p_xy) || p_xy == 0) {
+      # then the following product would be 0..
+      next
+    }
+    
+    p_marg <- P_X[x] * P_Y[y]
+    I_XY <- I_XY + (p_xy * log(p_xy / p_marg))
+    
+    H_XY <- H_XY - (p_xy * log2(p_xy))
+  }
+}
+
+c(H_X, H_Y, H_pq, DKL_pq)
+c(I_XY, H_XY)
+```
+
+
+
+
+
+
