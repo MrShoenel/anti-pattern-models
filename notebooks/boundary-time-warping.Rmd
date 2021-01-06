@@ -27,6 +27,49 @@ We have previously developed the Multilevel-Model, sub-models and stages that al
 
 We introduce a new algorithm, __Boundary Time Warping__. Given a reference signal that we want to align a query signal to, the idea is to subdivide the query signal into arbitrary many sub-intervals (no equal spacing required), and then to alter the extent of each interval during optimization, such that the warped query is becoming closest to the reference signal. For each interval, we obtain a set of parameters that is used to locally translate and scale the query. After convergence, these adjusted parameters are then used to build a warping path that is minimal w.r.t. the chosen cost function. The section captured in each interval of the query signal is constant, the boundaries are only used for translation and scaling. For a given $x$, the model determines which interval (given the currently used warp-boundaries) it falls into, then selects the corresponding scaling- and translation parameters and returns a warped $y$.
 
+```{r echo=FALSE, fig.height=7, fig.cap="Reference- and Query-signals. BTW subdivides the Query signal and then scales and translates each captured interval such that a cost is minimized (or maximized).\\label{fig:btw}"}
+library(ggplot2)
+library(ggpubr)
+
+btwRef <- data.frame(
+  x = seq(0, 1, length.out = 1e3),
+  y = sin(seq(0, 2 * pi, length.out = 1e3))
+)
+
+plotBtw <- function(df, bounds = c()) {
+  g <- ggplot(data = df, aes(x = x, y = y)) + theme_light() + geom_line()
+  for (i in 1:length(bounds)) {
+    g <- g + geom_vline(xintercept = bounds[i])
+  }
+  g
+}
+
+btwQueryBounds <- c(.1, .2, .5, .6, .8)
+btwQuery <- data.frame(
+  x = c(
+    seq(0, btwQueryBounds[1], length.out =  75),
+    seq(btwQueryBounds[1], btwQueryBounds[2], length.out =  25),
+    seq(btwQueryBounds[2], btwQueryBounds[3], length.out = 150),
+    seq(btwQueryBounds[3], btwQueryBounds[4], length.out = 300),
+    seq(btwQueryBounds[4], btwQueryBounds[5], length.out =  50),
+    seq(btwQueryBounds[5], 1, length.out = 400)
+  ),
+  y = btwRef$y
+)
+
+ggarrange(
+  ncol = 1,
+  
+  plotBtw(btwRef) + labs(title = "Reference Signal"),
+  plotBtw(btwQuery, seq(0, 1, by = .05)) +
+    labs(title = "Query Signal", subtitle = "(using equidistantly spaced boundaries)"),
+  plotBtw(btwQuery, btwQueryBounds) +
+    labs(title = "Query Signal'", subtitle = "(using the bounds that distorted the reference)")
+)
+```
+
+In Figure \ref{fig:btw} an example of a reference- and distorted query-signal is shown. BTW sets some boundaries and scales and translates the captured intervals, such that a cost is minimized. These boundaries can be set automatically, e.g., spaced equidistantly or heuristically, or they can be set arbitrarily by the user. In the bottom plot, we show the boundaries that were used to distort the reference signal, so these would be the best boundaries to optimally undo the distort. However, any sufficiently large set of boundaries should give a satisfactory un-warping (rectifying) result.
+
 
 ## Features of BTW
 
@@ -55,13 +98,15 @@ $$
   \\[1em]
   m(x,s,t) &= f(s\times (x-t))\;\text{, model that locally translates and scales the query,}
   \\[1em]
+  \nabla\,m &= \Big[ f'(s\times (x-t))\times(x-t)\;\frac{\partial\;m}{\partial\;s}\;,\;f'(s\times (x-t)) -s\;\frac{\partial\;m}{\partial\;t}\Big]\;\text{,}
+  \\[1em]
   \text{RSSC} &= \int_{\mathcal{X}} (f(x) - m(x,s,t))^2\;\text{, RSSC for continuous case,}
   \\[1em]
   \text{RSS} &= \sum_{i=1}^{N} (\mathbf{y}_i - m(x_i,s,t))^2\;\text{, RSS for discrete case,}
   \\[1em]
-  \text{RSS}_m &= \Bigg[ \frac{\partial\;\text{RSS}_m}{\partial\;s}, \frac{\partial\;\text{RSS}_m}{\partial\;t} \Bigg]\;\text{,}
+  \nabla\,\text{RSS}_m &= \Bigg[ \frac{\partial\;\text{RSS}_m}{\partial\;s}\;,\;\frac{\partial\;\text{RSS}_m}{\partial\;t} \Bigg]\;\text{,}
   \\[1em]
-  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x)\times (\mathbf{y}_i-f(s\times (x_i-t)))\times f'(s\times (x_i-t))\;\text{,}
+  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x_i)\times (\mathbf{y}_i-f(s\times (x_i-t)))\times f'(s\times (x_i-t))\;\text{,}
   \\[1em]
   \frac{\partial\;\text{RSS}_m}{\partial\;t} &= \sum_{i=1}^{N} 2s\times (\mathbf{y}_i - f(s\times(x_i-t)))\times f'(s\times(x_i-t))\text{.}
 \end{aligned}
@@ -80,7 +125,7 @@ $$
   \\
   \mathbf{\hat{y}}''_{s,t} &= f''(s\times (\mathbf{x}-t))\;\text{,}
   \\[1em]
-  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x)\times (\mathbf{y}_i-\mathbf{\hat{y}}^{s,t}_i)\times \mathbf{\hat{y}}'^{s,t}_i\text{.}
+  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x_i)\times (\mathbf{y}_i-\mathbf{\hat{y}}^{s,t}_i)\times \mathbf{\hat{y}}'^{s,t}_i\text{.}
 \end{aligned}
 $$
 
@@ -96,9 +141,9 @@ $$
   \\[1em]
   &= \sum_{i=1}^{N} \mathbf{y}_i\log{\frac{\mathbf{y}_i}{\mathbf{\hat{y}}^{s,t}_i}}\;\text{; with the derivative for s being}
   \\[1em]
-  \frac{\partial\;D_{\text{KL}_m}}{\partial\;s} &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\times (t-x)\times f'(s\times (x-t))}{f(s\times (x-t))}\;\text{, or, using vectors,}
+  \frac{\partial\;D_{\text{KL}_m}}{\partial\;s} &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\times (t-x_i)\times f'(s\times (x_i-t))}{f(s\times (x_i-t))}\;\text{, or, using vectors,}
   \\[1em]
-  &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\,\mathbf{\hat{y}}'^{s,t}_i\times (t-x)}{\mathbf{\hat{y}}^{s,t}_i}\;\text{(notice the ' in the numerator).}
+  &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\,\mathbf{\hat{y}}'^{s,t}_i\times (t-x_i)}{\mathbf{\hat{y}}^{s,t}_i}\;\text{(notice the ' in the numerator).}
 \end{aligned}
 $$
 
@@ -107,9 +152,9 @@ The 2nd derivative (differentiated here twice for $s$) would be:
 
 $$
 \begin{aligned}
-  \frac{\partial^2\;D_{\text{KL}_m}}{\partial^2\;s} &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\times (t-x)^2\times \Big( f'(s\times (x-t))^2 - f(s\times (x-t))\times f''(s\times (x-t))\Big)}{f(s\times (x-t))^2}\;\text{, or, using vectors,}
+  \frac{\partial^2\;D_{\text{KL}_m}}{\partial^2\;s} &= \sum_{i=1}^{N} \frac{\mathbf{y}_i\times (t-x_i)^2\times \Big( f'(s\times (x-t))^2 - f(s\times (x-t))\times f''(s\times (x-t))\Big)}{f(s\times (x-t))^2}\;\text{, or, using vectors,}
   \\[1em]
-  &= \sum_{i=1}^{N} \mathbf{y}_i\times (t-x)^2\times\Big( \big(\mathbf{\hat{y}}\prime^{s,t}_i\big)^2\,-\;\mathbf{\hat{y}}^{s,t}_i\, \mathbf{\hat{y}}''^{s,t}_i \Big)\times\big(\mathbf{\hat{y}}^{s,t}_i\big)^{-2}\;\text{.}
+  &= \sum_{i=1}^{N} \mathbf{y}_i\times (t-x_i)^2\times\Big( \big(\mathbf{\hat{y}}\prime^{s,t}_i\big)^2\,-\;\mathbf{\hat{y}}^{s,t}_i\, \mathbf{\hat{y}}''^{s,t}_i \Big)\times\big(\mathbf{\hat{y}}^{s,t}_i\big)^{-2}\;\text{.}
 \end{aligned}
 $$
 
@@ -152,6 +197,245 @@ Since we are basically halving the solution space in each step, this algorithm s
 If we have twice-differentiable model- and error-functions, we can use the Hessian to jump to a set of boundaries that minimizes (or maximizes) the current model error. However, this method cannot facilitate any constraints, and may jump into an infeasible region, if the user does not allow overlapping intervals. We can use these overlaps to either prune or collapse boundaries that appear to be superfluous. After doing that, we fit the model again using the remaining boundaries. This process is repeated until the amount of boundaries remaining is minimized (i.e., the chosen information criterion does not signal an improvement of the model).
 
 Contrary to the previously proposed heuristic search, this method is only one-way, as it does not add new boundaries. It may be useful for reducing overfit that is introduced by using too many boundaries. It may be feasible to combine both methods, e.g., use this approach first to remove superfluous boundaries, then further optimize using the other approach.
+
+
+# Testing
+
+Let's make some tests! We want to attempt rectifying the distorted query from the introduction. The reference signal it stems from is sine, but we sampled from it -- so let's approximate a function over reference and query signal, as this should be the most common use-case.
+
+```{r}
+ggarrange(
+  ncol = 1,
+
+  plotBtw(btwRef),
+  plotBtw(btwQuery, seq(0, 1, by = 0.05))
+)
+```
+
+Let's approximate functions for both signals and initialize the boundaries: We will just use equidistantly-spaced bounds with a distance of $0.05$. The amount of boundaries is equal to the degrees of freedom of BTW, except for when the first and/or last boundary is fixed (so-called closed begin/end time warping). While we know that it would make sense in this case, we will not impose these constraints here.
+
+```{r}
+signal_ref <- stats::approxfun(x = btwRef$x, y = btwRef$y, ties = mean)
+signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
+
+query_bounds <- seq(0, 1, by = 0.05)
+```
+
+Note that two neighboring boundaries delimit an interval, which leaves us with $|\mathtt{B}|-1$ intervals and thus with $20$ tuples of $\langle s,t\rangle$ parameters. However, only the boundaries are altered, and we derive the index for each interval as well as the current parameters in the objective function.
+
+We will define the objective function next:
+
+```{r}
+#' @param x vector with boundaries
+btw_objective <- function(x, returnYHat = FALSE) {
+  totalSamples <- 1e3
+  # For each pair of boundaries, we'll scale and translate
+  # the query function, and then sample from it. The number
+  # of samples we take from each interval is proportional to
+  # its length.
+  
+  y_hat <- c()
+  
+  for (idx in 1:(length(x) - 1)) {
+    t <- x[idx] # translate
+    iEnd <- x[idx + 1]
+    s <- iEnd - t # scale (the extent of the interval)
+    numSamples <- round(s * totalSamples)
+    # NOTE: THE FOLLOWING IS A SLIGHT HACK, so that we
+    # can attempt unconstrained optimization! This is
+    # NOT a valid situation, but we want to show the
+    # result anyhow.
+    if (numSamples <= 0) {
+      next
+    }
+    
+    # In the following, take the corresponding original-
+    # interval from the query, and translate+scale it to [0,1]:
+    offR <- query_bounds[idx]
+    signal_query_01 <- function(p) {
+      signal_query(p * (1 - offR) + offR)
+    }
+    
+    # .. and now we scale and transform that function into
+    # the requested interval:
+    s_mult <- 1 / s
+    signal_query_prime <- function(p) {
+      signal_query_01((p - t) * s)
+    }
+    
+    # Let's finally sample from the function over the transformed
+    # interval!
+    y_hat <- c(y_hat, sapply(
+      seq(t, iEnd, length.out = numSamples),
+      signal_query_prime))
+  }
+  
+  y <- sapply(seq(0, 1, length.out = length(y_hat)), signal_ref)
+  
+  if (returnYHat) {
+    return(list(
+      y = y,
+      y_hat = y_hat
+    ))
+  }
+  
+  # Return the RSS:
+  sum((y - y_hat)^2)
+}
+```
+
+Let's see what's the error of it using the unchanged query-boundaries:
+
+```{r}
+btw_objective(query_bounds)
+```
+
+## Unconstrained, no gradient
+
+Before we go any further, let's try _unconstrained_ optimization __without__ a gradient (`optim` is going to use Nelder-Mead simplex optimization in this case). Note that this kind of optimization will most likely result in boundaries that lead to _overlapping_ intervals. Still, it's a somewhat test as to whether our objective function works.
+
+```{r}
+btw_optim_no_grad_no_const <- loadResultsOrCompute(file = "../results/btw_optim_no_grad_no_const.rds", computeExpr = {
+  optim(query_bounds, btw_objective, gr = function(x) numDeriv::grad(func = btw_objective, x = x))
+})
+btw_optim_no_grad_no_const
+```
+
+Well, the error is an order of magnitude smaller, but `optim` did not actually finally converge, which is no surprise for $21$-dimensional problem and a Nelder-Mead approach limited to $500$ iterations. Also, as predicted, some boundaries/intervals currently overlap. So here's where the optimization stopped:
+
+```{r echo=FALSE}
+temp <- btw_objective(x = btw_optim_no_grad_no_const$par, returnYHat = TRUE)
+
+ggarrange(
+  ncol = 1,
+
+  plotBtw(data.frame(x = seq(0, 1, length.out = length(temp$y)), y = temp$y)),
+  plotBtw(data.frame(x = seq(0, 1, length.out = length(temp$y_hat)), y = temp$y_hat))
+)
+```
+
+## No gradient, with constraints
+
+Let's define linear inequality constraints: There are only two things we will impose:
+
+* $b_{\text{first}} \geq 0,\;b_{\text{last}}\leq1$
+* $b_n < b_{n+1}$
+
+The starting query-boundaries already satisfy these constraints, but we need to encode them properly as `theta`, `ui` and `ci` for usage with `constrOptim`.
+
+```{r}
+# Let's use the fancy class we created for MLMs!
+li <- LinearInequalityConstraints$new(theta = query_bounds)
+li$flushLinIneqConstraints()
+
+# Let's add the first two constraints (constrOptim requires >=):
+li$setLinIneqConstraint(
+  name = "b_first_geq_v", ineqs = c(1, rep(0, length(query_bounds) - 1), 0))
+li$setLinIneqConstraint(
+  name = "b_last_geq_v", ineqs = c(rep(0, length(query_bounds) - 1), -1, -1))
+
+# And we'll also add the second type of constraint for each
+# pair of consecutive boundaries:
+for (idx in 1:(length(query_bounds) - 1)) {
+  i1 <- idx
+  i2 <- idx + 1
+  name <- paste0("-b", i1, "_geqv_+b", i2)
+  # bounds before i1, -b1, +b2, bounds after b2, >= 0
+  ineqs <- c(rep(0, i1 - 1), -1, 1, rep(0, length(query_bounds) - i2), 0)
+  li$setLinIneqConstraint(name = name, ineqs = ineqs)
+}
+
+li$validateLinIneqConstraints()
+```
+
+Ok, let's try `constrOptim` instead:
+
+```{r}
+btw_optim_no_grad_with_const <- loadResultsOrCompute(file = "../results/btw_optim_no_grad_with_const.rds", computeExpr = {
+  theta <- li$getTheta()
+  theta[theta == 0] <- .Machine$double.eps
+  theta[theta == 1] <- 1 - .Machine$double.eps
+  
+  constrOptim(
+    theta = theta,
+    ui = li$getUi(),
+    ci = li$getCi(),
+    f = btw_objective,
+    grad = NULL,
+    control = list(maxit = 500))
+})
+btw_optim_no_grad_with_const
+```
+
+This did not work so well; the amount of calls to the objective function is extraordinarily high, so this took quite long before it stopped, not converging. The final loss is higher than without using constraints. However, the results is valid ;)
+
+```{r echo=FALSE}
+temp <- btw_objective(x = btw_optim_no_grad_with_const$par, returnYHat = TRUE)
+
+ggarrange(
+  ncol = 1,
+
+  plotBtw(data.frame(x = seq(0, 1, length.out = length(temp$y)), y = temp$y)),
+  plotBtw(data.frame(x = seq(0, 1, length.out = length(temp$y_hat)), y = temp$y_hat))
+)
+```
+
+## Approximated gradient, with constraints
+
+The next we do is to try an approximated gradient, __derived over the objective function__. Now we went through the troubles of defining an __analytical__ gradient for these tests, which should work very well in theory. However, we can also approximate a gradient over the objective function and see how that works:
+
+```{r}
+#btw_optim_approx_grad_with_const <- loadResultsOrCompute(file = "../results/btw_optim_approx_grad_with_const.rds", computeExpr = {
+  theta <- li$getTheta()
+  theta[theta == 0] <- .Machine$double.eps
+  theta[theta == 1] <- 1 - .Machine$double.eps
+  
+  constrOptim2(
+    theta = theta,
+    ui = li$getUi(),
+    ci = li$getCi(),
+    #outer.eps = 1e-16,
+    f = btw_objective,
+    grad = function(x) {
+      numDeriv::grad(func = btw_objective, x = x)
+    })
+#})
+#btw_optim_approx_grad_with_const
+```
+
+```{r echo=FALSE}
+temp <- btw_objective(x = btw_optim_approx_grad_with_const$par, returnYHat = TRUE)
+
+ggarrange(
+  ncol = 1,
+
+  plotBtw(data.frame(x = seq(0, 1, length.out = length(temp$y)), y = temp$y)),
+  plotBtw(data.frame(x = seq(0, 1, length.out = length(temp$y_hat)), y = temp$y_hat))
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
