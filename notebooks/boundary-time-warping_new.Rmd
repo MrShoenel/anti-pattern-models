@@ -1,0 +1,358 @@
+---
+title: "Boundary Time Warping (new)"
+bibliography: ../inst/REFERENCES.bib
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  word_document: default
+---
+
+```{r echo=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+```
+
+
+# Boundary Time Warping (new)
+
+Note that we have abandoned the previous BTW notebook, as we want to reformulate BTW using a slightly easier formula. Previously, we had formulated BTW using __two__ parameters, translate, ($t$), and scale, ($s$). It is however enough to derive a single parameter, which we will call $\tau$, that translates $x$ to where we need it. The new model hence becomes:
+
+$$
+\begin{aligned}
+  m(x,\tau) &= f(\tau + x)\;\text{.}
+\end{aligned}
+$$
+
+Again, $\tau$ is a local parameter, that depends on which query-interval $x$ falls into. Given the original- and the query-interval, $\tau$ is calculated using the otherwise constant parameters as follows:
+
+$$
+\begin{aligned}
+  &\;x_q \in \mathcal{X}\;\text{, the }\;x\text{-coordinate we need the}\;y\;\text{for,}
+  \\[1ex]
+  \text{}&\;q \in \mathcal{I}\;\text{, the index of the query-interval}\;x\;\text{falls into,}
+  \\[1ex]
+  i_o = &\;\langle s_o,e_o\rangle\;\text{, where }\;s,e\;\text{ demarcate the start and end of an interval,}
+  \\[1ex]
+  i_q = &\;\langle s_q,e_q\rangle\;\text{, the query-interval and its start/end,}
+  \\[1ex]
+  x^{\text{rel}}_q = &\;(x_q - s_q) \times (e_q - s_q)^{-1}\;\text{, the relative postion of}\;x_q\;\text{in the query-interval,}
+  \\[1ex]
+  x_{o} = &\; s_o + \big(\,x^{\text{rel}}_q\times (e_o - s_o)\,\big)\;\text{, the corresponding}\;x\;\text{in the original-interval,}
+  \\[1ex]
+  \tau = &\;x_o - x_q\;\text{, or, alternatively,}
+  \\[1ex]
+  \tau = &\;s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{, resulting in}
+  \\[1ex]
+  \hat{y} = &\; f(\tau+x_q)\;\text{.}
+\end{aligned}
+$$
+
+In other words, $x_o$ is the $x$ we want to return $y$ for. In more other words, when boundaries are moved, and intervals get translated and scaled, $x$ always falls into an interval, and it assumes a relative position in it. So the correct $y$ to return is the one in the original interval, at that same relative position. All this can be reduced to a single offset, $\tau$, added to $x_q$.
+
+In pseudo-code, this is what (the discrete version of) $\mathsf{M}$ does:
+
+```{r eval = FALSE}
+M <- function(theta_b_org, theta_b, num_samples, r, f) {
+  X <- create_range(start = min(theta_b), end = max(theta_b), amount = num_samples)
+  y <- r(X)
+  y_hat <- zeros(num_samples)
+  
+  for (x, x_idx) in X do:
+    q <- determine_interval_x_falls_into(x)
+    
+    start_org, end_org <- theta_b_org[q]
+    start_q, end_q <- theta_b[q]
+    
+    x_rel <- (x - start_q) / (end_q - start_q)
+    x_o <- start_org + (x_rel * (end_org - start_org))
+    # Instead of calculating tau, let's call f directly with x_o.
+    # We need tau only for the analytical formulation.
+    y_hat[x_idx] <- f(x_o)
+  endfor
+  
+  return(X, y, y_hat)
+}
+```
+
+Let's how a short demonstration:
+
+```{r}
+btwRef <- data.frame(
+  x = seq(0, 1, length.out = 1e3),
+  y = sin(seq(0, 2 * pi, length.out = 1e3))
+)
+
+btwQueryBounds <- c(.1, .2, .5, .6, .8)
+btwQuery <- data.frame(
+  x = c(
+    seq(0, btwQueryBounds[1], length.out =  75),
+    seq(btwQueryBounds[1], btwQueryBounds[2], length.out =  25),
+    seq(btwQueryBounds[2], btwQueryBounds[3], length.out = 150),
+    seq(btwQueryBounds[3], btwQueryBounds[4], length.out = 300),
+    seq(btwQueryBounds[4], btwQueryBounds[5], length.out =  50),
+    seq(btwQueryBounds[5], 1, length.out = 400)
+  ),
+  y = btwRef$y
+)
+
+plotBtw <- function(df, bounds = c()) {
+  g <- ggplot(data = df, aes(x = x, y = y)) + theme_light() + geom_line()
+  for (i in 1:length(bounds)) {
+    g <- g + geom_vline(xintercept = bounds[i])
+  }
+  g
+}
+
+signal_ref <- stats::approxfun(x = btwRef$x, y = btwRef$y, ties = mean)
+signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
+
+query_bounds <- seq(0, 1, by = 0.1)
+```
+
+
+```{r}
+temp <- M_new(
+  theta_b_org = query_bounds,
+  theta_b = query_bounds,
+  r = signal_ref,
+  f = signal_query)
+
+# We know how the reference signal was distorted previously. Let's make
+# a test where we manually undo this by moving the boundaries.
+temp2_bounds <- c(
+  0,
+  .075, .1, .15, .2, .25,
+  .55, .575, .6,  .8, 1)
+temp2 <- M_new(
+  theta_b_org = query_bounds,
+  theta_b = temp2_bounds,
+  r = signal_ref,
+  f = signal_query)
+
+ggarrange(
+  ncol = 1,
+  plotBtw(data.frame(x = temp$X, y = temp$y)),
+  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
+  plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp2_bounds)
+)
+```
+
+Good, our new model, `M_new(..)`, works! Now we need to reformulate everything, all the derivatives etc., as this changes. We will, for demonstrative purposes mostly, again make use of the residual sum of squares (RSS) as error function.
+
+
+## Formal description of the model
+
+The model is now much simpler, and follow the structure of the original notebook here. Note that almost all of the remarks of the previous notebook apply, only the way we calculate BTW has changed.
+
+$$
+\begin{aligned}
+  r(x) &= \dots\;\text{, a function over the reference signal,}
+  \\
+  f(x),f\prime(x),f\prime\prime(x) &= \dots\;\text{, functions over the query signal (and its 1st and 2nd derivatives),}
+  \\[1em]
+  m(x,\tau) &= f(\tau+x)\;\text{, model that picks a transformed x,}
+  \\[1em]
+  \frac{\partial\;\text{m}}{\partial\;\tau}\;,\;\frac{\partial^2\;\text{m}}{\partial^2\;\tau} &= f\prime(\tau+x)\;,\;f\prime\prime(\tau+x)\;\text{.}
+\end{aligned}
+$$
+
+Since we're using only one variable, there is only one partial derivative, and we are getting very pleasing derivatives -- they're exactly the same, except for that we plug in $\tau+x$ in the derivatives of $f$. The description of our overall model has not changed, and its parameters are the same (check previous notebook for descriptions):
+
+$$
+\begin{aligned}
+  \mathsf{M}(\mathbf{\theta}_{b_{\text{org}}}, \mathbf{\theta}_b, n, r, f) &= \langle\, \mathbf{y},\mathbf{\hat{y}} \,\rangle
+\end{aligned}
+$$
+
+## Using the RSS error function
+
+We use the RSS as an example for an error function, but any objective/cost/loss etc. function can be used, if its derivatives exist.
+
+$$
+\begin{aligned}
+  \text{RSS}_m &= \sum_{i=1}^{N}\,(\mathbf{y}_i - m(x_i,\tau))^2\;\text{, the RSS for the discrete case,}
+  \\[1ex]
+  &= \sum_{i=1}^{N}\,(\mathbf{y}_i - f(\tau-x_i))^2\;\text{,}
+  \\[1ex]
+  \frac{\partial\;\text{RSS}_m}{\partial\;\tau} &= \sum_{i=1}^{N}\,-2\,\big(y_i - f(\tau + x_i)\big)\times f'(\tau + x_i)\;\text{,}
+  \\[1ex]
+  \frac{\partial^2\;\text{RSS}_m}{\partial^2\;\tau} &= \sum_{i=1}^{N}\,2\,\Big((f(\tau + x_i) - y_i)\times f''(\tau + x_i) + f'(\tau + x_i)^2\Big)\;\text{.}
+\end{aligned}
+$$
+
+Again, it becomes apparent that we can pre-compute $\mathbf{\hat{y}}$, $\mathbf{\hat{y}}\prime$ and $\mathbf{\hat{y}}\prime\prime$ using the derivatives of $f$.
+
+$$
+\begin{aligned}
+  \text{RSS}_m &= \sum_{i=1}^{N}\,(\mathbf{y}_i - \mathbf{\hat{y}}_i)^2\;\text{,}
+  \\[1ex]
+  \frac{\partial\;\text{RSS}_m}{\partial\;\tau} &= \sum_{i=1}^{N}\,-2\,\big(\mathbf{y}_i - \mathbf{\hat{y}}_i\big)\times \mathbf{\hat{y}}\prime_i\;\text{,}
+  \\[1ex]
+  \frac{\partial^2\;\text{RSS}_m}{\partial^2\;\tau} &= \sum_{i=1}^{N}\,2\,\Big((\mathbf{\hat{y}}_i - \mathbf{y}_i)\times \mathbf{\hat{y}}\prime\prime_i + \big(\mathbf{\hat{y}}\prime_i\big)^2\Big)\;\text{.}
+\end{aligned}
+$$
+
+And in `R`-code, this looks like:
+
+```{r}
+RSS_m <- function(y, y_hat) {
+  sum((y - y_hat)^2)
+}
+
+RSS_m_deriv1 <- function(y, y_hat, y_hat_prime) {
+  sum(-2 * (y - y_hat) * y_hat_prime)
+}
+
+RSS_m_deriv2 <- function(y, y_hat, y_hat_prime, y_hat_prime_prime) {
+  sum(2 * ((y_hat - y) * y_hat_prime_prime + y_hat_prime^2))
+}
+```
+
+
+# Optimization
+
+Let's do some quick testing with `optim`:
+
+```{r}
+Stabilize <- function(f, lb, ub) {
+  Vectorize(function(x) {
+    if (x < lb) f(lb) else if (x > ub) f(ub) else f(x)
+  })
+}
+
+r <- Stabilize(signal_ref, 0, 1)
+f <- Stabilize(signal_query, 0, 1)
+
+o <- function(theta) {
+  res <- M_new(
+    theta_b_org = query_bounds, theta_b = theta, r = r, f = f)
+  
+  loss <- RSS_m(y = res$y, y_hat = res$y_hat)
+  loss
+}
+
+optR <- optim(
+  par = query_bounds,
+  fn = o,
+  method = "L-BFGS-B",
+  lower = rep(0, length(query_bounds)),
+  upper = rep(1, length(query_bounds))
+)
+```
+
+## Using an explicit gradient
+
+Computing the gradient requires us to "re-assemble" the boundaries from $\tau$. Recall that we have a separate $\tau$ in each interval, which is demarcated by two consecutive boundaries. The boundaries represent the actual parameter vector, the parameters we want to optimize, $\mathbf{\theta}$. So we have to reverse the steps we undertook for establishing $\tau$, in order to get back to the boundaries. In the following, $\langle s_q,e_q\rangle$ represent those absolute offsets for an interval, in which the current $\tau$ is valid. The gradient of our model will tell us how to change $\tau$, and our task is to translate that back to $\langle s_q,e_q\rangle$:
+
+
+$$
+\begin{aligned}
+  \tau &= s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{,}
+  \\[1ex]
+  s_q &= \frac{x_q\times(s_o - e_o) + e_q\times(\tau + x_q - s_o)}{\tau + x_q - e_o}\;\text{, and}
+  \\[1ex]
+  e_q &= \frac{e_o\times(s_q-x_q) + e_ox_q - s_q(\tau + x_q)}{s_o - x_q - \tau}\;\text{.}
+\end{aligned}
+$$
+
+Note that all the other parameters, $s_o, e_o, x_q, \tau$, are either given/constant or calculated. So, for each interval, the gradient calculates a value for $\tau$ (or better: how it changes), and we have now the means to translate this back to the current delimiting boundaries, $s_q,e_q$.
+
+
+```{r}
+#' This is the (overly expressive) gradient of our objective function.
+#' It evaluates the gradient for each pair of neighboring boundaries,
+#' instead of going 2-by-2. We implement it this way for testing purposes.
+o_deriv1_test <- function(theta) {
+  res <- M_new(
+    theta_b_org = query_bounds, theta_b = theta, r = r, f = f)
+  res1 <- M_new(
+    theta_b_org = query_bounds, theta_b = theta, r = r, f = f_deriv1)
+  
+  sq <- function(so, eo, eq, xq, tau) {
+    (xq * (so - eo) + eq * (tau + xq - so)) / (tau + xq - eo)
+  }
+  
+  eq <- function(so, eo, sq, xq, tau) {
+    (eo * (sq - xq) + eo * xq - sq * (tau + xq)) / (so - xq - tau)
+  }
+  
+  # Now, for each consecutive pair of neighboring boundaries, piece-wise
+  # evaluate the derivative of the cost-function, obtain tau, and translate
+  # it back to the two boundaries of the enclosing interval.
+  
+  for (iIdx in 1:(length(theta) - 1)) {
+    y <- res$y[res$int_idx == iIdx, ]
+    y_hat <- res$y_hat[res$int_idx == iIdx, ]
+    y_hat_prime <- res$y_hat_prime[res$int_idx == iIdx, ]
+    
+    tau <- RSS_m_deriv1(y = res$y, y_hat = y_hat, y_hat_prime = y_hat_prime)
+    
+    # Now init the parameters we need:
+    so <- query_bounds[iIdx]
+    eo <- query_bounds[iIdx - 1]
+    sq <- theta[iIdx]
+    eq <- theta[iIdx + 1]
+    
+    
+  }
+  
+  
+  
+  # 
+  # RSS_m_deriv1(res$y, y_hat =res$y_hat, y_hat_prime = res1$y_hat)
+}
+```
+
+
+```{r}
+#' Note that here we use the stabilized version of the query-signal.
+#' TODO: We should supply helper functions to the user that use the
+#' best possible method of derivation, like we do here.
+f_deriv1 <- function(x) {
+  m <- if (x == 0) "forward" else if (x == 1) "backward" else "central"
+  pracma::fderiv(f = f, x = x, method = m)
+}
+```
+
+
+```{r}
+optR <- optim(
+  par = query_bounds,
+  fn = o,
+  gr = o_deriv1,
+  method = "L-BFGS-B",
+  lower = rep(0, length(query_bounds)),
+  upper = rep(1, length(query_bounds))
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
