@@ -37,31 +37,37 @@ $$
 \end{aligned}
 $$
 
-Again, $\tau$ is a local parameter, that depends on which query-interval $x$ falls into. Given the original- and the query-interval, $\tau$ is calculated using the otherwise constant parameters as follows:
+Again, $\tau$ is a local parameter, that depends on which query-interval $x$ falls into, and on $x$ itself -- $\mathbf{\tau}$ is actually __vector-valued__ (in the discrete case). Given the original- and the query-interval, $\tau$ is calculated using the otherwise constant parameters as follows:
 
 $$
 \begin{aligned}
   &\;x_q \in \mathcal{X}\;\text{, the }\;x\text{-coordinate we need the}\;y\;\text{for,}
   \\[1ex]
-  \text{}&\;q \in \mathcal{I}\;\text{, the index of the query-interval}\;x\;\text{falls into,}
+  &\;\mathbf{x}_q\;\text{, the vector of all}\;x_q\;\text{in the current interval,}
   \\[1ex]
-  i_o = &\;\langle s_o,e_o\rangle\;\text{, where }\;s,e\;\text{ demarcate the start and end of an interval,}
+  \text{}&\;q \in \mathcal{I}\;\text{, the index of the query-interval}\;x_q\;\text{falls into,}
   \\[1ex]
-  i_q = &\;\langle s_q,e_q\rangle\;\text{, the query-interval and its start/end,}
+  &\;\langle s_o,e_o\rangle\;\text{, where }\;s,e\;\text{ demarcate the start and end of an interval,}
+  \\[1ex]
+  &\;\langle s_q,e_q\rangle\;\text{, the query-interval and its start/end,}
   \\[1ex]
   x^{\text{rel}}_q = &\;(x_q - s_q) \times (e_q - s_q)^{-1}\;\text{, the relative postion of}\;x_q\;\text{in the query-interval,}
   \\[1ex]
   x_{o} = &\; s_o + \big(\,x^{\text{rel}}_q\times (e_o - s_o)\,\big)\;\text{, the corresponding}\;x\;\text{in the original-interval,}
   \\[1ex]
-  \tau = &\;x_o - x_q\;\text{, or, alternatively,}
+  \tau_q = &\;x_o - x_q\;\text{, or, alternatively,}
   \\[1ex]
-  \tau = &\;s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{, resulting in}
+  \tau_q = &\;s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{, vector-valued as}
   \\[1ex]
-  \hat{y} = &\; f(\tau+x_q)\;\text{.}
+  \mathbf{\tau} = &\ x_o - \mathbf{x}_q\;\text{, resulting in}
+  \\[1ex]
+  \hat{y}_q = &\; f(\tau_q+x_q)\;\text{, or,}
+  \\[1ex]
+  \mathbf{\hat{y}} = &\; f(\mathbf{\tau}+\mathbf{x}_q)\;\text{ (vector-valued version).}
 \end{aligned}
 $$
 
-In other words, $x_o$ is the $x$ we want to return $y$ for. In more other words, when boundaries are moved, and intervals get translated and scaled, $x$ always falls into an interval, and it assumes a relative position in it. So the correct $y$ to return is the one in the original interval, at that same relative position. All this can be reduced to a single offset, $\tau$, added to $x_q$.
+In other words, $x_o$ is the $x$ we want to return $y$ for. In more other words, when boundaries are moved, and intervals get translated and scaled, $x_q$ always falls into an interval, and it assumes a relative position in it. So the correct $y$ to return is the one in the original interval, at that same relative position. All this can be reduced to a single offset, $\tau$, added to $x_q$.
 
 In pseudo-code, this is what (the discrete version of) $\mathsf{M}$ does:
 
@@ -184,13 +190,13 @@ We use the RSS as an example for an error function, but any objective/cost/loss 
 
 $$
 \begin{aligned}
-  \text{RSS}_m &= \sum_{i=1}^{N}\,(\mathbf{y}_i - m(x_i,\tau))^2\;\text{, the RSS for the discrete case,}
+  \text{RSS}_m &= \sum_{i=1}^{N}\,(\mathbf{y}_i - m(x_i,\tau_i))^2\;\text{, the RSS for the discrete case,}
   \\[1ex]
-  &= \sum_{i=1}^{N}\,(\mathbf{y}_i - f(\tau-x_i))^2\;\text{,}
+  &= \sum_{i=1}^{N}\,(\mathbf{y}_i - f(\tau_i+x_i))^2\;\text{,}
   \\[1ex]
-  \frac{\partial\;\text{RSS}_m}{\partial\;\tau} &= \sum_{i=1}^{N}\,-2\,\big(y_i - f(\tau + x_i)\big)\times f'(\tau + x_i)\;\text{,}
+  \frac{\partial\;\text{RSS}_m}{\partial\;\tau_i} &= \sum_{i=1}^{N}\,-2\,\big(y_i - f(\tau_i + x_i)\big)\times f'(\tau_i + x_i)\;\text{,}
   \\[1ex]
-  \frac{\partial^2\;\text{RSS}_m}{\partial^2\;\tau} &= \sum_{i=1}^{N}\,2\,\Big((f(\tau + x_i) - y_i)\times f''(\tau + x_i) + f'(\tau + x_i)^2\Big)\;\text{.}
+  \frac{\partial^2\;\text{RSS}_m}{\partial^2\;\tau_i} &= \sum_{i=1}^{N}\,2\,\Big((f(\tau_i + x_i) - y_i)\times f''(\tau_i + x_i) + f'(\tau_i + x_i)^2\Big)\;\text{.}
 \end{aligned}
 $$
 
@@ -198,6 +204,10 @@ Again, it becomes apparent that we can pre-compute $\mathbf{\hat{y}}$, $\mathbf{
 
 $$
 \begin{aligned}
+  \mathbf{\hat{y}} &= f(\mathbf{\tau} + \mathbf{x})\;\text{, add vectors}\;\tau\;\text{and}\;x\;\text{already togeter,}
+  \\[1ex]
+  \mathbf{\hat{y}}\prime &= f'(\mathbf{\tau} + \mathbf{x})\;\text{,}
+  \\[1ex]
   \text{RSS}_m &= \sum_{i=1}^{N}\,(\mathbf{y}_i - \mathbf{\hat{y}}_i)^2\;\text{,}
   \\[1ex]
   \frac{\partial\;\text{RSS}_m}{\partial\;\tau} &= \sum_{i=1}^{N}\,-2\,\big(\mathbf{y}_i - \mathbf{\hat{y}}_i\big)\times \mathbf{\hat{y}}\prime_i\;\text{,}
@@ -261,15 +271,19 @@ Computing the gradient requires us to "re-assemble" the boundaries from $\tau$. 
 
 $$
 \begin{aligned}
-  \tau &= s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{,}
+  \mathbf{\tau} &= x_o - \mathbf{x}_q\;\text{, fully expanded as}
   \\[1ex]
-  s_q &= \frac{x_q\times(s_o - e_o) + e_q\times(\tau + x_q - s_o)}{\tau + x_q - e_o}\;\text{, and}
+  \tau_q &= s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{,}
   \\[1ex]
-  e_q &= \frac{e_o\times(s_q-x_q) + e_ox_q - s_q(\tau + x_q)}{s_o - x_q - \tau}\;\text{.}
+  \nabla\tau_q &= \frac{\partial\;\text{RSS}_m}{\partial\;\tau}\big(\mathbf{x},\mathbf{\tau}\big)\;\text{, the gradient for}\;\tau\;\text{in the current interval}\;q\,\text{,}
+  \\[1em]
+  s_q\prime &= \frac{x_{\text{first}}\times(s_o - e_o) + e_q\times\Big(\nabla\tau_q + x_{\text{first}} - s_o\Big)}{\nabla\tau_q + x_{\text{first}} - e_o}\;\text{, and}
+  \\[1ex]
+  e_q\prime &= \frac{e_o\times(s_q-x_{\text{last}}) + e_ox_{\text{last}} - s_q(\nabla\tau_q + x_{\text{last}})}{s_o - x_{\text{last}} - \nabla\tau_q}\;\text{.}
 \end{aligned}
 $$
 
-Note that all the other parameters, $s_o, e_o, x_q, \tau$, are either given/constant or calculated. So, for each interval, the gradient calculates a value for $\tau$ (or better: how it changes), and we have now the means to translate this back to the current delimiting boundaries, $s_q,e_q$.
+Note that all the other parameters, $s_o, e_o, x_q, \tau$, are either given/constant or calculated. So, for each interval, the gradient calculates a value for $\tau$ (or better: how it changes), and we have now the means to translate this back to the current delimiting boundaries, $s_q,e_q$, producing $s_q\prime,e_q\prime$.
 
 
 ```{r}

@@ -20,6 +20,12 @@ output:
   word_document: default
 ---
 
+```{r echo=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+```
+
 
 # Boundary Time Warping
 
@@ -85,21 +91,80 @@ BTW can use arbitrary many boundaries/intervals, resulting in arbitrary warping 
 
 ## Formal description of the model
 
-Each signal is modeled as a function over time, $\mathcal{X}$, such that $t(x),\,x\in\mathcal{X}$ returns the magnitude of the time series $t$ at $x$. The user may have an actual analytical function for their signal, or they choose to approximate it using, e.g., linear or spline interpolation.
+Each signal is modeled as a function over time and its support, $\mathcal{X}$, such that $t(x),\,x\in\mathcal{X}$ returns the magnitude of the time series $t$ at $x$. The user may have an actual analytical function for their signal, or they choose to approximate it using, e.g., linear or spline interpolation.
 
-In the following, an arbitrary choice for the query boundaries, $\mathbf{\theta_q}$, is made. For example, one may choose a set of equidistantly-spaced boundaries. With an increasing amount of boundaries, the choice becomes less important. Then, the function representing the query signal, below $f(x)$, is subdivided into intervals according to the chosen boundaries. For each interval, we usually want to internally create a function that scales and translates $f(x)$, such that its support is $[0,1]$. That way later, we can comfortably compute $m(x,s,t)$. Computing the gradient will tell us how to move each boundary, effectively translating and scaling each captured interval. The model determines the correct interval (and hence the corresponding parameters $s,t$) by $x$.
+In the following, an arbitrary choice for the query boundaries, $\mathbf{\theta_q}$, is made. For example, one may choose a set of equidistantly-spaced boundaries. With an increasing amount of boundaries, the choice becomes less important. Then, the function representing the query signal, below $f(x)$, is subdivided into intervals according to the chosen boundaries. For each interval, we usually want to internally create a function that scales and translates $f(x)$, such that its support becomes $[0,1]$. That way later, we can comfortably compute $m(x,s,t)$. Computing the gradient will tell us how to move each boundary, effectively translating and scaling each captured interval. The model determines the correct interval (and hence the corresponding parameters $s,t$) by $x$.
 
 
 $$
 \begin{aligned}
   r(x) &= \dots\;\text{, a function over the reference signal,}
   \\
-  f(x) &= \dots\;\text{, a function over the query signal,}
+  f(x),f\prime(x),f\prime\prime(x) &= \dots\;\text{, functions over the query signal (and its 1st and 2nd derivatives),}
   \\[1em]
   m(x,s,t) &= f(s\times (x-t))\;\text{, model that locally translates and scales the query,}
   \\[1em]
-  \nabla\,m &= \Big[ f'(s\times (x-t))\times(x-t)\;\frac{\partial\;m}{\partial\;s}\;,\;f'(s\times (x-t)) -s\;\frac{\partial\;m}{\partial\;t}\Big]\;\text{,}
-  \\[1em]
+  \nabla\,m &= \Big[ f'(s\times (x-t))\times(x-t)\;\frac{\partial\;m}{\partial\;s}\;,\;f'(s\times (x-t)) -s\;\frac{\partial\;m}{\partial\;t}\Big]\;\text{.}
+\end{aligned}
+$$
+
+The above descriptions are for scaling the query-signal's function using a set of parameters $\langle\,s,t\,\rangle$. However, we will have as many sets as we have intervals, and the overall model's task is to select the correct set of parameters, based on into which of the intervals $x$ falls.
+
+$$
+\begin{aligned}
+  \mathsf{M}(\mathbf{\theta}_{b_{\text{org}}}, \mathbf{\theta}_b, n, r, f) &= \langle\, \mathbf{y},\mathbf{\hat{y}} \,\rangle
+\end{aligned}
+$$
+
+$\mathsf{M}$ has the following arguments:
+
+* $\mathbf{\theta}_{b_{\text{org}}}$: The boundaries that were originally chosen to subdivide the query signal by. Those are needed to determine how to translate and scale the intervals. These boundaries are constants once the model is created.
+* $\mathbf{\theta}_b$: The query-boundaries that the model should apply: These are used in conjunction with the original boundaries to determine translation and scaling for each interval. These boundaries are altered in each training epoch. In below pseudo-code, we have created $f'$ such that it also involves the constant original boundaries, to avoid currying too many functions.
+* $n$: number of samples to take over the total support of $\mathcal{X}_b$ (the extent covered by the boundaries).
+* $r,f$: Functions for the reference- and query-signal, respectively. Note that in open-begin and/or open-end time warping, these do not necessarily have the same support. BTW will sample the same support of $f$ in $r$. The error function may penalize any discrepancies between both supports.
+
+$\mathsf{M}$ has the following outputs:
+
+* $\mathcal{X}_b$: The support used for sampling over the query. We return this for convenience.
+* $\mathbf{y}$: $r(x)$ sampled over the support established by the query-boundaries, $\mathbf{\theta}_b$. It would be possible to use a user-defined relative sampling-frequency in each query-interval, and then to sample proportionally from it (not shown here).
+* $\mathbf{\hat{y}}$: Piece-wise (for each interval) sampling of $f(x)$, according to local translation and scaling, also using the query-boundaries and original-boundaries.
+
+In pseudo-code, this is what (the discrete version of) $\mathsf{M}$ does (for the continuous case, we would do piece-wise integration):
+
+```{r eval = FALSE}
+M <- function(theta_b_org, theta_b, num_samples, r, f) {
+  X <- create_range(start = min(theta_b), end = max(theta_b), amount = num_samples)
+  y <- r(X)
+  y_hat <- zeros(num_samples)
+  
+  for (x, x_idx) in X do:
+    int_idx <- determine_interval_x_falls_into(x)
+    
+    start_org, end_org <- theta_b_org[int_idx]
+    start, end <- theta_b[int_idx]
+    extent <- end - start
+    
+    # This translates and scales the original interval into
+    # the requested query interval. For example, the original
+    # interval may be at [0.4, .55], and now it is requested
+    # to reside at [0.37, 0.62]. 'x' in this loop falls into
+    # the requested interval, so we can use it in f_prime!
+    f_prime <- function(x1) {
+      f( ((x1 - start) / extent) * (end_org - start_org) + start_org )
+    }
+    
+    y_hat[x_idx] <- f_prime(x)
+  endfor
+  
+  return(X, y, y_hat)
+}
+```
+
+
+We are also defining some of the error functions:
+
+$$
+\begin{aligned}
   \text{RSSC} &= \int_{\mathcal{X}} (f(x) - m(x,s,t))^2\;\text{, RSSC for continuous case,}
   \\[1em]
   \text{RSS} &= \sum_{i=1}^{N} (\mathbf{y}_i - m(x_i,s,t))^2\;\text{, RSS for discrete case,}
@@ -112,6 +177,33 @@ $$
 \end{aligned}
 $$
 
+All the 2nd-order partial derivatives for $\text{RSS}_m$ are:
+
+$$
+\begin{aligned}
+  \frac{\partial^2\;\text{RSS}_m}{\partial\,s\,\partial\,s} = &\;\;\sum_{i=1}^{N} 2 (t - x_i)\times (x_i - t)
+  \\
+  &\;\;\times\Big((y_i - f(s\times (x - t)))\times f\prime\prime(s\times (x_i - t)) - f\prime(s\times (x_i - t))^2\Big)\;\text{,}
+  \\[1em]
+  \frac{\partial^2\;\text{RSS}_m}{\partial\,s\,\partial\,t} = &\;\;\sum_{i=1}^{N} -2 s (t - x_i)\times \big(y_i - f(s\times (x_i - t))\big)
+  \\
+  &\;\;\times f\prime\prime(s\times (x_i - t)) + 2 \big(y_i - f(s\times (x_i - t))\big)
+  \\
+  &\;\;\times f\prime(s\times (x_i - t)) + 2 s (t - x_i)\times f\prime(s\times (x_i - t))^2\;\text{,}
+  \\[1em]
+  \frac{\partial^2\;\text{RSS}_m}{\partial\,t\,\partial\,s} = &\;\;\sum_{i=1}^{N} 2 (s\times (x_i - t)\times \big(y_i - f(s (x_i - t))\big)
+  \\
+  &\;\;\times f''(s\times (x_i - t)) + \big(y_i - f(s\times (x_i - t))\big)
+  \\
+  &\;\;\times f'(s\times (x_i - t)) + s\times (t - x_i)\times f'(s\times (x_i - t))^2)\;\text{,}
+  \\[1em]
+  \frac{\partial^2\;\text{RSS}_m}{\partial\,t\,\partial\,t} &= \sum_{i=1}^{N} 2 s^2\times \Big((f(s\times (x_i - t)) - y_i)\times f''(s\times (x_i - t)) + f'(s\times (x_i - t))^2\Big)\;\text{.}
+  \\[1em]
+\end{aligned}
+$$
+
+The three terms that repeat in the 1st- and 2nd-order partial derivatives are $f(s\times(x_i-t))$, $f'(s\times(x_i-t))$ and $f''(s\times(x_i-t))$, which are the functions over the query-signal and its 1st- and 2nd derivative. Recall that all these need local translation and scaling, and we can plug in $f(x)$ into our model-function, $\mathsf{M}$, to obtain $\mathbf{\hat{y}}$. Likewise, if we plug in the 1st- or 2nd derivatives, $f'(x),f''(x)$, we can obtain $\mathbf{\hat{y}}\prime$ and $\mathbf{\hat{y}}\prime\prime$, respectively. These vectors can then be substituted in the error functions for the actual function calls. The advantage of all this is that we can facilitate symbolic derivation.
+
 It becomes apparent, that we can use any error-function, if we were to pre-compute $\mathbf{\hat{y}}, \mathbf{\hat{y}}'$ and $\mathbf{\hat{y}}''$. The loss of the model requires $\mathbf{\hat{y}}$, the gradient additionally $\mathbf{\hat{y}}'$, and for the Hessian, we would additionally need $\mathbf{\hat{y}}''$. Pre-computing these vectors let's us plug in any error function effortlessly, i.e.,
 
 
@@ -121,14 +213,15 @@ $$
   \\
   &= f(s\times (\mathbf{x}-t))\;\text{, all y of the current model,}
   \\[1em]
-  \mathbf{\hat{y}}'_{s,t} &= f'(s\times (\mathbf{x}-t))\;\text{, and}
+  \mathbf{\hat{y}}\prime_{s,t} &= f\prime(s\times (\mathbf{x}-t))\;\text{, and}
   \\
-  \mathbf{\hat{y}}''_{s,t} &= f''(s\times (\mathbf{x}-t))\;\text{,}
+  \mathbf{\hat{y}}\prime\prime_{s,t} &= f\prime\prime(s\times (\mathbf{x}-t))\;\text{,}
   \\[1em]
-  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x_i)\times (\mathbf{y}_i-\mathbf{\hat{y}}^{s,t}_i)\times \mathbf{\hat{y}}'^{s,t}_i\text{.}
+  \frac{\partial\;\text{RSS}_m}{\partial\;s} &= \sum_{i=1}^{N} 2 (t-x_i)\times (\mathbf{y}_i-\mathbf{\hat{y}}^{s,t}_i)\times {\mathbf{\hat{y}}\prime}^{s,t}_i\text{.}
 \end{aligned}
 $$
 
+As one can see, the 1st-order partial derivative with respect to $s$ of the RSS error function, with pre-computed vectors instead of function calls is straight-forward.
 
 Let's make another example, using the Kullback-Leibler divergence. We will assume that $\mathbf{y},\mathbf{\hat{y}}$ represent vectors of discrete probabilities, each summing to $1$.
 
@@ -164,9 +257,64 @@ So any once- or twice- (for Hessian-based optimization) -differentiable error fu
 
 # Optimization of BTW
 
-BTW supports gradient-based optimization, and can optionally use a Hessian for Newton-based optimization. Theoretically, BTW does not need to constrain the boundaries, which could result in overlapping intervals. Also, the reference boundaries may chosen in a way such that the reference intervals would overlap. This is not something that DTW allows, and it is probably an unlikely use-case for BTW, too. However, we design BTW in a way that we leave this up to the user, as well as whether it makes sense for their scenario or not.
+BTW supports gradient-based optimization, and can optionally use a Hessian for Newton-based optimization. Theoretically, BTW does not need to constrain the boundaries, which could result in overlapping intervals. Also, the reference boundaries may be chosen in a way such that the reference intervals would overlap. This is not something that DTW allows, and it is probably an unlikely use-case for BTW, too. However, we design BTW in a way that we leave this up to the user, as well as whether it makes sense for their scenario or not.
 
-While overlapping reference intervals are less critical, problems arise for when query intervals overlap, as then the model is not bijective any longer (i.e., $x$ falls into more than one interval, and hence we obtain a $y$ for each interval that applies). Again, we will let the user chose how to deal with such cases that break bijection, using some decision function that picks or derives a single $\hat{y}\in\mathbf{\hat{y}}$. In general, _constrained optimization_ should be chosen, with constraints that ensure that any boundary $b_n<b_{n+1}$.
+While overlapping reference intervals are less critical, problems arise for when query intervals overlap, as then the model is not bijective any longer (i.e., $x$ falls into more than one interval, and hence we obtain a $y$ for each interval that applies). Again, we will let the user chose how to deal with such non-surjective cases that break bijection, using some decision function that picks or derives a single $\hat{y}\in\mathbf{\hat{y}}$. In general, _constrained optimization_ should be chosen, with constraints that ensure that any boundary $b_n<b_{n+1}$.
+
+Let's create our overall model-function, $\mathsf{M}$:
+
+```{r}
+# Please look into this file for all BTW-related models and functions:
+source(file = "../models/BTW.R")
+```
+
+Let's approximate functions for both signals and initialize the boundaries: We will just use equidistantly-spaced bounds with a distance of $0.1$. The amount of boundaries is equal to the degrees of freedom of BTW, except for when the first and/or last boundary is fixed (so-called closed begin/end time warping). While we know that it would make sense in this case, we will not impose these constraints here.
+
+```{r}
+signal_ref <- stats::approxfun(x = btwRef$x, y = btwRef$y, ties = mean)
+signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
+
+query_bounds <- seq(0, 1, by = 0.1)
+```
+
+Here is a short test. We use the same boundaries as the original- and query-boundaries, so the following output should produce the exact same plots we have seen before. The bottom plot is our manual attempt at repairing (warping) the signal.
+
+```{r}
+temp <- M(
+  theta_b_org = query_bounds,
+  theta_b = query_bounds,
+  r = signal_ref,
+  f = signal_query)
+
+# We know how the reference signal was distorted previously. Let's make
+# a test where we manually undo this by moving the boundaries.
+temp2_bounds <- c(
+  0,
+  .075, .1, .15, .2, .25,
+  .55, .575, .6,  .8, 1)
+temp2 <- M(
+  theta_b_org = query_bounds,
+  theta_b = temp2_bounds,
+  r = signal_ref,
+  f = signal_query)
+
+ggarrange(
+  ncol = 1,
+  plotBtw(data.frame(x = temp$X, y = temp$y)),
+  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
+  plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp2_bounds)
+)
+```
+
+The errors (residual sum of squares) for the un-optimized and the manually rectified queries are, respectively:
+
+```{r}
+round(c(
+  sum((temp$y - temp$y_hat)^2),
+  sum((temp2$y - temp2$y_hat)^2)
+), 5)
+```
+
 
 
 ## Minimization and maximization
@@ -199,29 +347,205 @@ If we have twice-differentiable model- and error-functions, we can use the Hessi
 Contrary to the previously proposed heuristic search, this method is only one-way, as it does not add new boundaries. It may be useful for reducing overfit that is introduced by using too many boundaries. It may be feasible to combine both methods, e.g., use this approach first to remove superfluous boundaries, then further optimize using the other approach.
 
 
-# Testing
+# Testing (new)
+
+When we defined the code for our model, $\mathsf{M}$, we showed a short test of it using manually repaired query-boundaries, which result in an error $\approx 0$. In the following, we want to make some tests for automatic optimization of our model, with and without a gradient, with and without constraints etc.
+
+```{r}
+errf <- function(y, y_hat) {
+  sum((y - y_hat)^2)
+}
+
+Stabilize <- function(f, lb, ub) {
+  function(x) {
+    if (x < lb) f(lb) else if (x > ub) f(ub) else f(x)
+  }
+}
+
+fr <- FitResult$new(paramNames = "loss")
+o <- function(theta, isGrad = FALSE) {
+  if (!isGrad) {
+    fr$startStep()
+  }
+  
+  res <- M(theta_b_org = query_bounds, theta_b = theta,
+           r = Stabilize(signal_ref, 0, 1),
+           f = Stabilize(signal_query, 0, 1))
+  
+  loss <- errf(y = res$y, y_hat = res$y_hat)
+  if (!isGrad) {
+    fr$stopStep(resultParams = loss)#, verbose = TRUE)
+  }
+  loss
+}
+
+optR <- loadResultsOrCompute(file = "../results/btw-constr1.rds", computeExpr = {
+  # Note: the constraints are defined later in this notebook..
+  constrOptim(
+    control = list(maxit = 1e6, abstol = 1e-2),
+    #par = query_bounds,
+    #fn = o,
+    f = o,
+    method = "Nelder-Mead",
+    theta = (function() {
+      t <- query_bounds
+      t[t == 0] <- .Machine$double.eps
+      t[t == 1] <- 1 - .Machine$double.eps
+      t
+    })(),
+    ui = li$getUi(),
+    ci = li$getCi()
+    #gr = function(x) numDeriv::grad(func = o, x = x, isGrad = TRUE),
+    #method = "L-BFGS-B",
+    #lower = rep(0, length(query_bounds)),
+    #upper = rep(1, length(query_bounds))
+  )
+})
+```
+
+```{r}
+temp3 <- M(
+  theta_b_org = query_bounds,
+  theta_b = optR$par,
+  r = signal_ref,
+  f = signal_query)
+
+ggarrange(
+  ncol = 1,
+  plotBtw(data.frame(x = temp$X, y = temp$y)),
+  plotBtw(data.frame(x = temp3$X, y = temp3$y_hat), bounds = optR$par)
+)
+```
+
+```{r}
+library(optimParallel)
+
+cl <- parallel::makePSOCKcluster(8)
+parallel::clusterExport(cl, varlist = c("fr", "M", "query_bounds", "Stabilize", "signal_ref", "signal_query", "errf"))
+
+set.seed(1337)
+optRp <- optimParallel::optimParallel(
+  par = query_bounds,
+  fn = o,
+  lower = rep(0, length(query_bounds)),
+  upper = rep(1, length(query_bounds)),
+  parallel = list(
+    cl = cl,
+    forward = FALSE
+  )
+)
+
+stopCluster(cl)
+optRp
+```
+
+```{r}
+temp4 <- M(
+  theta_b_org = query_bounds,
+  theta_b = optRp$par,
+  r = signal_ref,
+  f = signal_query)
+
+ggarrange(
+  ncol = 1,
+  plotBtw(data.frame(x = temp$X, y = temp$y)),
+  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
+  plotBtw(data.frame(x = temp4$X, y = temp4$y_hat), bounds = optRp$par)
+)
+```
+
+The following is equivalent to the previous, parallel optimization. Note that we should not try to numerically derive the gradient at this point ourselves -- whenever I tried that, it never converged. `optim` uses a finite-difference approximation if the gradient is missing, and that works really well at this point. However, we cannot do constrained optimization this way, because there, we explicitly need to specify a gradient. Maybe we can borrow the one from `optim` that works so well for these tests? Anyhow, since we __do__ have an analytical gradient, we will see how that works compared to estimating a gradient later.
+
+```{r}
+fr$clearFitHist()
+
+optR2 <- optim(
+  par = query_bounds,
+  fn = o,
+  method = "L-BFGS-B",
+  lower = rep(0, length(query_bounds)),
+  upper = rep(1, length(query_bounds))
+)
+
+optR2
+```
+
+```{r}
+plot(log(fr$getFitHist()[, "loss"]), type = "l")
+```
+
+## With analytical gradient
+
+We have previously established $\mathsf{M}(\mathbf{\theta}_{b_{\text{org}}}, \mathbf{\theta}_b, n, r, f)$ as our overall model that uses local models, $m(x,s,t)$, to locally translate and scale $f$, which is a function over the query-signal. The overall model, given the original- and query-boundaries, outputs the two vectors $\mathbf{y},\mathbf{\hat{y}}$.
+
+We therefore need to define a __gradient__ over $\mathsf{M}$, that returns $\mathbf{\hat{\theta}}_b$. Recall that $\mathbf{\theta}_b$ is a vector of boundaries that subdivide a signal into intervals, and the number of intervals hence is $|B| - 1$. Each interval is then translated and scaled using the two parameters $\langle\,s,t\,\rangle$, which are derived from two neighboring boundaries. We have previously laid out how the gradient is computed using these parameters. It becomes apparent, that calculating the gradient yields $\langle\,\hat{s},\hat{t}\,\rangle$, and that these already determine how to move the __two__ boundaries that encompass a interval. This may pose a problem: If we were to calculate the next interval's gradient, then that would include the last boundary of the previous interval. Ideally, the result would be to move the beginning boundary of the next interval exactly where previous interval's ending boundary is. At this point, I am not sure whether calculating the gradient will lead exactly to that. If it turns out that this is the case, then we use this to our advantage and only calculate adjacent pairs of boundaries, effectively halving the amount of required computations. If it turns out that this is not the case, then we have to think about why this happens and what a solution might look like.
+
+$$
+\begin{aligned}
+  \nabla\,\mathsf{M}(\mathbf{\theta}_b, n, r, f) &= \mathbf{\hat{\theta}}
+\end{aligned}
+$$
+
+The parameters are the same as for the model description above, but we have removed $\mathbf{\theta}_{b_{\text{org}}}$, as for calculating the new boundaries, $\mathbf{\hat{\theta}}$, only the current boundaries are required. For example, for an interval $i$ with parameters $s,t$, the gradient will suggest $\hat{s},\hat{t}$. While $\hat{t}$ directly corresponds to the offset of the interval, and hence to its first boundary, the second boundary corresponds to the previous size of the interval, as well as the new scale, $\hat{s}$ and offset $\hat{t}$.
+
+
+```{r}
+errf_grad <- function(s, t, X, Y, y_hat, y_hat_prime) {
+  temp <- (Y - y_hat) * y_hat_prime
+  ds <- sum(2 * (t - X) * temp)
+  dt <- sum(2 * s * temp)
+  c(ds, dt)
+}
+```
+
+
+## With analytical Hessian (2nd-order partial derivatives)
+
+```{r}
+errf_grad2 <- function(s, t, X, Y, y_hat, y_hat_prime, y_hat_prime_prime) {
+  dss <- sum(2 * (t - X) * (X - t) * ((Y - y_hat) * y_hat_prime_prime - y_hat_prime)^2)
+  
+  dst <- sum(-2 * s * (t - X) * (Y - y_hat) *
+               y_hat_prime_prime + 2 * (Y - y_hat) *
+               y_hat_prime + 2 * s * (t - X) * y_hat_prime^2)
+  
+  dts <- sum(2 * (s * (X - t) * (Y - y_hat)) *
+               y_hat_prime_prime + (Y - y_hat) *
+               y_hat_prime + s * (t - X) * y_hat_prime^2)
+  
+  dtt <- sum(2 * s^2 *
+               ((y_hat - Y) * y_hat_prime_prime + y_hat_prime^2))
+
+  c(dss, dst, dts, dtt)
+}
+```
+
+
+
+
+# Testing (old)
 
 Let's make some tests! We want to attempt rectifying the distorted query from the introduction. The reference signal it stems from is sine, but we sampled from it -- so let's approximate a function over reference and query signal, as this should be the most common use-case.
 
-```{r}
+```{r echo=FALSE}
 ggarrange(
   ncol = 1,
 
   plotBtw(btwRef),
-  plotBtw(btwQuery, seq(0, 1, by = 0.05))
+  plotBtw(btwQuery, seq(0, 1, by = 0.1))
 )
 ```
 
-Let's approximate functions for both signals and initialize the boundaries: We will just use equidistantly-spaced bounds with a distance of $0.05$. The amount of boundaries is equal to the degrees of freedom of BTW, except for when the first and/or last boundary is fixed (so-called closed begin/end time warping). While we know that it would make sense in this case, we will not impose these constraints here.
+Let's approximate functions for both signals and initialize the boundaries: We will just use equidistantly-spaced bounds with a distance of $0.1$. The amount of boundaries is equal to the degrees of freedom of BTW, except for when the first and/or last boundary is fixed (so-called closed begin/end time warping). While we know that it would make sense in this case, we will not impose these constraints here.
 
 ```{r}
 signal_ref <- stats::approxfun(x = btwRef$x, y = btwRef$y, ties = mean)
 signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
 
-query_bounds <- seq(0, 1, by = 0.05)
+query_bounds <- seq(0, 1, by = 0.1)
 ```
 
-Note that two neighboring boundaries delimit an interval, which leaves us with $|\mathtt{B}|-1$ intervals and thus with $20$ tuples of $\langle s,t\rangle$ parameters. However, only the boundaries are altered, and we derive the index for each interval as well as the current parameters in the objective function.
+Note that two neighboring boundaries delimit an interval, which leaves us with $|\mathtt{B}|-1$ intervals and thus with $10$ tuples of $\langle s,t\rangle$ parameters. However, only the boundaries are altered, and we derive the index for each interval as well as the current parameters in the objective function.
 
 We will define the objective function next:
 
@@ -301,7 +625,7 @@ btw_optim_no_grad_no_const <- loadResultsOrCompute(file = "../results/btw_optim_
 btw_optim_no_grad_no_const
 ```
 
-Well, the error is an order of magnitude smaller, but `optim` did not actually finally converge, which is no surprise for $21$-dimensional problem and a Nelder-Mead approach limited to $500$ iterations. Also, as predicted, some boundaries/intervals currently overlap. So here's where the optimization stopped:
+Well, the error is an order of magnitude smaller, but `optim` did not actually finally converge, which is no surprise for $11$-dimensional problem and a Nelder-Mead approach limited to $500$ iterations. Also, as predicted, some boundaries/intervals currently overlap. So here's where the optimization stopped:
 
 ```{r echo=FALSE}
 temp <- btw_objective(x = btw_optim_no_grad_no_const$par, returnYHat = TRUE)
@@ -340,8 +664,8 @@ for (idx in 1:(length(query_bounds) - 1)) {
   i1 <- idx
   i2 <- idx + 1
   name <- paste0("-b", i1, "_geqv_+b", i2)
-  # bounds before i1, -b1, +b2, bounds after b2, >= 0
-  ineqs <- c(rep(0, i1 - 1), -1, 1, rep(0, length(query_bounds) - i2), 0)
+  # bounds before i1, -b1, +b2, bounds after b2, >= 0.01
+  ineqs <- c(rep(0, i1 - 1), -1, 1, rep(0, length(query_bounds) - i2), 0.01)
   li$setLinIneqConstraint(name = name, ineqs = ineqs)
 }
 
@@ -385,12 +709,12 @@ ggarrange(
 The next we do is to try an approximated gradient, __derived over the objective function__. Now we went through the troubles of defining an __analytical__ gradient for these tests, which should work very well in theory. However, we can also approximate a gradient over the objective function and see how that works:
 
 ```{r}
-#btw_optim_approx_grad_with_const <- loadResultsOrCompute(file = "../results/btw_optim_approx_grad_with_const.rds", computeExpr = {
+btw_optim_approx_grad_with_const <- loadResultsOrCompute(file = "../results/btw_optim_approx_grad_with_const.rds", computeExpr = {
   theta <- li$getTheta()
   theta[theta == 0] <- .Machine$double.eps
   theta[theta == 1] <- 1 - .Machine$double.eps
   
-  constrOptim2(
+  constrOptim(
     theta = theta,
     ui = li$getUi(),
     ci = li$getCi(),
@@ -399,8 +723,8 @@ The next we do is to try an approximated gradient, __derived over the objective 
     grad = function(x) {
       numDeriv::grad(func = btw_objective, x = x)
     })
-#})
-#btw_optim_approx_grad_with_const
+})
+btw_optim_approx_grad_with_const
 ```
 
 ```{r echo=FALSE}
@@ -501,7 +825,6 @@ offR <- .75
 endR <- 1
 offQ <- .50
 extQ <- .4
-trans <- offR - offQ
 scale <- 1 / (extQ / (endR - offR))
 
 tempf2 <- (function() {
@@ -531,11 +854,20 @@ Now we want to pre-translate and pre-scale the reference function to the interva
 
 ```{r}
 tempfPrime <- function(x) {
-  tempf(x * (1 - offR) + offR)
+  tempf(x * (endR - offR) + offR)
 }
 
 curve(tempfPrime, 0, 1)
 ```
+
+```{r}
+tempfPrimePrime <- function(x) {
+  tempf(((x - offQ) * (1 / extQ)) * (endR - offR) + offR)
+}
+
+curve(tempfPrimePrime, offQ, offQ + extQ)
+```
+
 
 So, here's the final function that only needs the absolute start and end of the query-interval, to properly translate and scale.
 
