@@ -110,7 +110,11 @@ M_new <- function(theta_b_org, theta_b, r, f, num_samples = 1e3) {
       end_q <- theta_b[q + 1]
       
       function(x) {
-        x_rel <- (x - start_q) / (end_q - start_q)
+        d <- end_q - start_q
+        if (d == 0) {
+          return(0)
+        }
+        x_rel <- (x - start_q) / d
         x_o <- start_org + (x_rel * (end_org - start_org))
         f(x_o)
       }

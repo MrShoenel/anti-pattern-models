@@ -1,6 +1,8 @@
 ---
 title: "Boundary Time Warping (new)"
 bibliography: ../inst/REFERENCES.bib
+header-includes:
+  - \usepackage{bm}
 output:
   pdf_document:
     number_sections: true
@@ -24,12 +26,16 @@ output:
 source(file = "../helpers.R")
 source(file = "./common-funcs.R")
 source(file = "../models/modelsR6.R")
+source(file = "../models/BTW.R")
+
+library(ggplot2)
+library(ggpubr)
 ```
 
 
 # Boundary Time Warping (new)
 
-Note that we have abandoned the previous BTW notebook, as we want to reformulate BTW using a slightly easier formula. Previously, we had formulated BTW using __two__ parameters, translate, ($t$), and scale, ($s$). It is however enough to derive a single parameter, which we will call $\tau$, that translates $x$ to where we need it. The new model hence becomes:
+Note that we have abandoned the previous BTW notebook (`boundary-time-warping.Rmd`), as we want to reformulate BTW using a slightly easier formula. Previously, we had formulated BTW using __two__ parameters, translate, ($t$), and scale, ($s$). It is however enough to derive a single parameter, which we will call $\tau$, that translates $x$ to where we need it. The new model hence becomes:
 
 $$
 \begin{aligned}
@@ -41,33 +47,33 @@ Again, $\tau$ is a local parameter, that depends on which query-interval $x$ fal
 
 $$
 \begin{aligned}
-  &\;x_q \in \mathcal{X}\;\text{, the }\;x\text{-coordinate we need the}\;y\;\text{for,}
-  \\[1ex]
-  &\;\mathbf{x}_q\;\text{, the vector of all}\;x_q\;\text{in the current interval,}
-  \\[1ex]
   \text{}&\;q \in \mathcal{I}\;\text{, the index of the query-interval}\;x_q\;\text{falls into,}
   \\[1ex]
-  &\;\langle s_o,e_o\rangle\;\text{, where }\;s,e\;\text{ demarcate the start and end of an interval,}
+  &\;\mathbf{x}_q\subset\mathcal{X}\;\text{, the vector of all}\;x\;\text{in the current query-interval,}
   \\[1ex]
-  &\;\langle s_q,e_q\rangle\;\text{, the query-interval and its start/end,}
+  &\;x_i\in\mathbf{x}_q\;\text{, an}\;x\text{-coordinate we need the}\;y\;\text{for,}
   \\[1ex]
-  x^{\text{rel}}_q = &\;(x_q - s_q) \times (e_q - s_q)^{-1}\;\text{, the relative postion of}\;x_q\;\text{in the query-interval,}
+  &\;\langle s_o,e_o\rangle\;\text{, start and end of the original interval,}
   \\[1ex]
-  x_{o} = &\; s_o + \big(\,x^{\text{rel}}_q\times (e_o - s_o)\,\big)\;\text{, the corresponding}\;x\;\text{in the original-interval,}
+  &\;\langle s_q,e_q\rangle\;\text{, start and end of the query-interval,}
   \\[1ex]
-  \tau_q = &\;x_o - x_q\;\text{, or, alternatively,}
+  x^{\text{rel}}_i = &\;(x_i - s_q) \times (e_q - s_q)^{-1}\;\text{, the relative postion of}\;x_i\;\text{in the query-interval,}
   \\[1ex]
-  \tau_q = &\;s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{, vector-valued as}
+  x_{i}^o = &\; s_o + \big(\,x^{\text{rel}}_i\,(e_o - s_o)\,\big)\;\text{, the corresponding}\;x\;\text{in the original-interval,}
   \\[1ex]
-  \mathbf{\tau} = &\ x_o - \mathbf{x}_q\;\text{, resulting in}
+  x_i^o = &\;\tau_i + x_i\;\text{, or, alternatively,}
   \\[1ex]
-  \hat{y}_q = &\; f(\tau_q+x_q)\;\text{, or,}
+  \tau_i = &\;s_o + \bigg(\frac{x_i - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_i\;\text{, vector-valued as}
   \\[1ex]
-  \mathbf{\hat{y}} = &\; f(\mathbf{\tau}+\mathbf{x}_q)\;\text{ (vector-valued version).}
+  \bm{\tau} = &\ x_i^o - \mathbf{x}_q\;\text{, resulting in}
+  \\[1ex]
+  \hat{y}_i = &\; f(\tau_i+x_i)\;\text{, or,}
+  \\[1ex]
+  \mathbf{\hat{y}} = &\; f(\bm{\tau}+\mathbf{x}_q)\;\text{ (vector-valued version).}
 \end{aligned}
 $$
 
-In other words, $x_o$ is the $x$ we want to return $y$ for. In more other words, when boundaries are moved, and intervals get translated and scaled, $x_q$ always falls into an interval, and it assumes a relative position in it. So the correct $y$ to return is the one in the original interval, at that same relative position. All this can be reduced to a single offset, $\tau$, added to $x_q$.
+In other words, $x_o$ is the $x$ we want to return $y$ for, and it needs to be derived from $x_i$ and the original- and query-intervals. In more other words, when boundaries are moved, and intervals get translated and scaled, $x_i$ always falls into an interval, and it assumes a relative position in it. So the correct $y$ to return is the one in the original interval, at that same relative position. All this can be reduced to a single offset, $\tau_i$, added to $x_i$ at index $i$.
 
 In pseudo-code, this is what (the discrete version of) $\mathsf{M}$ does:
 
@@ -238,6 +244,8 @@ RSS_m_deriv2 <- function(y, y_hat, y_hat_prime, y_hat_prime_prime) {
 Let's do some quick testing with `optim`:
 
 ```{r}
+library(optimParallel)
+
 Stabilize <- function(f, lb, ub) {
   Vectorize(function(x) {
     if (x < lb) f(lb) else if (x > ub) f(ub) else f(x)
@@ -247,87 +255,161 @@ Stabilize <- function(f, lb, ub) {
 r <- Stabilize(signal_ref, 0, 1)
 f <- Stabilize(signal_query, 0, 1)
 
-o <- function(theta) {
+o <- function(theta, isGrad = FALSE) {
+  n <- 1e3
   res <- M_new(
-    theta_b_org = query_bounds, theta_b = theta, r = r, f = f)
+    theta_b_org = query_bounds, theta_b = theta, r = r, f = f, num_samples = n)
   
   loss <- RSS_m(y = res$y, y_hat = res$y_hat)
-  loss
+  print(paste0(isGrad, " / ", loss))
+  
+  reg <- (1 - max(theta) + min(theta)) * n
+  
+  loss + reg
 }
 
-optR <- optim(
+
+cl <- parallel::makePSOCKcluster(12)
+parallel::clusterExport(cl, varlist = c("M_new", "query_bounds", "r", "f", "RSS_m", "Stabilize", "signal_ref", "signal_query", "f_deriv1", "RSS_m_deriv1"))
+
+set.seed(1337)
+optRp <- optimParallel::optimParallel(
   par = query_bounds,
   fn = o,
-  method = "L-BFGS-B",
+  #gr = o_deriv1_test,
   lower = rep(0, length(query_bounds)),
-  upper = rep(1, length(query_bounds))
+  upper = rep(1, length(query_bounds)),
+  parallel = list(
+    cl = cl,
+    forward = FALSE
+  )
 )
+
+stopCluster(cl)
+optRp
 ```
 
-## Using an explicit gradient
+## Using an explicit analytical gradient
 
-Computing the gradient requires us to "re-assemble" the boundaries from $\tau$. Recall that we have a separate $\tau$ in each interval, which is demarcated by two consecutive boundaries. The boundaries represent the actual parameter vector, the parameters we want to optimize, $\mathbf{\theta}$. So we have to reverse the steps we undertook for establishing $\tau$, in order to get back to the boundaries. In the following, $\langle s_q,e_q\rangle$ represent those absolute offsets for an interval, in which the current $\tau$ is valid. The gradient of our model will tell us how to change $\tau$, and our task is to translate that back to $\langle s_q,e_q\rangle$:
+Computing the gradient requires us to "re-assemble" the boundaries from $\tau$. Recall that we have separate $\mathbf{\tau}$-vectors in each interval, which is demarcated by two consecutive boundaries. The boundaries represent the actual parameter vector, the parameters we want to optimize, $\mathbf{\theta}$. So we have to reverse the steps we undertook for establishing $\tau$, in order to get back to the boundaries. In the following, $\langle s_q,e_q\rangle$ represent those absolute offsets for an interval, in which the current $\bm{\tau}$ is valid. The gradient of our model will tell us how to change $\bm{\tau}$, and our task is to translate that back to the changes required for $s_q,e_q$, namely $\delta_{s_q},\delta_{e_q}$.
 
 
 $$
 \begin{aligned}
-  \mathbf{\tau} &= x_o - \mathbf{x}_q\;\text{, fully expanded as}
+  \bm{\tau} &= x_i^o - \mathbf{x}_q\;\text{, fully expanded as}
   \\[1ex]
-  \tau_q &= s_o + \bigg(\frac{x_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_q\;\text{,}
+  \tau_i &= s_o + \bigg(\frac{x_i - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - x_i\;\text{, vector-valued as}
   \\[1ex]
-  \nabla\tau_q &= \frac{\partial\;\text{RSS}_m}{\partial\;\tau}\big(\mathbf{x},\mathbf{\tau}\big)\;\text{, the gradient for}\;\tau\;\text{in the current interval}\;q\,\text{,}
+  \bm{\tau} &= s_o + \bigg(\frac{\mathbf{x}_q - s_q}{e_q - s_q}\times (e_o - s_o)\bigg) - \mathbf{x}_q,
+  \\[1ex]
+  \delta &= \frac{\partial\;\text{RSS}_m}{\partial\;\bm{\tau}}\big(\mathbf{x}_q,\bm{\tau}\big)\;\text{, the gradient-suggested change for that}\;\bm{\tau}\;\text{,}
+  \\[1ex]
+  \delta_{s_q} &= \frac{x_{\text{first}}\,(s_o - e_o) + e_q\,\Big(\delta + x_{\text{first}} - s_o\Big)}{\delta + x_{\text{first}} - e_o}\;\text{, and}
   \\[1em]
-  s_q\prime &= \frac{x_{\text{first}}\times(s_o - e_o) + e_q\times\Big(\nabla\tau_q + x_{\text{first}} - s_o\Big)}{\nabla\tau_q + x_{\text{first}} - e_o}\;\text{, and}
-  \\[1ex]
-  e_q\prime &= \frac{e_o\times(s_q-x_{\text{last}}) + e_ox_{\text{last}} - s_q(\nabla\tau_q + x_{\text{last}})}{s_o - x_{\text{last}} - \nabla\tau_q}\;\text{.}
+  \delta_{e_q} &= \frac{e_o\,(s_q-x_{\text{last}}) + e_o\,x_{\text{last}} - s_q\,(\delta + x_{\text{last}})}{s_o - x_{\text{last}} - \delta}\;\text{.}
 \end{aligned}
 $$
 
-Note that all the other parameters, $s_o, e_o, x_q, \tau$, are either given/constant or calculated. So, for each interval, the gradient calculates a value for $\tau$ (or better: how it changes), and we have now the means to translate this back to the current delimiting boundaries, $s_q,e_q$, producing $s_q\prime,e_q\prime$.
+$\bm{\tau}$ is vector-valued, as we require a different offset for each $x_i$. However, we can associate a cost and a gradient $\delta$ with $\bm{\tau}$, which could be used to adjust each and every single $\tau_i$ separately, but what we really want to adjust are the current interval's boundaries. We can re-arrange above equation for $\tau_i$ for either $s_q$ or $e_q$, and plug in $\delta$, so that this delta gives us information as to how to change $s_q,e_q$, instead of $\tau$.
 
+Note that the first boundary is at $x_{\text{first}}$, so that $\delta_{s_q}$ needs to be calculated using the first $x$ in the query-interval. Also note, and this is even more important, that all but the last interval are defined to __not__ include the last boundary, i.e., $i_n=[b_{s_q}, b_{e_q})$, which means that the end of the current interval, $e_q$, is not equal to the second boundary (except in the last interval). The distance between $e_q$ and the next boundary is $0$, but technically, in the discrete case, $x_{e_q+1}=b_{s_{q+1}}$ (the $x$ after $e_q$ is equal to the starting boundary of the next interval). $b_{s_{q+1}}$ lies hence _outside_ the current interval $q$. However, in most cases where the signal does not abruptly change in the next interval, we expect $x_{e_q}\approx b_{s_{q+1}}$. We point out this interesting case as it may preserve half the computations. When adjusting the second boundary of an interval using $e_q$, we expect that:
+
+$$
+\begin{aligned}
+  &\;\text{sgn},\delta\;\text{, functions to obtain the sign and}\;\delta\text{,}
+  \\[1ex]
+  \text{sgn}\big(\delta(x_{e_q})\big) =&\;\text{sgn}\big(\delta(b_{s_{q+1}})\big)\;\text{, (the gradient-suggested change has the same sign),}
+  \\[1ex]
+  \log{\Big\lvert\,\delta\big(x_{e_q}\big)\,\Big\rvert} \approx&\;\log{\Big\lvert\,\delta\big(b_{s_{q+1}}\big)\Big\rvert\,}\;\text{, the magnitudes of both changes are similar,}
+  \\[1ex]
+  \Big\lvert\,\delta\big(x_{e_q}\big)\,\Big\rvert \neq&\;\Big\lvert\,\delta\big(b_{s_{q+1}}\big)\Big\rvert\,\;\text{, but not the same.}
+\end{aligned}
+$$
+
+TODO: Describe below code.
 
 ```{r}
 #' This is the (overly expressive) gradient of our objective function.
 #' It evaluates the gradient for each pair of neighboring boundaries,
 #' instead of going 2-by-2. We implement it this way for testing purposes.
-o_deriv1_test <- function(theta) {
+o_deriv1_test <- function(theta, explicit = FALSE) {
   res <- M_new(
     theta_b_org = query_bounds, theta_b = theta, r = r, f = f)
   res1 <- M_new(
     theta_b_org = query_bounds, theta_b = theta, r = r, f = f_deriv1)
   
-  sq <- function(so, eo, eq, xq, tau) {
-    (xq * (so - eo) + eq * (tau + xq - so)) / (tau + xq - eo)
-  }
+  delta_sq <- Vectorize(function(so, eo, eq, x1, delta_tau) {
+    (x1 * (so - eo) + eq * (delta_tau + x1 - so)) / (delta_tau + x1 - eo)
+  }, vectorize.args = c("x1", "delta_tau"))
   
-  eq <- function(so, eo, sq, xq, tau) {
-    (eo * (sq - xq) + eo * xq - sq * (tau + xq)) / (so - xq - tau)
-  }
+  delta_eq <- Vectorize(function(so, eo, sq, xL, delta_tau) {
+    (eo * (sq - xL) + eo * xL - sq * (delta_tau + xL)) / (so - xL - delta_tau)
+  }, vectorize.args = c("xL", "delta_tau"))
   
   # Now, for each consecutive pair of neighboring boundaries, piece-wise
   # evaluate the derivative of the cost-function, obtain tau, and translate
   # it back to the two boundaries of the enclosing interval.
   
+  theta_full <- c()
+  
   for (iIdx in 1:(length(theta) - 1)) {
-    y <- res$y[res$int_idx == iIdx, ]
-    y_hat <- res$y_hat[res$int_idx == iIdx, ]
-    y_hat_prime <- res$y_hat_prime[res$int_idx == iIdx, ]
+    y <- res$y[res$int_idx == iIdx]
+    y_hat <- res$y_hat[res$int_idx == iIdx]
+    y_hat_prime <- res1$y_hat[res1$int_idx == iIdx]
     
-    tau <- RSS_m_deriv1(y = res$y, y_hat = y_hat, y_hat_prime = y_hat_prime)
+    if (length(y) == 0) {
+      theta_full[paste0("S", iIdx)] <- 0
+      theta_full[paste0("E", iIdx)] <- 0
+      next
+    }
     
-    # Now init the parameters we need:
+    delta_tau <- sapply(1:length(y), function(i) {
+      RSS_m_deriv1(y = y[i], y_hat = y_hat[i], y_hat_prime = y_hat_prime[i])
+    })
+    
     so <- query_bounds[iIdx]
-    eo <- query_bounds[iIdx - 1]
+    eo <- query_bounds[iIdx + 1]
     sq <- theta[iIdx]
     eq <- theta[iIdx + 1]
     
+    sq_delta <- c(0, na.omit(delta_sq(
+      so = so, eo = eo, eq = eq, x1 = res$X[res$int_idx == iIdx], delta_tau = delta_tau)))
+    sq_min <- min(sq_delta)
+    sq_max <- max(sq_delta)
     
+    eq_delta <- c(0, na.omit(delta_eq(
+      so = so, eo = eo, sq = sq, xL = res$X[res$int_idx == iIdx], delta_tau = delta_tau)))
+    eq_min <- min(eq_delta)
+    eq_max <- max(eq_delta)
+    
+    theta_full[paste0("S", iIdx)] <- if (abs(sq_max) > abs(sq_min)) sq_max else sq_min
+    theta_full[paste0("E", iIdx)] <- if (abs(eq_max) > abs(eq_min)) eq_max else eq_min
+    
+    # delta_tau <- RSS_m_deriv1(y = y, y_hat = y_hat, y_hat_prime = y_hat_prime)
+    # 
+    # theta_full[paste0(iIdx)] <- delta_tau
+    # 
+    # # # Now init the parameters we need:
+    # # so <- query_bounds[iIdx]
+    # # eo <- query_bounds[iIdx + 1]6
+    # # sq <- theta[iIdx]
+    # # eq <- theta[iIdx + 1]
+    # # 
+    # # theta_full[paste0("S", iIdx)] <- delta_sq(
+    # #   so = so, eo = eo, eq = eq, x1 = res$X[1], delta_tau = delta_tau)
+    # # theta_full[paste0("E", iIdx)] <- delta_eq(
+    # #   so = so, eo = eo, sq = sq, xL = utils::tail(res$X, 1), delta_tau = delta_tau)
+  }
+  # theta_full[paste0(length(theta))] <- 0
+  
+  if (!explicit) {
+    s_all <- paste0("S", 1:(length(theta) - 1))
+    eq_last <- paste0("E", length(theta) - 1)
+    theta_full <- theta_full[c(s_all, eq_last)]
   }
   
-  
-  
-  # 
-  # RSS_m_deriv1(res$y, y_hat =res$y_hat, y_hat_prime = res1$y_hat)
+  print(unname(theta_full))
+  theta_full
 }
 ```
 
@@ -347,13 +429,32 @@ f_deriv1 <- function(x) {
 optR <- optim(
   par = query_bounds,
   fn = o,
-  gr = o_deriv1,
+  gr = o_deriv1_test,
   method = "L-BFGS-B",
   lower = rep(0, length(query_bounds)),
   upper = rep(1, length(query_bounds))
 )
+optR
 ```
 
+```{r}
+temp <- query_bounds
+temp[temp == 0] <- .Machine$double.eps
+temp[temp == 1] <- 1 - .Machine$double.eps
+
+optRC <- constrOptim(
+  theta = temp,
+  f = o,
+  grad = o_deriv1_test,
+  # grad = function(x) {
+  #   pracma::grad(f = o, x0 = x)
+  # },
+  ui = li$getUi(),
+  ci = li$getCi(),
+  method = "BFGS"
+)
+optRC
+```
 
 
 
