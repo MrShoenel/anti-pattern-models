@@ -1,0 +1,316 @@
+---
+title: "Boundary Time Warping (new)"
+bibliography: ../inst/REFERENCES.bib
+header-includes:
+  - \usepackage{bm}
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  word_document: default
+---
+
+```{r echo=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/BTW.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+
+# Boundary Time Warping (final)
+
+Note that we have abandoned the previous BTW notebook (`boundary-time-warping_new.Rmd`), as we want to attempt a final reformulation of BTW, using the initial translate-and-scale approach. The reason behind this is simple: In our previous approach we reduced the required parameters to only one, $\tau$. While that simplifies many things, it is not possible to deduce a gradient-delta that is required for adjusting the boundaries, bummer! So in this notebook, we want to use the initial approach and make an explicit formulation.
+
+Our formulation here is most explicit, as to avoid any confusions. The overall model
+
+* subdivides the query-signal into $\mathcal{I}$ intervals, and
+* in each interval there are __two__ parameters, one that translates ($t$) and one that scales ($s$) the interval.
+
+That means that we have two vectors of parameters, $\mathbf{s},\mathbf{t}$, each of length $\mathcal{I}$. Our overall model hence is a __Multi-task learning__ model.
+
+
+$$
+\begin{aligned}
+  \bm{\theta}_{\text{org}} =&\;b_1, b_2,\dots,b_{\mathcal{I}+1}\;\text{, set of boundaries to deduce}\;\mathbf{s}_{\text{org}},\mathbf{t}_{\text{org}}\;\text{from,}
+  \\
+  \bm{\theta}_{\text{query}} =&\; b_1, b_2,\dots,b_{\mathcal{I}+1}\;\text{, set of boundaries to deduce}\;\mathbf{s}_{\text{query}},\mathbf{t}_{\text{query}}\;\text{from,}
+  \\
+  \mathsf{M}(\bm{\theta}_{\text{org}}, \bm{\theta}_{\text{query}}, n, r, f) =&\;\langle\, \mathbf{y},\mathbf{\hat{y}} \,\rangle
+  \\
+  &\;q \in \mathcal{I}\;\text{, the index of the query-interval}\;x_q\;\text{falls into,}
+  \\
+  m_q(x, s_q, t_q) =&\;f(s_qx+t_q)\;\text{, local model for interval}\;q\text{.}
+\end{aligned}
+$$
+
+Now the problem we previously faced, was to get from a set of boundaries to a (finite) set of model-parameters, and back again. In our previous notebook it turned out that for $\bm{\tau}$ no direct path back exists. So before we move any further, we need to fully describe both ways.
+
+$$
+\begin{aligned}
+  &\;b_{q_s}, b_{q_e}\;\text{are the start- and end-boundaries delimiting the interval}\;q\text{.}
+\end{aligned}
+$$
+
+Let's use over ubiquitous example of scaling and translating a portion of the sine signal again:
+
+```{r}
+b_os <- .75
+b_oe <- 1
+b_qs <- .4
+b_qe <- .7
+
+temp <- sin(seq(0, pi * 2/3, length.out = 1e2))
+tempf <- approxfun(x = seq(0, 1, length.out = 1e2), y = temp)
+curve(tempf, 0, 1)
+abline(v = .75)
+abline(v = 1)
+```
+
+The goal is to determine $s,t$ from the boundary-delimited interval $[0.75,1]$ (the two vertical lines above), if we were to move this interval to $[0.4, 0.7]$.
+
+```{r}
+s_q <- (b_qe - b_qs) / (b_oe - b_os)
+t_q <- b_os - b_qs
+
+tempfPrime <- function(x) {
+  tempf((x - b_qs) / (b_qe - b_qs) * (b_oe - b_os) + b_os)
+}
+curve(tempfPrime, 0, 1)
+abline(v = b_qs)
+abline(v = b_qe)
+```
+
+## Formal description of the model
+
+The model is now much simpler, and follow the structure of the original notebook here. Note that almost all of the remarks of the previous notebook apply, only the way we calculate BTW has changed.
+
+$$
+\begin{aligned}
+  r(x) &= \dots\;\text{, a function over the reference signal,}
+  \\
+  f(x),f\prime(x),f\prime\prime(x) &= \dots\;\text{, functions over the query signal (and its 1st and 2nd derivatives).}
+\end{aligned}
+$$
+
+So, each sub-model can be defined as a function over the extents of the original- and query-interval:
+
+$$
+\begin{aligned}
+  m(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;x) =&\;f\Big((x - b_{q_s})\times(b_{q_e}-b_{q_s})^{-1}\times(b_{o_e} - b_{o_s}) + b_{o_s}\Big)\;\text{, with}\;b_{o_s},b_{o_e}\;\text{being constant,}
+  \\
+  \delta_o =&\;b_{o_e}-b_{o_s}\;\text{,}\;m\;\text{becomes}
+  \\[1ex]
+  m(b_{o_s}, \delta_o, b_{q_s}, b_{q_e},\;x) =&\;f\Big((x - b_{q_s})\times\frac{\delta_o}{b_{q_e}-b_{q_s}} + b_{o_s}\Big)\;\text{.}
+  \\[1ex]
+  \nabla\,m(b_{o_s}, \delta_o, b_{q_s}, b_{q_e},\;x) =&\;\Bigg[\frac{\partial\,m}{\partial\,b_{q_s}}\;,\;\frac{\partial\,m}{\partial\,b_{q_e}}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\Bigg[-\frac{\delta_o\times(b_{q_e}-x)\times f'\Big(\frac{\delta_o\times(b_{q_s}-x)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_e}-b_{q_s}\big)^2}\;,\;\frac{\delta_o\times(b_{q_s}-x)\times f'\Big(\frac{\delta_o\times(b_{q_s}-x)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_e}-b_{q_s}\big)^2}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\frac{\delta_o\times f'\Big(\frac{\delta_o\times(b_{q_s}-x)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_e}-b_{q_s}\big)^2}\times\Bigg[x-b_{q_e}\;,\;b_{q_s}-x\;\Bigg]\;\text{.}
+\end{aligned}
+$$
+
+So we're having a very pleasing gradient and a clear path between the pairs of boundaries and the models' parameters. Actually, we didn't derive extra parameters, but now plug in the boundaries directly. Now, for example, to calculate the required change for $b_{q_s}$, we simply compute the partial derivative for it, done! That however needs to be done when we plug in $m$ into a cost-function. Again, we'll be using the residual sum of squares (RSS) for that.
+
+
+Let's how a short demonstration:
+
+```{r}
+btwRef <- data.frame(
+  x = seq(0, 1, length.out = 1e3),
+  y = sin(seq(0, 2 * pi, length.out = 1e3))
+)
+
+btwQueryBounds <- c(.1, .2, .5, .6, .8)
+btwQuery <- data.frame(
+  x = c(
+    seq(0, btwQueryBounds[1], length.out =  75),
+    seq(btwQueryBounds[1], btwQueryBounds[2], length.out =  25),
+    seq(btwQueryBounds[2], btwQueryBounds[3], length.out = 150),
+    seq(btwQueryBounds[3], btwQueryBounds[4], length.out = 300),
+    seq(btwQueryBounds[4], btwQueryBounds[5], length.out =  50),
+    seq(btwQueryBounds[5], 1, length.out = 400)
+  ),
+  y = btwRef$y
+)
+
+plotBtw <- function(df, bounds = c()) {
+  g <- ggplot(data = df, aes(x = x, y = y)) + theme_light() + geom_line()
+  for (i in 1:length(bounds)) {
+    g <- g + geom_vline(xintercept = bounds[i])
+  }
+  g
+}
+
+signal_ref <- stats::approxfun(x = btwRef$x, y = btwRef$y, ties = mean)
+signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
+
+query_bounds <- seq(0, 1, by = 0.1)
+```
+
+
+```{r}
+temp <- M_final(
+  theta_b_org = query_bounds,
+  theta_b = query_bounds,
+  r = signal_ref,
+  f = signal_query)
+
+# We know how the reference signal was distorted previously. Let's make
+# a test where we manually undo this by moving the boundaries.
+temp2_bounds <- c(
+  0,
+  .075, .1, .15, .2, .25,
+  .55, .575, .6,  .8, 1)
+temp2 <- M_final(
+  theta_b_org = query_bounds,
+  theta_b = temp2_bounds,
+  r = signal_ref,
+  f = signal_query)
+
+ggarrange(
+  ncol = 1,
+  plotBtw(data.frame(x = temp$X, y = temp$y)),
+  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
+  plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp2_bounds)
+)
+```
+
+Great, this model works!
+
+
+$$
+\begin{aligned}
+  \text{RSS}_m =&\;\sum_{i=1}^{N}\;(\mathbf{y}_i - m(\mathbf{x}_i))^2\;\text{(for brevity, we omit}\;m\text{'s parameters).}
+  \\[1ex]
+  \nabla\,\text{RSS}_m =&\;\Bigg[\frac{\partial\,\text{RSS}_m}{\partial\,b_{q_s}}\;,\;\frac{\partial\,\text{RSS}_m}{\partial\,b_{q_e}}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)\Big)\times f'\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\Bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\Bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\Bigg]\;\text{, with}\;\psi_i\;\text{being}
+  \\[1ex]
+  \psi_i =&\;\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\;\text{.}
+\end{aligned}
+$$
+
+Now we got us a great gradient of the loss- or cost-function.
+
+Note: Like in the previous attempts, recall that an interval is defined such that it includes the starting boundary, but excludes the ending boundary, except for the last interval, which includes both, i.e., $i_n=[b_{s_q}, b_{e_q})$ and $i_{last}=[b_{s_q}, b_{e_q}]$. that means, that for all but the last sub-model, we will compute the gradient only for $\partial\,b_{q_s}$, but not $b_{q_e}$, as that would be redundant.
+
+
+## Regularizing
+
+We need to think briefly about regularizing such a model. I suggest we add two different regularizers: One that imposes a penalty on overlapping boundaries, and one that penalizes selecting too few of the data (i.e., when the sum of the lengths of all intervals is small).
+
+The first kind of regularizer could be similar to this:
+
+$$
+\begin{aligned}
+  R_1(\mathbf{\theta},\mathbf{\sigma}) &= 1-\Bigg(1+\sum_{i=1}^{\lvert\,\mathbf{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\mathbf{\theta}\,\rvert}\;\mathcal{H}(\mathbf{\theta}_i-\mathbf{\theta}_j-\mathbf{\sigma}_i)\times(\mathbf{\theta}_i-\mathbf{\theta}_j-\mathbf{\sigma}_i)\Bigg)^{\sum_{i=1}^{\lvert\,\mathbf{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\mathbf{\theta}\,\rvert}\;\mathcal{H}(\mathbf{\theta}_i-\mathbf{\theta}_j-\mathbf{\sigma}_i)}\;\text{,}
+  \\[1ex]
+  &\;\text{where}\;\mathcal{H}\;\text{is the Heaviside step function, and}
+  \\[0ex]
+  &\;\mathbf{\sigma}\;\text{is an optional vector holding the minimum distance between two boundaries.}
+\end{aligned}
+$$
+
+This regularizer does two things: Add up all violations for each boundary with each other subsequent boundary, and then exponentiate the sum with the number of violations.
+
+
+The second kind of regularizer would, in its simplest form, put the sum of the length of the selected query-intervals into relation with the total length of the original-interval:
+
+$$
+\begin{aligned}
+R_2(\mathbf{\theta}_{\text{org}}, \mathbf{\theta}_{\text{query}}) =&\;
+\end{aligned}
+$$
+
+
+
+# Optimization
+
+Let's do some quick testing with `optim`:
+
+```{r}
+library(optimParallel)
+
+Stabilize <- function(f, lb, ub) {
+  Vectorize(function(x) {
+    if (x < lb) f(lb) else if (x > ub) f(ub) else f(x)
+  })
+}
+
+r <- Stabilize(signal_ref, 0, 1)
+f <- Stabilize(signal_query, 0, 1)
+
+o <- function(theta, isGrad = FALSE) {
+  n <- 1e3
+  res <- M_final(
+    theta_b_org = query_bounds, theta_b = theta, r = r, f = f, num_samples = n)
+  
+  loss <- RSS_m(y = res$y, y_hat = res$y_hat)
+  print(paste0(isGrad, " / ", loss))
+  
+  reg <- (1 - max(theta) + min(theta)) * n
+  
+  loss + reg
+}
+
+
+cl <- parallel::makePSOCKcluster(12)
+parallel::clusterExport(cl, varlist = c("M_final", "query_bounds", "r", "f", "RSS_m", "Stabilize", "signal_ref", "signal_query", "f_deriv1", "RSS_m_deriv1"))
+
+set.seed(1337)
+optRp <- optimParallel::optimParallel(
+  par = query_bounds,
+  fn = o,
+  #gr = o_deriv1_test,
+  lower = rep(0, length(query_bounds)),
+  upper = rep(1, length(query_bounds)),
+  parallel = list(
+    cl = cl,
+    forward = FALSE
+  )
+)
+
+stopCluster(cl)
+optRp
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
