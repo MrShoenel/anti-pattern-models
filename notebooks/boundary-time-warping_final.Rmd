@@ -40,31 +40,37 @@ Note that we have abandoned the previous BTW notebook (`boundary-time-warping_ne
 Our formulation here is most explicit, as to avoid any confusions. The overall model
 
 * subdivides the query-signal into a set of $\mathcal{I}$ intervals (of length $q$), and
-* in each interval there are __two__ parameters, ~~one that translates ($t$) and one that scales ($s$) the interval.~~ the absolute offset (begin) and end of it.
+* in each interval there are __two__ parameters, the absolute offset (begin) and end of it.
 
-The translation and scale parameters result from putting the original- and query-interval into relation. The original interval is the one the query-signal was divided into initially, it is constant and never changed, and given by $b_{\text{start}}^{\text{org}},b_{\text{end}}^{\text{org}}$. The query-interval is the one delimited by the hyperparameters, given by $b_{\text{start}}^{\text{query}},b_{\text{end}}^{\text{query}}$ (Note that from here on and after, "start", "end", "org" and "query" will be denoted by "s", "e", "o" and "q", respectively).
+The translation and scale parameters result from putting the original- and query-interval into relation. The original interval is the one the query-signal was divided into initially, it is constant and never changed, and given by $b_{\text{start}}^{\text{org}},b_{\text{end}}^{\text{org}}$ (or short: $b_{o_s},b_{o_e}$). The query-interval is the one delimited by the hyperparameters, given by $b_{\text{start}}^{\text{query}},b_{\text{end}}^{\text{query}}$ (short: $b_{q_s},b_{q_e}$). Note that from here on and after, "start", "end", "org" and "query" will often be denoted by "s", "e", "o" and "q", respectively).
 
-Given a vector of boundaries, $\mathbf{\theta}_b$, the first step is to establish the two vectors of absolute start- and end-parameters, i.e.,
+## Formal description of the model
+
+The model is now much simpler, and follow the structure of the original notebook here. Note that almost all of the remarks of the previous notebook apply, only the way we calculate BTW has changed.
+
+Given a vector of boundaries, $\bm{\theta}_b$, the first step is to establish the two vectors of absolute start- and end-parameters, i.e.,
 
 $$
 \begin{aligned}
-  \bm{\theta}\;\dots&\;\text{, vector of boundaries,}
+  \bm{\theta}=&\;\dots\;\text{, ordered vector of boundaries, such that}
+  \\[0ex]
+  &\;\bm{\theta}_j\prec\bm{\theta}_{j+1}\;\text{,}
   \\[0ex]
   i=&\;\lvert\,\bm{\theta}\,\rvert\;\text{, the length of that vector,}
   \\[1ex]
-  \bm{\theta}^s=&\;\{\bm{\theta}_{1},\;\dots\;,\bm{\theta}_{i-1}\}\;\text{(all but the last boundary),}
+  \bm{\theta}^{\text{start}}=&\;\{\bm{\theta}_{1},\;\dots\;,\bm{\theta}_{i-1}\}\;\text{(all but the last boundary),}
   \\[0ex]
-  \bm{\theta}^e=&\;\{\bm{\theta}_{2},\;\dots\;,\bm{\theta}_{i}\}\;\text{(all but the first boundary),}
+  \bm{\theta}^{\text{end}}=&\;\{\bm{\theta}_{2},\;\dots\;,\bm{\theta}_{i}\}\;\text{(all but the first boundary),}
   \\[1ex]
   q\in Q;\;Q=&\;\{1,\;\dots\;,i-1\}\;\text{, where}\;Q\;\text{is ordered low to high, i.e.,}\;q_i\prec q_{i+1}\text{,}
   \\[0ex]
   &\;\mathcal{I}\;\text{, the set of intervals with length}\;[\max{Q}]\text{, with each interval delimited by}
   \\[0ex]
-  I_q=&\;\langle\,\bm{\theta}_q^s,\bm{\theta}_q^e\,\rangle\;\text{, (as a tuple).}
+  I_q=&\;\Big[\,\bm{\theta}_q^{\text{start}},\bm{\theta}_q^{\text{end}}\,\Big)\;\text{, resp.}
+  \\[0ex]
+  I_{q}=&\;\Big[\,\bm{\theta}_q^{\text{start}},\bm{\theta}_q^{\text{end}}\,\Big]\;\text{, for the last interval (}q=\max{Q}\text{).}
 \end{aligned}
 $$
-
-~~That means that we have two vectors of parameters, $\mathbf{s},\mathbf{t}$, each of length $\mathcal{I}$.~~
 
 Our overall model hence is a __Multi-task learning__ model. The relation between intervals (and hence the sub-models for each) is:
 
@@ -74,7 +80,7 @@ Our overall model hence is a __Multi-task learning__ model. The relation between
 
 The last property is how we exploit Boundary Time Warping as a Multi-task learning model. The overal model, $\mathsf{M}$, produces $\hat{\bm{y}}$ by piece-wise computing and then concatenating it, where each piece is an interval and its translation and scaling.
 
-Now recall that signals are represented as functions, and for the query-signal, we'll also have the derivative and the 2nd derivative optionally:
+Now recall that signals are represented as functions, and for the query-signal, we'll also have the derivative and optionally the 2nd derivative:
 
 $$
 \begin{aligned}
@@ -84,48 +90,33 @@ $$
 \end{aligned}
 $$
 
-Formally, each sub-model $m_q$ and the overall model $\mathsf{M}$ are defined as:
+There may be cases where the derivatives of $f$ can be determined analytically. If that is not the case, one may choose to compute a numerical gradient by, e.g., a finite difference approximation. Formally, each sub-model $m_q$ and the overall model $\mathsf{M}$ are defined as:
 
 $$
 \begin{aligned}
-  m_q(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,x)=&\;f\Big((x - b_{q_s})\times(b_{q_e}-b_{q_s})^{-1}\times(b_{o_e} - b_{o_s}) + b_{o_s}\Big)\;\text{, with}
+  \bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e\;\dots&\;\text{ordered sets (same length) of start- and end original- and query-boundaries,}
   \\[1ex]
-  \bm{\theta},\bm{\vartheta}\;\dots&\;\text{sets of original- and query-boundaries,}
+  \mathcal{X}^r=&\;[\min{\bm{\theta}^s}\,,\,\max{\bm{\theta}^e}]\;\text{, the support of the reference-signal,}
   \\[1ex]
-  \mathcal{X}^r=&\;[\min{\bm{\theta}}\,,\,\max{\bm{\theta}}]\;\text{, the support of the reference-signal,}
-  \\[1ex]
-  \mathcal{X}^q=&\;[\min{\bm{\vartheta}}\,,\,\max{\bm{\vartheta}}]\;\text{, the support of the query-signal,}
+  \mathcal{X}^q=&\;[\min{\bm{\vartheta}^s}\,,\,\max{\bm{\vartheta}^e}]\;\text{, the support of the query-signal,}
   \\[1ex]
   \mathbf{x}_q\subset\mathcal{X}^q\;=&\;[\bm{\vartheta}^s_q\,,\,\bm{\vartheta}^e_q]\text{, proper sub-support for model}\;m_q\;\text{and its interval}\;I_q\text{, such that}
   \\[1ex]
   \mathbf{x}_q\prec&\;\mathbf{x}_{q+1}\;\text{, i.e., sub-supports are ordered,}
   \\[1ex]
+  m_q(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,x)=&\;f\Bigg(\frac{(x - b_{q_s})\times(b_{o_e} - b_{o_s})}{b_{q_e}-b_{q_s}} + b_{o_s}\Bigg)\;\text{, model for interval}\;q\text{,}
+  \\[1ex]
   \mathbf{y}=&\;r(\mathcal{X}^r)\;\text{, the reference-signal,}
   \\[1ex]
-  \hat{\mathbf{y}}=&\;\Big\{\;m_1\,\dots\,m_q(\bm{\theta}^s_q,\bm{\theta}^e_q,\bm{\vartheta}^s_q,\bm{\vartheta}^e_q,f,\mathbf{x}_q)\;\Big\},\;\forall\,q\in Q
+  \hat{\mathbf{y}}=&\;\Big\{\;m_1(\dots)\,\frown,\;\dots,\,\frown m_q(\bm{\theta}^s_q,\bm{\theta}^e_q,\bm{\vartheta}^s_q,\bm{\vartheta}^e_q,f,\mathbf{x}_q)\;\Big\},\;\forall\,q\in Q
   \\
   &\;\text{(concatenate all models' results), and finally}
   \\[1ex]
-  \mathsf{M}(\bm{\theta},\bm{\vartheta}, r,f)=&\;\{\,\mathbf{y},\,\hat{\mathbf{y}}\}^\top\;\text{, compute the reference- and transformed query-signal.}
+  \mathsf{M}(\bm{\theta},\bm{\vartheta}, r,f)=&\;\Big[\,\mathbf{y}^\top\frown\hat{\mathbf{y}}^\top\Big]\;\text{, compute the reference- and transformed query-signal.}
 \end{aligned}
 $$
 
 In some of the subsequent computations we require the 1st and 2nd derivative of $f$, both of which can be supplied to $\mathsf{M}$ instead of $f$ for computing $\hat{\mathbf{y}}\prime$ and $\hat{\mathbf{y}}\prime\prime$, respectively.
-
-
-$$
-\begin{aligned}
-  \bm{\theta}_{\text{org}} =&\;b_1, b_2,\dots,b_{\mathcal{I}+1}\;\text{, set of boundaries to deduce}\;\mathbf{s}_{\text{org}},\mathbf{t}_{\text{org}}\;\text{from,}
-  \\
-  \bm{\theta}_{\text{query}} =&\; b_1, b_2,\dots,b_{\mathcal{I}+1}\;\text{, set of boundaries to deduce}\;\mathbf{s}_{\text{query}},\mathbf{t}_{\text{query}}\;\text{from,}
-  \\
-  \mathsf{M}(\bm{\theta}_{\text{org}}, \bm{\theta}_{\text{query}}, n, r, f) =&\;\langle\, \mathbf{y},\mathbf{\hat{y}} \,\rangle
-  \\
-  &\;q \in \mathcal{I}\;\text{, the index of the query-interval}\;x_q\;\text{falls into,}
-  \\
-  m_q(x, s_q, t_q) =&\;f(s_qx+t_q)\;\text{, local model for interval}\;q\text{.}
-\end{aligned}
-$$
 
 Now the problem we previously faced, was to get from a set of boundaries to a (finite) set of model-parameters, and back again. In our previous notebook it turned out that for $\bm{\tau}$ no direct path back exists. So before we move any further, we need to fully describe both ways.
 
@@ -164,29 +155,19 @@ abline(v = b_qs)
 abline(v = b_qe)
 ```
 
-## Formal description of the model
+## Gradient for the sub-models
 
-The model is now much simpler, and follow the structure of the original notebook here. Note that almost all of the remarks of the previous notebook apply, only the way we calculate BTW has changed.
-
-$$
-\begin{aligned}
-  r(x) &= \dots\;\text{, a function over the reference signal,}
-  \\
-  f(x),f\prime(x),f\prime\prime(x) &= \dots\;\text{, functions over the query signal (and its 1st and 2nd derivatives).}
-\end{aligned}
-$$
-
-So, each sub-model can be defined as a function over the extents of the original- and query-interval:
+Each sub-model can be defined as a function over the extents of the original- and query-interval:
 
 $$
 \begin{aligned}
-  m(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;x) =&\;f\Big((x - b_{q_s})\times(b_{q_e}-b_{q_s})^{-1}\times(b_{o_e} - b_{o_s}) + b_{o_s}\Big)\;\text{, with}\;b_{o_s},b_{o_e}\;\text{being constant,}
+  m(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,x) =&\;f\Big((x - b_{q_s})\times(b_{q_e}-b_{q_s})^{-1}\times(b_{o_e} - b_{o_s}) + b_{o_s}\Big)\;\text{, with}\;b_{o_s},b_{o_e}\;\text{being constant,}
   \\
   \delta_o =&\;b_{o_e}-b_{o_s}\;\text{,}\;m\;\text{becomes}
   \\[1ex]
-  m(b_{o_s}, \delta_o, b_{q_s}, b_{q_e},\;x) =&\;f\Big((x - b_{q_s})\times\frac{\delta_o}{b_{q_e}-b_{q_s}} + b_{o_s}\Big)\;\text{.}
+  m(b_{o_s}, \delta_o, b_{q_s}, b_{q_e},\;f,x) =&\;f\Big((x - b_{q_s})\times\frac{\delta_o}{b_{q_e}-b_{q_s}} + b_{o_s}\Big)\;\text{.}
   \\[1ex]
-  \nabla\,m(b_{o_s}, \delta_o, b_{q_s}, b_{q_e},\;x) =&\;\Bigg[\frac{\partial\,m}{\partial\,b_{q_s}}\;,\;\frac{\partial\,m}{\partial\,b_{q_e}}\Bigg]\;\text{,}
+  \nabla\,m(b_{o_s}, \delta_o, b_{q_s}, b_{q_e},\;f,x) =&\;\Bigg[\frac{\partial\,m}{\partial\,b_{q_s}}\;,\;\frac{\partial\,m}{\partial\,b_{q_e}}\Bigg]\;\text{,}
   \\[1ex]
   =&\;\Bigg[-\frac{\delta_o\times(b_{q_e}-x)\times f'\Big(\frac{\delta_o\times(b_{q_s}-x)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_e}-b_{q_s}\big)^2}\;,\;\frac{\delta_o\times(b_{q_s}-x)\times f'\Big(\frac{\delta_o\times(b_{q_s}-x)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_e}-b_{q_s}\big)^2}\Bigg]\;\text{,}
   \\[1ex]
@@ -194,12 +175,12 @@ $$
 \end{aligned}
 $$
 
-So we're having a very pleasing gradient and a clear path between the pairs of boundaries and the models' parameters. Actually, we didn't derive extra parameters, but now plug in the boundaries directly. Now, for example, to calculate the required change for $b_{q_s}$, we simply compute the partial derivative for it, done! That however needs to be done when we plug in $m$ into a cost-function. Again, we'll be using the residual sum of squares (RSS) for that.
+So we're having a very pleasing gradient and a clear path between the pairs of boundaries and the models' parameters. Actually, we didn't derive extra parameters, but now plug in the boundaries directly. Now, for example, to calculate the required change for $b_{q_s}$, we simply compute the partial derivative for it, done! That however needs to be done when we plug in $\mathsf{M}$ into a cost-function. Again, we'll be using the residual sum of squares (RSS) for that.
 
 
-Let's how a short demonstration:
+Let's show a short demonstration:
 
-```{r}
+```{r echo=FALSE}
 btwRef <- data.frame(
   x = seq(0, 1, length.out = 1e3),
   y = sin(seq(0, 2 * pi, length.out = 1e3))
@@ -260,18 +241,26 @@ ggarrange(
 )
 ```
 
-Great, this model works!
+Great, this model works! The third plot is a manually corrected version of the distorted query signal shown in the second plot. The goal of `BTW` is to provide us with a differentiable algorithm that optimizes such that a cost, usually a distortion, is minimized.
 
+
+## Compute the loss
+
+For the scope of this notebook we will mostly stick with the residual sum of squares loss function.
 
 $$
 \begin{aligned}
-  \text{RSS}_m =&\;\sum_{i=1}^{N}\;(\mathbf{y}_i - m(\mathbf{x}_i))^2\;\text{(for brevity, we omit}\;m\text{'s parameters).}
+  m, \mathbf{x}\,\dots&\;\text{a given sub-model and its sub-support (for brevity, we omit}\;q\text{),}
+  \\[1ex]
+  \text{RSS}_m =&\;\sum_{i=1}^{N}\;\big(\mathbf{y}_i - m(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,\mathbf{x}_i)\big)^2\;\text{, recall}\;\delta_o\;\text{as}
+  \\[1ex]
+  \delta_o =&\;b_{o_e}-b_{o_s}\;\text{,}
   \\[1ex]
   \nabla\,\text{RSS}_m =&\;\Bigg[\frac{\partial\,\text{RSS}_m}{\partial\,b_{q_s}}\;,\;\frac{\partial\,\text{RSS}_m}{\partial\,b_{q_e}}\Bigg]\;\text{,}
   \\[1ex]
   =&\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)\Big)\times f'\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\Bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\Bigg]\;\text{,}
   \\[1ex]
-  =&\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\Bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\Bigg]\;\text{, with}\;\psi_i\;\text{being}
+  =&\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\Bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\Bigg]\;\text{, using}\;\psi_i\;\text{as}
   \\[1ex]
   \psi_i =&\;\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\;\text{.}
 \end{aligned}
@@ -279,43 +268,105 @@ $$
 
 Now we got us a great gradient of the loss- or cost-function.
 
-Note: Like in the previous attempts, recall that an interval is defined such that it includes the starting boundary, but excludes the ending boundary, except for the last interval, which includes both, i.e., $i_n=[b_{s_q}, b_{e_q})$ and $i_{last}=[b_{s_q}, b_{e_q}]$. that means, that for all but the last sub-model, we will compute the gradient only for $\partial\,b_{q_s}$, but not $b_{q_e}$, as that would be redundant.
+Note: Like in the previous attempts, recall that an interval is defined such that it includes the starting boundary, but excludes the ending boundary, except for the last interval, which includes both, i.e., $i_{\forall\,q<\max{Q}}=[b_{s_q}, b_{e_q})$ and $i_{\max{Q}}=[b_{s_q}, b_{e_q}]$. that means, that for all but the last sub-model, we will compute the gradient only for $\partial\,b_{q_s}$, but not $\partial\,b_{q_e}$, as that would be redundant (and slightly wrong).
 
 
 ## Regularizing
 
 We need to think briefly about regularizing such a model. I suggest we add two different regularizers: One that imposes a penalty on overlapping boundaries, and one that penalizes selecting too few of the data (i.e., when the sum of the lengths of all intervals is small).
 
+### Penalize overlapping boundaries
+
+For each boundary $b_i$, we need to ascertain that all subsequent boundaries are greater than $b_i$, i.e., $b_k,\,k>i,\,\forall\,b_k>b_i$. Similarly, all preceding boundaries must be less than $b_i$, i.e., $b_j,\,j<i,\,\forall\,b_j<b_i$.
+
 The first kind of regularizer could be similar to this:
 
 $$
 \begin{aligned}
-  R_1(\mathbf{\theta},\mathbf{\sigma}) &= 1-\Bigg(1+\sum_{i=1}^{\lvert\,\mathbf{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\mathbf{\theta}\,\rvert}\;\mathcal{H}(\mathbf{\theta}_i-\mathbf{\theta}_j-\mathbf{\sigma}_i)\times(\mathbf{\theta}_i-\mathbf{\theta}_j-\mathbf{\sigma}_i)\Bigg)^{\sum_{i=1}^{\lvert\,\mathbf{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\mathbf{\theta}\,\rvert}\;\mathcal{H}(\mathbf{\theta}_i-\mathbf{\theta}_j-\mathbf{\sigma}_i)}\;\text{,}
+  R_1(\bm{\theta},\bm{\sigma}) &= 1-\Bigg(1+\sum_{i=1}^{\lvert\,\bm{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\;\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)\times(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)\Bigg)^{\sum_{i=1}^{\lvert\,\bm{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\;\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)}\;\text{,}
   \\[1ex]
   &\;\text{where}\;\mathcal{H}\;\text{is the Heaviside step function, and}
   \\[0ex]
-  &\;\mathbf{\sigma}\;\text{is an optional vector holding the minimum distance between two boundaries.}
+  &\;\bm{\sigma}\;\text{is an optional vector holding the minimum distance between two boundaries.}
+\end{aligned}
+$$
+This regularizer does two things: Add up all violations for each boundary with each other subsequent boundary, and then exponentiate the sum with the number of violations.
+
+The first version does not take the second condition into account. We define an alternative that does:
+
+$$
+\begin{aligned}
+  \bm{\theta}\,\dots&\;\text{vector of boundaries,}
+  \\[0ex]
+  \mathcal{E}=&\;\text{matrix that defines pair-wise minimum distances between two boundaries,}
+  \\[1ex]
+  n=&\;\sum_{j=1}^{\lvert\,i-1\,\rvert}\mathcal{H}(\bm{\theta}_j-\bm{\theta}_i-\mathcal{E}_{i,j}) + \sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\mathcal{E}_{i,j})\;\text{,}
+  \\[0ex]
+  &\;\text{the number of mutual violations,}
+  \\[1ex]
+  k=&\;\sum_{j=1}^{\lvert\,i-1\,\rvert}\mathcal{H}(\bm{\theta}_j-\bm{\theta}_i-\mathcal{E}_{i,j})\times(\bm{\theta}_j-\bm{\theta}_i-\mathcal{E}_{i,j})\;\;+
+  \\[0ex]
+  &\;\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\mathcal{E}_{i,j})\times(\bm{\theta}_i-\bm{\theta}_j-\mathcal{E}_{i,j})\;\text{,}
+  \\[0ex]
+  &\;\text{the sum of of the degrees of all mutual violations,}
+  \\[1ex]
+  R_1^{\text{alt}}(k,n)=&\;(1+k)^n-1\;\text{, and its gradient}
+  \\[1ex]
+  \nabla\,R_1^{\text{alt}}(k,n)=&\;0\;\text{, as}
+  \\[1ex]
+  \nabla\,\mathcal{H}(x)=&\;\mathcal{H}'(x)\times x'\;\text{and}\;\mathcal{H}'(x)=0\;\text{.}
 \end{aligned}
 $$
 
-This regularizer does two things: Add up all violations for each boundary with each other subsequent boundary, and then exponentiate the sum with the number of violations.
+This regularizer is similar to the first alternative. It considers however also backward (hence mutual) violations. Also note that the gradient for $R_1$ is always $0$, as the derivative of the Heaviside step function is $0$, thus introducing a multiplier of $0$.
 
+
+### Penalize supports that are too short
 
 The second kind of regularizer would, in its simplest form, put the sum of the length of the selected query-intervals into relation with the total length of the original-interval:
 
 $$
 \begin{aligned}
-R_2(\mathbf{\theta}_{\text{org}}, \mathbf{\theta}_{\text{query}}) =&\;
+R_2(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e) =&\;-\log\Bigg(\Bigg[\sum_{i=1}^{\lvert\,\bm{\vartheta}^s\,\rvert}\,\bm{\vartheta}^e_i-\bm{\vartheta}^s_i\Bigg]\;\bigg/\;\Bigg[\sum_{i=1}^{\lvert\,\bm{\theta}^s\,\rvert}\,\bm{\theta}^e_i-\bm{\theta}^s_i\Bigg]\Bigg)
 \end{aligned}
 $$
 
+It is important to recall that the query-support cannot extend beyond the original-support in any direction, resulting in the first partial sum being less than or equal to the second partial sum, hence the ratio always lies within $[0,1]$.
+
+The gradient for this regularizer is not $0$. It can further be simplified as we do know the length of the reference-support, which is constant:
+
+$$
+\begin{aligned}
+  \eta=&\;\max{\mathcal{X}^r}-\min{\mathcal{X}^r}\;\text{, the extent of the reference-interval,}
+  \\[1ex]
+  \equiv&\;\sum_{i=1}^{\lvert\,\bm{\theta}^s\,\rvert}\,\bm{\theta}^e_i-\bm{\theta}^s_i\;\text{, so}\;R_2\;\text{becomes}
+  \\[1ex]
+  R_2(\bm{\vartheta}^s,\bm{\vartheta}^e)=&\;-\log\Bigg(\Bigg[\sum_{i=1}^{\lvert\,\bm{\vartheta}^s\,\rvert}\,\bm{\vartheta}^e_i-\bm{\vartheta}^s_i\Bigg]\;\Big/\;\eta\Bigg)\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,R_2=&\;\Bigg[\frac{\partial\,R_2}{\partial\,\bm{\vartheta}^e_i}\;,\;\frac{\partial\,R_2}{\partial\,\bm{\vartheta}^s_i}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\sum_{i=1}^{\lvert\,\bm{\vartheta}^s\,\rvert}\Bigg[\frac{1}{\bm{\vartheta}^s_i-\bm{\vartheta}^e_i}\;,\;\frac{1}{\bm{\vartheta}^e_i-\bm{\vartheta}^s_i}\Bigg]\;\text{, reformulated using}\;b_{q_s},b_{q_e}\;\text{:}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\Bigg[\frac{1}{b_{q_s}-b_{q_e}}\;,\;\frac{1}{b_{q_e}-b_{q_s}}\Bigg]\;\text{.}
+\end{aligned}
+$$
+
+The last reformulation is important, as it makes the regularizer compatible with our existing formulations for the residual sum of squares loss function and its gradient.
 
 
 # Optimization
 
+We have previously introduced the model Boundary Time Warping, and shown how to compute its gradient and loss (and gradient thereof), as well as presenting two regularizers for this model. The goal now is to bring everything together, such that we can train the model to minimize an objective function.
+
+## Objectie function
+
+The objective function is used to calculate a cost, loss or error, given some reference data, as well as query-data together with some parameters that should set up the model such that the cost, loss or error between reference- and transformed query-data becomes minimal.
+
+
+
 Let's do some quick testing with `optim`:
 
-```{r}
+```{r eval=FALSE}
 library(optimParallel)
 
 Stabilize <- function(f, lb, ub) {
