@@ -39,10 +39,78 @@ Note that we have abandoned the previous BTW notebook (`boundary-time-warping_ne
 
 Our formulation here is most explicit, as to avoid any confusions. The overall model
 
-* subdivides the query-signal into $\mathcal{I}$ intervals, and
-* in each interval there are __two__ parameters, one that translates ($t$) and one that scales ($s$) the interval.
+* subdivides the query-signal into a set of $\mathcal{I}$ intervals (of length $q$), and
+* in each interval there are __two__ parameters, ~~one that translates ($t$) and one that scales ($s$) the interval.~~ the absolute offset (begin) and end of it.
 
-That means that we have two vectors of parameters, $\mathbf{s},\mathbf{t}$, each of length $\mathcal{I}$. Our overall model hence is a __Multi-task learning__ model.
+The translation and scale parameters result from putting the original- and query-interval into relation. The original interval is the one the query-signal was divided into initially, it is constant and never changed, and given by $b_{\text{start}}^{\text{org}},b_{\text{end}}^{\text{org}}$. The query-interval is the one delimited by the hyperparameters, given by $b_{\text{start}}^{\text{query}},b_{\text{end}}^{\text{query}}$ (Note that from here on and after, "start", "end", "org" and "query" will be denoted by "s", "e", "o" and "q", respectively).
+
+Given a vector of boundaries, $\mathbf{\theta}_b$, the first step is to establish the two vectors of absolute start- and end-parameters, i.e.,
+
+$$
+\begin{aligned}
+  \bm{\theta}\;\dots&\;\text{, vector of boundaries,}
+  \\[0ex]
+  i=&\;\lvert\,\bm{\theta}\,\rvert\;\text{, the length of that vector,}
+  \\[1ex]
+  \bm{\theta}^s=&\;\{\bm{\theta}_{1},\;\dots\;,\bm{\theta}_{i-1}\}\;\text{(all but the last boundary),}
+  \\[0ex]
+  \bm{\theta}^e=&\;\{\bm{\theta}_{2},\;\dots\;,\bm{\theta}_{i}\}\;\text{(all but the first boundary),}
+  \\[1ex]
+  q\in Q;\;Q=&\;\{1,\;\dots\;,i-1\}\;\text{, where}\;Q\;\text{is ordered low to high, i.e.,}\;q_i\prec q_{i+1}\text{,}
+  \\[0ex]
+  &\;\mathcal{I}\;\text{, the set of intervals with length}\;[\max{Q}]\text{, with each interval delimited by}
+  \\[0ex]
+  I_q=&\;\langle\,\bm{\theta}_q^s,\bm{\theta}_q^e\,\rangle\;\text{, (as a tuple).}
+\end{aligned}
+$$
+
+~~That means that we have two vectors of parameters, $\mathbf{s},\mathbf{t}$, each of length $\mathcal{I}$.~~
+
+Our overall model hence is a __Multi-task learning__ model. The relation between intervals (and hence the sub-models for each) is:
+
+* Each interval $I_q,\;q<\max{Q}$ is defined as $I_q=[\bm{\theta}_q^s,\bm{\theta}_q^e\,)$, i.e., it does __not__ include the end-boundary. Each last interval, i.e., $I_q,\;q=\max{Q}$ is defined as $I_q=[\bm{\theta}_q^s,\bm{\theta}_q^e\,]$, i.e., it includes __both__ start- and end-boundary.
+* That leads to two consecutive intervals, $I_q,I_{q+1}$, having no space between them, such that the end-boundary of interval $q$, $\bm{\theta}_q^e$, and the start-boundary of interval $q+1$, $\bm{\theta}_{q+1}^s$, satisfy the inequality $\bm{\theta}_q^e < \bm{\theta}_{q+1}^s$.
+* This implies that for all but the last interval, $I_q^e\neq I_{q+1}^s$. This is important later for the gradient calculations, as we do have partial derivatives for $\bm{\theta}_q^s,\bm{\theta}_q^e$, and only need to calculate $\partial\,\bm{\theta}_q^e$ for the last interval, while we calculate $\partial\,\bm{\theta}_q^s$ for all intervals.
+
+The last property is how we exploit Boundary Time Warping as a Multi-task learning model. The overal model, $\mathsf{M}$, produces $\hat{\bm{y}}$ by piece-wise computing and then concatenating it, where each piece is an interval and its translation and scaling.
+
+Now recall that signals are represented as functions, and for the query-signal, we'll also have the derivative and the 2nd derivative optionally:
+
+$$
+\begin{aligned}
+  r(x) &= \dots\;\text{, a function over the reference signal,}
+  \\
+  f(x),f\prime(x),f\prime\prime(x) &= \dots\;\text{, functions over the query signal (and its 1st and 2nd derivatives).}
+\end{aligned}
+$$
+
+Formally, each sub-model $m_q$ and the overall model $\mathsf{M}$ are defined as:
+
+$$
+\begin{aligned}
+  m_q(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,x)=&\;f\Big((x - b_{q_s})\times(b_{q_e}-b_{q_s})^{-1}\times(b_{o_e} - b_{o_s}) + b_{o_s}\Big)\;\text{, with}
+  \\[1ex]
+  \bm{\theta},\bm{\vartheta}\;\dots&\;\text{sets of original- and query-boundaries,}
+  \\[1ex]
+  \mathcal{X}^r=&\;[\min{\bm{\theta}}\,,\,\max{\bm{\theta}}]\;\text{, the support of the reference-signal,}
+  \\[1ex]
+  \mathcal{X}^q=&\;[\min{\bm{\vartheta}}\,,\,\max{\bm{\vartheta}}]\;\text{, the support of the query-signal,}
+  \\[1ex]
+  \mathbf{x}_q\subset\mathcal{X}^q\;=&\;[\bm{\vartheta}^s_q\,,\,\bm{\vartheta}^e_q]\text{, proper sub-support for model}\;m_q\;\text{and its interval}\;I_q\text{, such that}
+  \\[1ex]
+  \mathbf{x}_q\prec&\;\mathbf{x}_{q+1}\;\text{, i.e., sub-supports are ordered,}
+  \\[1ex]
+  \mathbf{y}=&\;r(\mathcal{X}^r)\;\text{, the reference-signal,}
+  \\[1ex]
+  \hat{\mathbf{y}}=&\;\Big\{\;m_1\,\dots\,m_q(\bm{\theta}^s_q,\bm{\theta}^e_q,\bm{\vartheta}^s_q,\bm{\vartheta}^e_q,f,\mathbf{x}_q)\;\Big\},\;\forall\,q\in Q
+  \\
+  &\;\text{(concatenate all models' results), and finally}
+  \\[1ex]
+  \mathsf{M}(\bm{\theta},\bm{\vartheta}, r,f)=&\;\{\,\mathbf{y},\,\hat{\mathbf{y}}\}^\top\;\text{, compute the reference- and transformed query-signal.}
+\end{aligned}
+$$
+
+In some of the subsequent computations we require the 1st and 2nd derivative of $f$, both of which can be supplied to $\mathsf{M}$ instead of $f$ for computing $\hat{\mathbf{y}}\prime$ and $\hat{\mathbf{y}}\prime\prime$, respectively.
 
 
 $$
