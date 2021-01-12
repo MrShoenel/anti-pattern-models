@@ -52,7 +52,7 @@ Given a vector of boundaries, $\bm{\theta}_b$, the first step is to establish th
 
 $$
 \begin{aligned}
-  \bm{\theta}=&\;\dots\;\text{, ordered vector of boundaries, such that}
+  \bm{\theta}\;\dots&\;\text{ordered vector of boundaries, such that}
   \\[0ex]
   &\;\bm{\theta}_j\prec\bm{\theta}_{j+1}\;\text{,}
   \\[0ex]
@@ -100,7 +100,7 @@ $$
   \\[1ex]
   \mathcal{X}^q=&\;[\min{\bm{\vartheta}^s}\,,\,\max{\bm{\vartheta}^e}]\;\text{, the support of the query-signal,}
   \\[1ex]
-  \mathbf{x}_q\subset\mathcal{X}^q\;=&\;[\bm{\vartheta}^s_q\,,\,\bm{\vartheta}^e_q]\text{, proper sub-support for model}\;m_q\;\text{and its interval}\;I_q\text{, such that}
+  \mathbf{x}_q\subset\mathcal{X}^q=&\;[\bm{\vartheta}^s_q\,,\,\bm{\vartheta}^e_q]\text{, proper sub-support for model}\;m_q\;\text{and its interval}\;I_q\text{, such that}
   \\[1ex]
   \mathbf{x}_q\prec&\;\mathbf{x}_{q+1}\;\text{, i.e., sub-supports are ordered,}
   \\[1ex]
@@ -108,11 +108,11 @@ $$
   \\[1ex]
   \mathbf{y}=&\;r(\mathcal{X}^r)\;\text{, the reference-signal,}
   \\[1ex]
-  \hat{\mathbf{y}}=&\;\Big\{\;m_1(\dots)\,\frown,\;\dots,\,\frown m_q(\bm{\theta}^s_q,\bm{\theta}^e_q,\bm{\vartheta}^s_q,\bm{\vartheta}^e_q,f,\mathbf{x}_q)\;\Big\},\;\forall\,q\in Q
+  \hat{\mathbf{y}}=&\;\Big\{\;m_1(\dots)\,\frown\,\dots\,\frown m_q(\bm{\theta}^s_q,\bm{\theta}^e_q,\bm{\vartheta}^s_q,\bm{\vartheta}^e_q,f,\mathbf{x}_q)\;\Big\},\;\forall\,q\in Q
   \\
   &\;\text{(concatenate all models' results), and finally}
   \\[1ex]
-  \mathsf{M}(\bm{\theta},\bm{\vartheta}, r,f)=&\;\Big[\,\mathbf{y}^\top\frown\hat{\mathbf{y}}^\top\Big]\;\text{, compute the reference- and transformed query-signal.}
+  \mathsf{M}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e, r,f)=&\;\Big[\,\mathbf{y}^\top,\hat{\mathbf{y}}^\top\Big]\;\text{, compute the reference- and transformed query-signal.}
 \end{aligned}
 $$
 
@@ -250,7 +250,7 @@ For the scope of this notebook we will mostly stick with the residual sum of squ
 
 $$
 \begin{aligned}
-  m, \mathbf{x}\,\dots&\;\text{a given sub-model and its sub-support (for brevity, we omit}\;q\text{),}
+  m, \mathbf{x}\;\dots&\;\text{a given sub-model and its sub-support (for brevity, we omit}\;q\text{),}
   \\[1ex]
   \text{RSS}_m =&\;\sum_{i=1}^{N}\;\big(\mathbf{y}_i - m(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,\mathbf{x}_i)\big)^2\;\text{, recall}\;\delta_o\;\text{as}
   \\[1ex]
@@ -258,9 +258,9 @@ $$
   \\[1ex]
   \nabla\,\text{RSS}_m =&\;\Bigg[\frac{\partial\,\text{RSS}_m}{\partial\,b_{q_s}}\;,\;\frac{\partial\,\text{RSS}_m}{\partial\,b_{q_e}}\Bigg]\;\text{,}
   \\[1ex]
-  =&\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)\Big)\times f'\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\Bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\Bigg]\;\text{,}
+  =&\;\sum_{i=1}^{\lvert\mathbf{x}\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)\Big)\times f'\Big(\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\Big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\bigg]\;\text{,}
   \\[1ex]
-  =&\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\Bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\Bigg]\;\text{, using}\;\psi_i\;\text{as}
+  =&\;\sum_{i=1}^{\lvert\mathbf{x}\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_i\;,\;\mathbf{x}_i-b_{q_s}\bigg]\;\text{, using}\;\psi_i\;\text{as}
   \\[1ex]
   \psi_i =&\;\frac{\delta_o\times(b_{q_s}-\mathbf{x}_i)}{b_{q_s}-b_{q_e}}+b_{o_s}\;\text{.}
 \end{aligned}
@@ -283,7 +283,7 @@ The first kind of regularizer could be similar to this:
 
 $$
 \begin{aligned}
-  R_1(\bm{\theta},\bm{\sigma}) &= 1-\Bigg(1+\sum_{i=1}^{\lvert\,\bm{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\;\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)\times(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)\Bigg)^{\sum_{i=1}^{\lvert\,\bm{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\;\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)}\;\text{,}
+  R_1(\bm{\theta},\bm{\sigma}) &=\Bigg(1+\sum_{i=1}^{\lvert\,\bm{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\;\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)\times(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)\Bigg)^{\sum_{i=1}^{\lvert\,\bm{\theta}-1\,\rvert}\,\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\;\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\bm{\sigma}_i)}-1\;\text{,}
   \\[1ex]
   &\;\text{where}\;\mathcal{H}\;\text{is the Heaviside step function, and}
   \\[0ex]
@@ -296,7 +296,7 @@ The first version does not take the second condition into account. We define an 
 
 $$
 \begin{aligned}
-  \bm{\theta}\,\dots&\;\text{vector of boundaries,}
+  \bm{\theta}\;\dots&\;\text{vector of boundaries,}
   \\[0ex]
   \mathcal{E}=&\;\text{matrix that defines pair-wise minimum distances between two boundaries,}
   \\[1ex]
@@ -304,9 +304,9 @@ $$
   \\[0ex]
   &\;\text{the number of mutual violations,}
   \\[1ex]
-  k=&\;\sum_{j=1}^{\lvert\,i-1\,\rvert}\mathcal{H}(\bm{\theta}_j-\bm{\theta}_i-\mathcal{E}_{i,j})\times(\bm{\theta}_j-\bm{\theta}_i-\mathcal{E}_{i,j})\;\;+
+  k=&\;\sum_{j=1}^{\lvert\,i-1\,\rvert}\mathcal{H}(\bm{\theta}_j-\bm{\theta}_i-\mathcal{E}_{i,j})\times(\bm{\theta}_j-\bm{\theta}_i-\mathcal{E}_{i,j})
   \\[0ex]
-  &\;\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\mathcal{E}_{i,j})\times(\bm{\theta}_i-\bm{\theta}_j-\mathcal{E}_{i,j})\;\text{,}
+  &\;+\;\sum_{j=i+1}^{\lvert\,\bm{\theta}\,\rvert}\mathcal{H}(\bm{\theta}_i-\bm{\theta}_j-\mathcal{E}_{i,j})\times(\bm{\theta}_i-\bm{\theta}_j-\mathcal{E}_{i,j})\;\text{,}
   \\[0ex]
   &\;\text{the sum of of the degrees of all mutual violations,}
   \\[1ex]
@@ -319,6 +319,56 @@ $$
 $$
 
 This regularizer is similar to the first alternative. It considers however also backward (hence mutual) violations. Also note that the gradient for $R_1$ is always $0$, as the derivative of the Heaviside step function is $0$, thus introducing a multiplier of $0$.
+
+For inclusion in our loss function later, we need to reformulate $R_1^{\text{alt}}$ using $b_{q_s},b_{q_e}$. However, we also simplify the $R_1$ loss and define:
+
+$$
+\begin{aligned}
+  \bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime\;\dots&\;\text{ordered versions of the query start-/end boundaries,}
+  \\[1ex]
+  \lambda\;\dots&\;\text{constant that allows by how much an order may be violated,}
+  \\[1ex]
+  \mathcal{H},\mathcal{R}=&\;\text{the Heaviside and Ramp functions,}
+  \\[1ex]
+  \bm{\phi}=&\;\mathcal{R}(\bm{\vartheta}^s-\bm{\vartheta}^s\prime-\lambda)+\mathcal{R}(\bm{\vartheta}^e\prime-\bm{\vartheta}^e-\lambda)\;\text{, reformulated using}\;b_{q_s},b_{q_e}\text{:}
+  \\[1ex]
+  =&\;\mathcal{R}(b_{q_s}-\bm{\vartheta}^s_q\prime-\lambda)+\mathcal{R}(\bm{\vartheta}^e_q\prime-b_{q_e}-\lambda)\;\text{,}
+  \\[1ex]
+  R_1^{\text{alt}}\prime(\bm{\vartheta}^s,\bm{\vartheta}^e,\bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime)=&\;\Big(1+\big[\Sigma\,\bm{\phi}\big]\Big)^{\big[\Sigma\,\mathcal{H}(\bm{\phi})\big]}-1\;\text{.}
+\end{aligned}
+$$
+
+It turns out that we can detect "forward"-violations by subtracting the (potentially unordered) $\bm{\vartheta}$ from its ordered version, $\bm{\vartheta}\prime$, and "backward"-violations by interchanging summands. Then we can subtract an optional offset, $\lambda$, that allows some degree of violation (typically this is $0$). Any value remaining that is greater $0$ will remain so after we passed the resulting vector through the Ramp function. The resulting vector, $\bm{\phi}$, can now be used in two ways: first, we can sum up all violations. Second, we exponentiate that sum by the amount of violations.
+
+Hints: We assume all boundaries to be positive. The first term is $1+\dots$, to ascertain that we do not exponentiate values $<1$. We finally subtract $1$ as this regularizer has a lower bound of 1 (for the case of no violations we exponentiate with $0$).
+
+Hints: The gradient for this version is also $0$, as the exponent will become $0$ with the derivative of the Heaviside step function.
+
+Consider the following example in `R`:
+
+```{r}
+R <- function(x) {
+  x[x < 0] <- 0
+  x
+}
+H <- function(x) {
+  x[x < 0] <- 0
+  x[x > 0] <- 1
+  x
+}
+
+vt <- c(1,3,2,4,6,7,5,8,9)
+vtp <- sort(vt)
+
+vt - vtp
+vtp - vt
+
+phi <- R(vt - vtp) + R(vtp - vt)
+phi
+sum(phi)
+sum(H(phi))
+((1 + sum(phi))^sum(H(phi)))-1
+```
 
 
 ### Penalize supports that are too short
@@ -341,13 +391,15 @@ $$
   \\[1ex]
   \equiv&\;\sum_{i=1}^{\lvert\,\bm{\theta}^s\,\rvert}\,\bm{\theta}^e_i-\bm{\theta}^s_i\;\text{, so}\;R_2\;\text{becomes}
   \\[1ex]
-  R_2(\bm{\vartheta}^s,\bm{\vartheta}^e)=&\;-\log\Bigg(\Bigg[\sum_{i=1}^{\lvert\,\bm{\vartheta}^s\,\rvert}\,\bm{\vartheta}^e_i-\bm{\vartheta}^s_i\Bigg]\;\Big/\;\eta\Bigg)\;\text{, with gradient}
+  R_2(\bm{\vartheta}^s,\bm{\vartheta}^e)=&\;-\log\Bigg(\Bigg[\sum_{i=1}^{\lvert\,\bm{\vartheta}^s\,\rvert}\,\bm{\vartheta}^e_i-\bm{\vartheta}^s_i\Bigg]\;\Big/\;\eta\Bigg)\;\text{, with}\;b_{q_s},b_{q_e}\text{:}
   \\[1ex]
-  \nabla\,R_2=&\;\Bigg[\frac{\partial\,R_2}{\partial\,\bm{\vartheta}^e_i}\;,\;\frac{\partial\,R_2}{\partial\,\bm{\vartheta}^s_i}\Bigg]\;\text{,}
+  =&\;-\log\Bigg(\Bigg[\sum_{q=1}^{\max{Q}}\,b_{q_e}-b_{q_s}\Bigg]\;\Big/\;\eta\Bigg)\;\text{, with gradient}
   \\[1ex]
-  =&\;\sum_{i=1}^{\lvert\,\bm{\vartheta}^s\,\rvert}\Bigg[\frac{1}{\bm{\vartheta}^s_i-\bm{\vartheta}^e_i}\;,\;\frac{1}{\bm{\vartheta}^e_i-\bm{\vartheta}^s_i}\Bigg]\;\text{, reformulated using}\;b_{q_s},b_{q_e}\;\text{:}
+  \nabla\,R_2=&\;\Bigg[\frac{\partial\,R_2}{\partial\,\bm{\vartheta}^s_i}\;,\;\frac{\partial\,R_2}{\partial\,\bm{\vartheta}^e_i}\Bigg]\;\text{,}
   \\[1ex]
-  =&\;\sum_{q=1}^{\max{Q}}\Bigg[\frac{1}{b_{q_s}-b_{q_e}}\;,\;\frac{1}{b_{q_e}-b_{q_s}}\Bigg]\;\text{.}
+  =&\;\sum_{i=1}^{\lvert\,\bm{\vartheta}^s\,\rvert}\Bigg[\frac{1}{\bm{\vartheta}^e_i-\bm{\vartheta}^s_i}\;,\;\frac{1}{\bm{\vartheta}^s_i-\bm{\vartheta}^e_i}\Bigg]\;\text{, reformulated using}\;b_{q_s},b_{q_e}\;\text{:}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{.}
 \end{aligned}
 $$
 
@@ -358,10 +410,59 @@ The last reformulation is important, as it makes the regularizer compatible with
 
 We have previously introduced the model Boundary Time Warping, and shown how to compute its gradient and loss (and gradient thereof), as well as presenting two regularizers for this model. The goal now is to bring everything together, such that we can train the model to minimize an objective function.
 
-## Objectie function
+## Objective function
 
-The objective function is used to calculate a cost, loss or error, given some reference data, as well as query-data together with some parameters that should set up the model such that the cost, loss or error between reference- and transformed query-data becomes minimal.
+The objective function is used to calculate a cost, loss or error, given some reference data, as well as query-data together with some parameters that should set up the model such that the cost, loss or error between reference- and transformed query-data becomes minimal. The objective function wraps the model, its data and parameters:
 
+* Model: Given the reference- and query-data, and parameters that determine how to transform the query-data, it computes a derived version of the query-data that is supposedly closer to the reference-data than the non-derived query-data.
+* Loss function: Provides the means to aggregate the differences between the reference-data and the model-derived query-data. The loss function usually aggregates the entirety of all differences to a single value.
+* Regularizer: One or more additional terms optionally added to the loss function. Regularizers are used to penalize extreme, albeit good solutions as per Occam's razor. Regularizers are added to guide the training of the involved parameters such that over-fitting is avoided.
+* Gradient of loss function: Vector of all partial derivatives of the loss function. Computing the gradient of the loss function results in a suggested change for each parameter, along with how to change it, i.e., whether it should be increased or decreased.
+* Hessian of loss function: Matrix with all 2nd-order partial derivatives of the loss function. This matrix can be used for Newton-Raphson optimization and should be preferred whenever possible over purely gradient-based optimization methods.
+
+We have defined all of the above (except for the Hessian, that we will do later). Our loss function is given by:
+
+$$
+\begin{aligned}
+  \mathcal{L}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e,r,f)=&\;\text{RSS}_{\mathsf{M}} + R_1^{\text{alt}}\prime + R_2\;\text{, with}
+  \\[1ex]
+  \mathbf{y},\hat{\mathbf{y}}=&\;\mathsf{M}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e, r,f)\;\text{, and}
+  \\[1ex]
+  \bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime,\bm{\phi},\mathcal{X}^r\;\dots&\;\text{as defined previously,}
+  \\[1ex]
+  =&\;\Bigg[\sum_{i=1}^{N}\;\big(\mathbf{y}-\hat{\mathbf{y}}\big)^2\Bigg]
+  \\
+  &\;+\;\Big(1+\big[\Sigma\,\bm{\phi}\big]\Big)^{\big[\Sigma\,\mathcal{H}(\bm{\phi})\big]}-1
+  \\
+  &\;-\;\log\Bigg(\Bigg[\sum_{q=1}^{\max{Q}}\,b_{q_e}-b_{q_s}\Bigg]\;\Big/\;\Big(\max{\mathcal{X}^r}-\min{\mathcal{X}^r}\Big)\Bigg)\;\text{.}
+\end{aligned}
+$$
+
+The gradient of this loss function is:
+
+$$
+\begin{aligned}
+  \delta_o,\psi_i,\mathbf{x}_q\;\dots&\;\text{as defined previously,}
+  \\[1ex]
+  \nabla\,\mathcal{L}(\dots)=&\;\Big[\frac{\partial\,\mathcal{L}}{\partial\,b_{q_s}}\;,\;\frac{\partial\,\mathcal{L}}{\partial\,b_{q_e}}\Big]\;\text{,}
+  \\[1ex]
+  =&\;\nabla\,\text{RSS}_{\mathsf{M}}\;+\;\nabla\,R_1^{\text{alt}}\prime\;+\;\nabla\,R_2\;\text{,}
+  \\[1ex]
+  =&\;\Bigg[\sum_{q=1}^{\max{Q}}\sum_{i=1}^{\lvert\mathbf{x}_{q}\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_{q_i}\;,\;\mathbf{x}_{q_i}-b_{q_s}\bigg]\Bigg]\;\text{,}
+  \\[1ex]
+  &\;+0\;\text{(}\nabla\,R_1^{\text{alt}}\prime=0\text{)}
+  \\[1ex]
+  &\;+\sum_{q=1}^{\max{Q}}\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{(the gradient of}\;R_2\;\text{is no longer negative),}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\Bigg[\sum_{i=1}^{\lvert\mathbf{x}_q\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_{q_i}\;,\;\mathbf{x}_{q_i}-b_{q_s}\bigg]\Bigg]
+  \\[1ex]
+  &\;+\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{.}
+\end{aligned}
+$$
+
+Now we have a loss and its gradient, and we will implement and test this next, before going further to the Hessian.
+
+## TODO
 
 
 Let's do some quick testing with `optim`:
