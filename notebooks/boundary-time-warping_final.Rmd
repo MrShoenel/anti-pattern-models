@@ -330,9 +330,13 @@ $$
   \\[1ex]
   \mathcal{H},\mathcal{R}=&\;\text{the Heaviside and Ramp functions,}
   \\[1ex]
-  \bm{\phi}=&\;\mathcal{R}(\bm{\vartheta}^s-\bm{\vartheta}^s\prime-\lambda)+\mathcal{R}(\bm{\vartheta}^e\prime-\bm{\vartheta}^e-\lambda)\;\text{, reformulated using}\;b_{q_s},b_{q_e}\text{:}
+  \bm{\phi}=&\;\mathcal{H}(\mathcal{R}(\bm{\vartheta}^s-\bm{\vartheta}^s\prime-\lambda))\times\mathcal{R}(\bm{\vartheta}^s-\bm{\vartheta}^s\prime-\lambda)
   \\[1ex]
-  =&\;\mathcal{R}(b_{q_s}-\bm{\vartheta}^s_q\prime-\lambda)+\mathcal{R}(\bm{\vartheta}^e_q\prime-b_{q_e}-\lambda)\;\text{,}
+  &\;+\mathcal{H}(\mathcal{R}(\bm{\vartheta}^e\prime-\bm{\vartheta}^e-\lambda))\times\mathcal{R}(\bm{\vartheta}^e\prime-\bm{\vartheta}^e-\lambda)\;\text{, reformulated using}\;b_{q_s},b_{q_e}\text{:}
+  \\[1ex]
+  =&\;\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^s_q\prime-\lambda))\times\mathcal{R}(b_{q_s}-\bm{\vartheta}^s_q\prime-\lambda)
+  \\[1ex]
+  &\;+\mathcal{H}(\mathcal{R}(\bm{\vartheta}^e_q\prime-b_{q_e}-\lambda))\times\mathcal{R}(\bm{\vartheta}^e_q\prime-b_{q_e}-\lambda)\;\text{,}
   \\[1ex]
   R_1^{\text{alt}}\prime(\bm{\vartheta}^s,\bm{\vartheta}^e,\bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime)=&\;\Big(1+\big[\Sigma\,\bm{\phi}\big]\Big)^{\big[\Sigma\,\mathcal{H}(\bm{\phi})\big]}-1\;\text{.}
 \end{aligned}
@@ -340,7 +344,7 @@ $$
 
 It turns out that we can detect "forward"-violations by subtracting the (potentially unordered) $\bm{\vartheta}$ from its ordered version, $\bm{\vartheta}\prime$, and "backward"-violations by interchanging summands. Then we can subtract an optional offset, $\lambda$, that allows some degree of violation (typically this is $0$). Any value remaining that is greater $0$ will remain so after we passed the resulting vector through the Ramp function. The resulting vector, $\bm{\phi}$, can now be used in two ways: first, we can sum up all violations. Second, we exponentiate that sum by the amount of violations.
 
-Hints: We assume all boundaries to be positive. The first term is $1+\dots$, to ascertain that we do not exponentiate values $<1$. We finally subtract $1$ as this regularizer has a lower bound of 1 (for the case of no violations we exponentiate with $0$).
+Hints: We assume all boundaries to be positive. The first term is $1+\dots$, to ascertain that we do not exponentiate values $<1$. We finally subtract $1$ as this regularizer has a lower bound of 1 (for the case of no violations we exponentiate with $0$). The above expression for $\bm{\phi}$ uses the Ramp function to retain violations, and a violation is always positive. This is multiplied with the Heaviside vector of it, such that forward-/backward-violations cannot cancel out each other.
 
 Hints: The gradient for this version is also $0$, as the exponent will become $0$ with the derivative of the Heaviside step function.
 
@@ -357,18 +361,81 @@ H <- function(x) {
   x
 }
 
-vt <- c(1,3,2,4,6,7,5,8,9)
+vt <- c(1,3,2,4,6,7,5,8,9) / 10
 vtp <- sort(vt)
 
 vt - vtp
 vtp - vt
 
-phi <- R(vt - vtp) + R(vtp - vt)
+phi <- H(R(vt - vtp)) * R(vt - vtp) + H(R(vtp - vt)) * R(vtp - vt)
 phi
 sum(phi)
 sum(H(phi))
 ((1 + sum(phi))^sum(H(phi)))-1
 ```
+
+While this alternative regularizer works, it would be great if we can formulate it similar to the second regularizer, using a logarithm and a bounded expression. Given the previous example, it appears that we can compute an upper boundary for the sum (and amount) of violations: The worst possible boundary constellation is reached when we compare the ordered vector against its ordered reverse, and vice versa (for mutual violations).
+
+$$
+\begin{aligned}
+  \overleftarrow{\bm{\vartheta}^s\prime},\overleftarrow{\bm{\vartheta}^e\prime}\;\dots&\;\text{reversed and ordered versions of the query start-/end boundaries,}
+  \\[1ex]
+  \mathbf{p}(\mathbf{v}_1,\mathbf{v_2},\lambda)=&\;\mathcal{H}(\mathcal{R}(\mathbf{v}_1-\mathbf{v}_2-\lambda))\times \mathcal{R}(\mathbf{v}_1-\mathbf{v}_2-\lambda)
+  \\[0ex]
+  &\;+\mathcal{H}(\mathcal{R}(\mathbf{v}_2-\mathbf{v}_1-\lambda))\times\mathcal{R}(\mathbf{v}_2-\mathbf{v}_1-\lambda)\;\text{,}
+  \\[1ex]
+  &\;\text{the mutual difference between vectors}\;\mathbf{v}_1,\mathbf{v}_2,
+  \\[1ex]
+  \mathbf{v}_s\;,\;\mathbf{v}_e=&\;\mathbf{p}(\bm{\vartheta}^s,\bm{\vartheta}^s\prime,\;k)\;,\;\mathbf{p}(\bm{\vartheta}^e,\bm{\vartheta}^e\prime,\;k)\;\text{, (}k\;\text{is an arbitrary value),}
+  \\[1ex]
+  \mathbf{u}_s\;,\;\mathbf{u}_e=&\;\mathbf{p}(\bm{\vartheta}^s\prime,\overleftarrow{\bm{\vartheta}^s\prime},\;k)\;,\;\mathbf{p}(\bm{\vartheta}^e\prime,\overleftarrow{\bm{\vartheta}^e\prime},\;k)\;\text{,}
+  \\[1ex]
+  &\;\text{vectors for violations (}\mathbf{v}_{s,e}\text{) and upper bounds (}\mathbf{u}_{s,e}\text{),}
+  \\[1ex]
+  \bm{\phi}_v\;,\;\bm{\phi}_u=&\;\mathbf{v}_s+\mathbf{v}_e\;,\;\mathbf{u}_s+\mathbf{u}_e\;\text{,}
+  \\[1ex]
+  R_1^{\text{new}}=&\;-\log{\bigg(1-\frac{\bm{\phi}_v}{\bm{\phi}_u}\bigg)}\;\text{, fully-expanded, using}\;b_{q_s},b_{q_e}\;\text{:}
+  \\[1ex]
+  =&\;-\log{\Bigg(1-\frac{\sum_{q=1}^{\max{Q}}\,\begin{matrix}\;\;\;\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^s_q\prime-\lambda))\times \mathcal{R}(b_{q_s}-\bm{\vartheta}^s_q\prime-\lambda)&\\+\;\mathcal{H}(\mathcal{R}(\bm{\vartheta}^s_q\prime-b_{q_s}-\lambda))\times\mathcal{R}(\bm{\vartheta}^s_q\prime-b_{q_s}-\lambda)&\\+\;\mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^e_q\prime-\lambda))\times \mathcal{R}(b_{q_e}-\bm{\vartheta}^e_q\prime-\lambda)&\\+\;\mathcal{H}(\mathcal{R}(\bm{\vartheta}^e_q\prime-b_{q_e}-\lambda))\times\mathcal{R}(\bm{\vartheta}^e_q\prime-b_{q_e}-\lambda)\end{matrix}}{\sum_{q=1}^{\max{Q}}\,\begin{matrix}\;\;\;\mathcal{H}(\mathcal{R}(\overleftarrow{\bm{\vartheta}^s_q\prime}-\bm{\vartheta}^s_q\prime-\lambda))\times \mathcal{R}(\overleftarrow{\bm{\vartheta}^s_q\prime}-\bm{\vartheta}^s_q\prime-\lambda)&\\+\;\mathcal{H}(\mathcal{R}(\bm{\vartheta}^s_q\prime-\overleftarrow{\bm{\vartheta}^s_q\prime}-\lambda))\times\mathcal{R}(\bm{\vartheta}^s_q\prime-\overleftarrow{\bm{\vartheta}^s_q\prime}-\lambda)&\\+\;\mathcal{H}(\mathcal{R}(\overleftarrow{\bm{\vartheta}^e_q\prime}-\bm{\vartheta}^e_q\prime-\lambda))\times \mathcal{R}(\overleftarrow{\bm{\vartheta}^e_q\prime}-\bm{\vartheta}^e_q\prime-\lambda)&\\+\;\mathcal{H}(\mathcal{R}(\bm{\vartheta}^e_q\prime-\overleftarrow{\bm{\vartheta}^e_q\prime}-\lambda))\times\mathcal{R}(\bm{\vartheta}^e_q\prime-\overleftarrow{\bm{\vartheta}^e_q\prime}-\lambda)\end{matrix}}\Bigg)}\;\text{.}
+\end{aligned}
+$$
+
+However large the above definition, we can (and should!) break it down significantly before deriving the gradient. First of all, the entire denominator becomes constant the moment the query-boundaries are known, so we can pre-compute and replace it again with $\bm{\phi}_u$. Second, subtracting some $\lambda$ can also be pre-computed, so that'll clean up things further:
+
+$$
+\begin{aligned}
+  \text{Using}\;\bm{\vartheta}^{s,\lambda}_q\prime,\bm{\vartheta}^{e,\lambda}_q\prime\;\dots&\;\text{vectors that already subtracted some}\;\lambda\text{,}
+  \\[1ex]
+  R_1^{\text{new}}=&\;-\log{\Bigg(1-\frac{
+  \begin{matrix}
+  \;\;\;\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))\times \mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
+  &\\+\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))\times\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})
+  &\\+\mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime))\times \mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)
+  &\\+\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))\times\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})
+  \end{matrix}
+  }{\bm{\phi}_u}\Bigg)}\;\text{, note that}
+  \\[1ex]
+  \frac{\partial\,\mathcal{R}}{\partial\;x}=&\;\mathcal{H}\;\text{, and}\;\frac{\partial\,\mathcal{H}}{\partial\,x}=0\;\text{, and the gradient will become}
+  \\[1ex]
+  \nabla\,R_1^{\text{new}}=&\;\Bigg[\frac{\partial\,R_1^{\text{new}}}{\partial\,b_{q_s}}\;,\;\frac{\partial\,R_1^{\text{new}}}{\partial\,b_{q_e}}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\Bigg[\frac{-\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))\times\mathcal{H}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})+\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))\times\mathcal{H}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)}{
+\begin{matrix}
+\bm{\phi}_u-\Big(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})\times\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))+\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
+&\\\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\times\;\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))+\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})\times\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))
+&\\+\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)\times\mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime))\Big)\end{matrix}}\;\text{,}
+  \\[1ex]
+  &\;\frac{-\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))\times\mathcal{H}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})+\mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime))\times\mathcal{H}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)}{
+  \begin{matrix}
+  \bm{\phi}_u-(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})\times \mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))+\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
+&\\\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\times \mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))+\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})\times \mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))
+&\\+\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)\times \mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)))
+  \end{matrix}
+  }\Bigg]\;\text{.}
+\end{aligned}
+$$
+
+Well, at least the denominators are the same for the partial derivatives. Note that we have already removed all summands that would be zero due to them being multiplied with the derivative of the Heaviside step function, which is $0$.
 
 
 ### Penalize supports that are too short
@@ -424,17 +491,17 @@ We have defined all of the above (except for the Hessian, that we will do later)
 
 $$
 \begin{aligned}
-  \mathcal{L}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e,r,f)=&\;\text{RSS}_{\mathsf{M}} + R_1^{\text{alt}}\prime + R_2\;\text{, with}
+  \text{Using}\;\bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime,\bm{\phi}_v,\bm{\phi}_u,\mathcal{X}^r\;\dots&\;\text{as defined previously,}
+  \\[1em]
+  \mathcal{L}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e,r,f)=&\;\text{RSS}_{\mathsf{M}} + R_1^{\text{new}}\prime + R_2\;\text{, with}
   \\[1ex]
   \mathbf{y},\hat{\mathbf{y}}=&\;\mathsf{M}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e, r,f)\;\text{, and}
   \\[1ex]
-  \bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime,\bm{\phi},\mathcal{X}^r\;\dots&\;\text{as defined previously,}
-  \\[1ex]
   =&\;\Bigg[\sum_{i=1}^{N}\;\big(\mathbf{y}-\hat{\mathbf{y}}\big)^2\Bigg]
   \\
-  &\;+\;\Big(1+\big[\Sigma\,\bm{\phi}\big]\Big)^{\big[\Sigma\,\mathcal{H}(\bm{\phi})\big]}-1
+  &\;-\log{\bigg(1-\frac{\bm{\phi}_v}{\bm{\phi}_u}\bigg)}
   \\
-  &\;-\;\log\Bigg(\Bigg[\sum_{q=1}^{\max{Q}}\,b_{q_e}-b_{q_s}\Bigg]\;\Big/\;\Big(\max{\mathcal{X}^r}-\min{\mathcal{X}^r}\Big)\Bigg)\;\text{.}
+  &\;-\log\Bigg(\Bigg[\sum_{q=1}^{\max{Q}}\,b_{q_e}-b_{q_s}\Bigg]\;\Big/\;\Big(\max{\mathcal{X}^r}-\min{\mathcal{X}^r}\Big)\Bigg)\;\text{.}
 \end{aligned}
 $$
 
@@ -446,17 +513,17 @@ $$
   \\[1ex]
   \nabla\,\mathcal{L}(\dots)=&\;\Big[\frac{\partial\,\mathcal{L}}{\partial\,b_{q_s}}\;,\;\frac{\partial\,\mathcal{L}}{\partial\,b_{q_e}}\Big]\;\text{,}
   \\[1ex]
-  =&\;\nabla\,\text{RSS}_{\mathsf{M}}\;+\;\nabla\,R_1^{\text{alt}}\prime\;+\;\nabla\,R_2\;\text{,}
+  =&\;\nabla\,\text{RSS}_{\mathsf{M}}\;+\;\nabla\,R_1^{\text{new}}\prime\;+\;\nabla\,R_2\;\text{,}
   \\[1ex]
   =&\;\Bigg[\sum_{q=1}^{\max{Q}}\sum_{i=1}^{\lvert\mathbf{x}_{q}\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_{q_i}\;,\;\mathbf{x}_{q_i}-b_{q_s}\bigg]\Bigg]\;\text{,}
   \\[1ex]
-  &\;+0\;\text{(}\nabla\,R_1^{\text{alt}}\prime=0\text{)}
+  &\;+\nabla\,R_1^{\text{new}}=\;\dots\;\text{(too big to paste here))}
   \\[1ex]
   &\;+\sum_{q=1}^{\max{Q}}\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{(the gradient of}\;R_2\;\text{is no longer negative),}
   \\[1ex]
   =&\;\sum_{q=1}^{\max{Q}}\Bigg[\sum_{i=1}^{\lvert\mathbf{x}_q\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_{q_i}\;,\;\mathbf{x}_{q_i}-b_{q_s}\bigg]\Bigg]
   \\[1ex]
-  &\;+\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{.}
+  &\;+\nabla\,R_1^{\text{new}}\dots+\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{.}
 \end{aligned}
 $$
 
