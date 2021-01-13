@@ -22,7 +22,7 @@ output:
   word_document: default
 ---
 
-```{r echo=FALSE}
+```{r echo=FALSE, warning=FALSE}
 source(file = "../helpers.R")
 source(file = "./common-funcs.R")
 source(file = "../models/modelsR6.R")
@@ -495,7 +495,7 @@ $$
   \\[1em]
   \mathcal{L}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e,r,f)=&\;\text{RSS}_{\mathsf{M}} + R_1^{\text{new}}\prime + R_2\;\text{, with}
   \\[1ex]
-  \mathbf{y},\hat{\mathbf{y}}=&\;\mathsf{M}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e, r,f)\;\text{, and}
+  \mathbf{y},\hat{\mathbf{y}}=&\;\mathsf{M}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e, r,f)\text{, }\mathcal{L}\;\text{becomes}
   \\[1ex]
   =&\;\Bigg[\sum_{i=1}^{N}\;\big(\mathbf{y}-\hat{\mathbf{y}}\big)^2\Bigg]
   \\
@@ -528,6 +528,114 @@ $$
 $$
 
 Now we have a loss and its gradient, and we will implement and test this next, before going further to the Hessian.
+
+
+## Implementation
+
+Here we implement the loss function with its regularizers and gradient.
+
+### Using optim's gradient
+
+First we test how well the loss function works, by having `optim()` use its own approximation of a gradient.
+
+```{r}
+temp <- loadResultsOrCompute(file = "../results/btw-final_test-loss.rds", computeExpr = {
+  pNames <- c(paste0("b", 1:length(query_bounds)), "loss")
+  fitResult <- FitResult$new(paramNames = pNames)$start()
+  
+  optR <- optim(
+    par = query_bounds,
+    method = "L-BFGS-B",
+    lower = rep(0, length(query_bounds)),
+    upper = rep(1, length(query_bounds)),
+    fn = function(x) {
+      loss <- L_final(theta_b_org = query_bounds, theta_b = x, r = r, f = f)
+      fitResult$stopStep(resultParams = c(x, loss), verbose = interactive())
+      loss
+    }
+  )
+  
+  list(
+    fr = fitResult$finish(),
+    optR = optR
+  )
+})
+
+plot(log(temp$fr$getFitHist()[, "loss"]), type="l")
+
+temp2 <- M_final(
+  theta_b_org = query_bounds,
+  theta_b = temp$optR$par,
+  r = signal_ref,
+  f = signal_query)
+
+plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp$optR$par)
+```
+
+The loss function apparently works. Note that the above plot includes also gradient iterations, as we cannot distinguish these using the `optim()`-approach.
+
+
+### Implementing the analytical gradient
+
+We have previously derived the gradient for our loss function, including regularizers. Now we should implement it in code and try to use `optim()` with that gradient instead. For the analytical gradient, we also need to provide a derivative of the query-signal. While it is actually a sine, we go the numeric way here, approximating a function for the gradient.
+
+```{r}
+library(pracma)
+
+#' Note that here we use the stabilized version of the query-signal.
+#' TODO: We should supply helper functions to the user that use the
+#' best possible method of derivation, like we do here.
+f_deriv1 <- Vectorize(function(x) {
+  m <- if (x == 0) "forward" else if (x == 1) "backward" else "central"
+  pracma::fderiv(f = f, x = x, method = m)
+})
+
+curve(f, 0, 1)
+curve(f_deriv1, 0, 1)
+```
+
+Let's make a test without the regularizers:
+
+```{r}
+temp <- loadResultsOrCompute(file = "../results/btw-final_test-loss_no-reg.rds", computeExpr = {
+  pNames <- c(paste0("b", 1:length(query_bounds)), "loss")
+  fitResult <- FitResult$new(paramNames = pNames)$start()
+  
+  optR <- stats::optim(
+    par = query_bounds,
+    method = "L-BFGS-B",
+    lower = rep(0, length(query_bounds)),
+    upper = rep(1, length(query_bounds)),
+    fn = function(x) {
+      loss <- L_final(theta_b_org = query_bounds, theta_b = x, r = r, f = f, useR1 = FALSE, useR2 = FALSE)
+      fitResult$stopStep(resultParams = c(x, loss), verbose = interactive())
+      loss
+    },
+    gr = function(x) {
+      L_final_grad(theta_b_org = query_bounds, theta_b = x, r = r, f = f, f_p = f_deriv1, useR1 = FALSE, useR2 = FALSE)
+    }
+  )
+  
+  list(
+    fr = fitResult$finish(),
+    optR = optR
+  )
+})
+
+print(round(temp$optR$par, 5))
+
+plot(log(temp$fr$getFitHist()[, "loss"]), type="l")
+
+temp2 <- M_final(
+  theta_b_org = query_bounds,
+  theta_b = temp$optR$par,
+  r = signal_ref,
+  f = signal_query)
+
+plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp$optR$par)
+```
+
+This works somewhat, with the major problem being overlapping boundaries, and BTW not being able to solve this problem without the regularizers (the $R_1$ regularizer does this). However, it seems to cover the whole reference in this example, even without the $R_2$ regularizer.
 
 ## TODO
 
