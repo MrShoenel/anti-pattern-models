@@ -406,14 +406,14 @@ $$
 \begin{aligned}
   \text{Using}\;\bm{\vartheta}^{s,\lambda}_q\prime,\bm{\vartheta}^{e,\lambda}_q\prime\;\dots&\;\text{vectors that already subtracted some}\;\lambda\text{,}
   \\[1ex]
-  R_1^{\text{new}}=&\;-\log{\Bigg(1-\frac{
+  R_1^{\text{new}}=&\;\sum_{q=1}^{\max{Q}}-\log{\Bigg(1-\frac{
   \begin{matrix}
   \;\;\;\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))\times \mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
   &\\+\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))\times\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})
   &\\+\mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime))\times \mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)
   &\\+\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))\times\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})
   \end{matrix}
-  }{\bm{\phi}_u}\Bigg)}\;\text{, note that}
+  }{\bm{\phi}_{u_q}}\Bigg)}\;\text{, note that}
   \\[1ex]
   \frac{\partial\,\mathcal{R}}{\partial\;x}=&\;\mathcal{H}\;\text{, and}\;\frac{\partial\,\mathcal{H}}{\partial\,x}=0\;\text{, and the gradient will become}
   \\[1ex]
@@ -421,13 +421,13 @@ $$
   \\[1ex]
   =&\;\sum_{q=1}^{\max{Q}}\Bigg[\frac{-\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))\times\mathcal{H}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})+\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))\times\mathcal{H}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)}{
 \begin{matrix}
-\bm{\phi}_u-\Big(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})\times\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))+\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
+\bm{\phi}_{u_q}-\Big(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})\times\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))+\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
 &\\\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\times\;\mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))+\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})\times\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))
 &\\+\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)\times\mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime))\Big)\end{matrix}}\;\text{,}
   \\[1ex]
   &\;\frac{-\mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))\times\mathcal{H}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})+\mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime))\times\mathcal{H}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)}{
   \begin{matrix}
-  \bm{\phi}_u-(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})\times \mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))+\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
+  \bm{\phi}_{u_q}-(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s})\times \mathcal{H}(\mathcal{R}(\bm{\vartheta}^{s,\lambda}_q\prime-b_{q_s}))+\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime)
 &\\\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\;\times \mathcal{H}(\mathcal{R}(b_{q_s}-\bm{\vartheta}^{s,\lambda}_q\prime))+\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e})\times \mathcal{H}(\mathcal{R}(\bm{\vartheta}^{e,\lambda}_q\prime-b_{q_e}))
 &\\+\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)\times \mathcal{H}(\mathcal{R}(b_{q_e}-\bm{\vartheta}^{e,\lambda}_q\prime)))
   \end{matrix}
@@ -476,6 +476,18 @@ The last reformulation is important, as it makes the regularizer compatible with
 # Optimization
 
 We have previously introduced the model Boundary Time Warping, and shown how to compute its gradient and loss (and gradient thereof), as well as presenting two regularizers for this model. The goal now is to bring everything together, such that we can train the model to minimize an objective function.
+
+```{r}
+Stabilize <- function(f, lb, ub) {
+  Vectorize(function(x) {
+    if (x < lb) f(lb) else if (x > ub) f(ub) else f(x)
+  })
+}
+
+r <- Stabilize(signal_ref, 0, 1)
+f <- Stabilize(signal_query, 0, 1)
+```
+
 
 ## Objective function
 
@@ -637,63 +649,22 @@ plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp$optR$par)
 
 This works somewhat, with the major problem being overlapping boundaries, and BTW not being able to solve this problem without the regularizers (the $R_1$ regularizer does this). However, it seems to cover the whole reference in this example, even without the $R_2$ regularizer.
 
-## TODO
-
-
-Let's do some quick testing with `optim`:
-
-```{r eval=FALSE}
-library(optimParallel)
-
-Stabilize <- function(f, lb, ub) {
-  Vectorize(function(x) {
-    if (x < lb) f(lb) else if (x > ub) f(ub) else f(x)
-  })
-}
-
-r <- Stabilize(signal_ref, 0, 1)
-f <- Stabilize(signal_query, 0, 1)
-
-o <- function(theta, isGrad = FALSE) {
-  n <- 1e3
-  res <- M_final(
-    theta_b_org = query_bounds, theta_b = theta, r = r, f = f, num_samples = n)
-  
-  loss <- RSS_m(y = res$y, y_hat = res$y_hat)
-  print(paste0(isGrad, " / ", loss))
-  
-  reg <- (1 - max(theta) + min(theta)) * n
-  
-  loss + reg
-}
-
-
-cl <- parallel::makePSOCKcluster(12)
-parallel::clusterExport(cl, varlist = c("M_final", "query_bounds", "r", "f", "RSS_m", "Stabilize", "signal_ref", "signal_query", "f_deriv1", "RSS_m_deriv1"))
-
-set.seed(1337)
-optRp <- optimParallel::optimParallel(
+```{r}
+optR <- stats::optim(
   par = query_bounds,
-  fn = o,
-  #gr = o_deriv1_test,
+  method = "L-BFGS-B",
   lower = rep(0, length(query_bounds)),
   upper = rep(1, length(query_bounds)),
-  parallel = list(
-    cl = cl,
-    forward = FALSE
-  )
+  fn = function(x) {
+    loss <- L_final(theta_b_org = query_bounds, theta_b = x, r = r, f = f, useR1 = TRUE, useR2 = TRUE)
+    fitResult$stopStep(resultParams = c(x, loss), verbose = interactive())
+    loss
+  },
+  gr = function(x) {
+    L_final_grad(theta_b_org = query_bounds, theta_b = x, r = r, f = f, f_p = f_deriv1, useR1 = TRUE, useR2 = TRUE)
+  }
 )
-
-stopCluster(cl)
-optRp
 ```
-
-
-
-
-
-
-
 
 
 
