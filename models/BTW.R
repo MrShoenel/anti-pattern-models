@@ -275,36 +275,40 @@ L_final <- function(
   res <- M_final(theta_b_org = theta_b_org, theta_b = theta_b, r = r, f = f)
   
   loss <- sum((res$y - res$y_hat)^2)
-  
-  if (useR1 || useR2) {
+    
+  if(useR1) {
     vts <- utils::head(theta_b, -1)
     vte <- utils::tail(theta_b, -1)
+    
+    R <- Vectorize(function(x) if (x < 0) 0 else x)
+    H <- Vectorize(function(x) if (x < 0) 0 else 1)
+    p_phi <- function(v1, v2) H(R(v1 - v2)) * R(v1 - v2) + H(R(v2 - v1)) * R(v2 - v1)
+    
+    vts_o <- sort(vts)
+    vts_or <- rev(vts_o)
+    vte_o <- sort(vte)
+    vte_or <- rev(vte_o)
+    
+    v_s <- p_phi(vts, vts_o)
+    v_e <- p_phi(vte, vte_o)
+    u_s <- p_phi(vts_o, vts_or)
+    u_e <- p_phi(vte_o, vte_or)
+    
+    eps <- .Machine$double.eps
+    temp <- sum(v_s + v_e) / sum(u_s + u_e)
+    temp <- temp * (1 - eps)
+    
+    loss <- loss - log(1 - temp)
+  }
+  
+  
+  if (useR2) {
     X_r <- range(theta_b_org)
     X_q <- range(theta_b)
-    
-    
-    if(useR1) {
-      R <- Vectorize(function(x) if (x < 0) 0 else x)
-      H <- Vectorize(function(x) if (x < 0) 0 else 1)
-      p_phi <- function(v1, v2) H(R(v1 - v2)) * R(v1 - v2) + H(R(v2 - v1)) * R(v2 - v1)
-      
-      vts_o <- sort(vts)
-      vts_or <- rev(vts_o)
-      vte_o <- sort(vte)
-      vte_or <- rev(vte_o)
-      
-      v_s <- p_phi(vts, vts_o)
-      v_e <- p_phi(vte, vte_o)
-      u_s <- p_phi(vts_o, vts_or)
-      u_e <- p_phi(vte_o, vte_or)
-      
-      loss <- loss - log(1 - (sum(v_s + v_e) / sum(u_s + u_e)))
-    }
-    
-    
-    if (useR2) {
-      loss <- loss - log((X_q[2] - X_q[1]) / (X_r[2] - X_q[1]))
-    }
+    eps <- .Machine$double.eps
+    temp <- (X_q[2] - X_q[1]) / (X_r[2] - X_q[1])
+    temp <- eps + temp * (1 - eps)
+    loss <- loss - log(temp)
   }
   
   loss
@@ -329,6 +333,18 @@ L_final_grad <- function(
   vte <- utils::tail(theta_b, -1)
   Q <- as.numeric(levels(res$int_idx))
   
+  vts <- utils::head(theta_b, -1)
+  vte <- utils::tail(theta_b, -1)
+  
+  R <- Vectorize(function(x) if (x < 0) 0 else x)
+  H <- Vectorize(function(x) if (x < 0) 0 else 1)
+  p_phi <- Vectorize(function(v1, v2) H(R(v1 - v2)) * R(v1 - v2) + H(R(v2 - v1)) * R(v2 - v1))
+  
+  vts_o <- sort(vts)
+  vts_or <- rev(vts_o)
+  vte_o <- sort(vte)
+  vte_or <- rev(vte_o)
+  
   theta_new <- c()
   
   for (q in Q) {
@@ -345,9 +361,11 @@ L_final_grad <- function(
     x_q <- res$X[res$int_idx == q]
     y_q <- res$y[res$int_idx == q]
     
+    temp_i <- if (bqs - bqe == 0) sqrt(.Machine$double.eps) else bqs - bqe # TODO: check what makes sense: 1 or .Machine$double.eps
+    temp_j <- if (bqe - bqs == 0) sqrt(.Machine$double.eps) else bqe - bqs # TODO: same as above
+    
     for (i in seq_len(length(x_q))) {
       x_i <- x_q[i]
-      temp_i <- if (bqs - bqe == 0) 1 else bqs - bqe # TODO: check what makes sense: 1 or .Machine$double.eps
       psi_i <- bos + ((delta_o * (bqs - x_i)) / temp_i)
       
       big_fac <- 2 * delta_o * (y_q[i] - f(psi_i)) * f_p(psi_i) / (temp_i)^2
@@ -355,6 +373,41 @@ L_final_grad <- function(
       grad_bqs <- grad_bqs + big_fac * (bqe - x_i)
       grad_bqe <- grad_bqe + big_fac * (x_i - bqs)
     }
+    
+    if (useR1) {
+      # First, we gotta compute \phi_{u_q}:
+      phi_u_q <- p_phi(vts_or[q], vts_o[q]) + p_phi(vte_or[q], vte_o[q])
+      
+      # Next, we compute the common denominator:
+      r1_denom <- phi_u_q - (
+        R(vts[q] - bqs) * H(R(vts[q] - bqs)) + R(bqs - vts[q]) *
+          H(R(bqs - vts[q])) + R(vte[q] - bqe) * H(R(vte[q] - bqe)) +
+          R(bqe - vte[q]) * H(R(bqe - vte[q]))
+      )
+      if (r1_denom == 0) {
+        r1_denom <- sqrt(.Machine$double.eps) # TODO: check of .Machine$double.eps is better..
+      }
+      
+      # Now for \nabla b_{q_s}, \nabla b_{q_e}:
+      r1_num_bqs <- -1 * H(R(vts[q] - bqs)) * H(vts[q] - bqs) +
+        H(R(bqs - vts[q])) * H(bqs - vts[q])
+      r1_num_bqe <- -1 * H(R(vte[q] - bqe)) * H(vte[q] - bqe) +
+        H(R(bqe - vte[q])) * H(bqe - vte[q])
+      
+      if (is.na(phi_u_q) || is.na(r1_denom) || is.na(r1_num_bqs) || is.na(r1_num_bqe)) {
+        stop(42)
+      }
+      
+      
+      grad_bqs <- grad_bqs + (r1_num_bqs / r1_denom)
+      grad_bqe <- grad_bqe + (r1_num_bqe / r1_denom)
+    }
+    
+    if (useR2) {
+      grad_bqs <- grad_bqs + (1 / temp_j)
+      grad_bqe <- grad_bqe + (1 / temp_i)
+    }
+    
     
     if (q <= max(Q)) {
       theta_new <- c(theta_new, grad_bqs)
