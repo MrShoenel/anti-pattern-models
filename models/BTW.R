@@ -177,7 +177,7 @@ M_new <- function(theta_b_org, theta_b, r, f, num_samples = 1e3) {
 
 
 
-M_final <- function(theta_b_org, theta_b, r, f, num_samples = 1e3) {
+M_final <- function(theta_b_org, theta_b, r, f, num_samples = 1e3, zNormalize = FALSE) {
   stopifnot(length(theta_b_org) == length(theta_b))
   stopifnot(is.function(r) && is.function(f))
   stopifnot(num_samples >= length(theta_b))
@@ -241,7 +241,8 @@ M_final <- function(theta_b_org, theta_b, r, f, num_samples = 1e3) {
     if (iIdx > (length(theta_b) - 1)) {
       print(x)
       print(theta_b)
-      stop("42!")
+      warning("44!")
+      return("NA")
     }
     
     paste0(iIdx)
@@ -251,11 +252,18 @@ M_final <- function(theta_b_org, theta_b, r, f, num_samples = 1e3) {
   int_idx <- rep(NA, num_samples)
   for (xIdx in seq_len(num_samples)) {
     iIdx <- determine_interval_for_x(X[xIdx])
-    y_hat[xIdx] <- f_primes[[iIdx]](X[xIdx])
+    #y_hat[xIdx] <- f_primes[[iIdx]](X[xIdx])
+    y_hat[xIdx] <- if (iIdx == "NA") NA_real_ else f_primes[[iIdx]](X[xIdx])
     int_idx[xIdx] <- iIdx
   }
   
-  stopifnot(!any(is.na(c(y, y_hat))))
+  if (zNormalize) {
+    y <- (y - mean(y)) / sd(y)
+    y_hat <- (y_hat - mean(y_hat)) / sd(y_hat)
+  }
+  
+  # TODO: We have currently allowed this - the error function needs to take care of this!
+  #stopifnot(!any(is.na(c(y, y_hat))))
   data.frame(
     X = X, # return the support used
     y = y,
@@ -309,6 +317,78 @@ L_final <- function(
     temp <- (X_q[2] - X_q[1]) / (X_r[2] - X_q[1])
     temp <- eps + temp * (1 - eps)
     loss <- loss - log(temp)
+  }
+  
+  loss
+}
+
+R <- Vectorize(function(x) if (x < 0) 0 else x)
+H <- Vectorize(function(x) if (x < 0) 0 else 1)
+
+
+L_final_log <- function(
+  theta_b_org,
+  theta_b,
+  r, f,
+  weightErr = 1,
+  weightR1 = 1,
+  weightR2 = 1,
+  weightR3 = 1,
+  weightR4 = 1,
+  zNormalize = zNormalize
+) {
+  res <- M_final(theta_b_org = theta_b_org, theta_b = theta_b, r = r, f = f, zNormalize = zNormalize)
+  
+  loss <- weightErr * log(1 + sum(na.omit(res$y - res$y_hat)^2))
+  
+  vts <- utils::head(theta_b, -1)
+  vte <- utils::tail(theta_b, -1)
+  
+  if(weightR1 > 0) {
+    p_phi <- function(v1, v2) H(R(v1 - v2)) * R(v1 - v2) + H(R(v2 - v1)) * R(v2 - v1)
+    
+    vts_o <- sort(vts)
+    vts_or <- rev(vts_o)
+    vte_o <- sort(vte)
+    vte_or <- rev(vte_o)
+    
+    v_s <- p_phi(vts, vts_o)
+    v_e <- p_phi(vte, vte_o)
+    u_s <- p_phi(vts_o, vts_or)
+    u_e <- p_phi(vte_o, vte_or)
+    
+    eps <- .Machine$double.eps
+    temp <- sum(v_s + v_e) / sum(u_s + u_e)
+    temp <- temp * (1 - eps)
+    
+    loss <- loss + weightR1 * -log(1 - temp)
+  }
+  
+  
+  if (weightR2 > 0) {
+    X_r <- range(theta_b_org)
+    X_q <- range(theta_b)
+    eps <- .Machine$double.eps
+    temp <- (X_q[2] - X_q[1]) / (X_r[2] - X_r[1])
+    temp <- eps + temp * (1 - eps)
+    loss <- loss + weightR2 * -log(temp)
+  }
+  
+  
+  if (weightR3 > 0) {
+    X_r <- range(theta_b_org)
+    mu <- (X_r[2] - X_r[1]) / (length(theta_b_org) - 1)
+    loss <- loss + weightR3 * log(1 + sum((vte - vts - mu)^2))
+  }
+  
+  
+  # Box-bounds
+  if (weightR4 > 0) {
+    # TODO: In a final model, this should probably be discrete parameters.
+    lb <- min(theta_b_org)
+    ub <- max(theta_b_org)
+    
+    loss <- loss + weightR3 * log(1 + sum(R(lb - vts) + R(vts - lb) + R(lb - vte) + R(vte - ub)))
   }
   
   loss
@@ -421,6 +501,156 @@ L_final_grad <- function(
 }
 
 
+L_final_log_grad <- function(
+  theta_b_org,
+  theta_b,
+  r, f, f_p,
+  weightErr = 1,
+  weightR1 = 1,
+  weightR2 = 1,
+  weightR3 = 1,
+  weightR4 = 1,
+  zNormalize = FALSE
+) {
+  res <- M_final(theta_b_org = theta_b_org, theta_b = theta_b, r = r, f = f, zNormalize = zNormalize)
+  
+  # \theta_s, \theta_e
+  ts <- utils::head(theta_b_org, -1)
+  te <- utils::tail(theta_b_org, -1)
+  
+  # \vartheta_s, \vartheta_e
+  vts <- utils::head(theta_b, -1)
+  vte <- utils::tail(theta_b, -1)
+  Q <- as.numeric(levels(res$int_idx))
+  
+  vts <- utils::head(theta_b, -1)
+  vte <- utils::tail(theta_b, -1)
+  
+  R <- Vectorize(function(x) if (x < 0) 0 else x)
+  H <- Vectorize(function(x) if (x < 0) 0 else 1)
+  p_phi <- Vectorize(function(v1, v2) H(R(v1 - v2)) * R(v1 - v2) + H(R(v2 - v1)) * R(v2 - v1))
+  
+  vts_o <- sort(vts)
+  vts_or <- rev(vts_o)
+  vte_o <- sort(vte)
+  vte_or <- rev(vte_o)
+  
+  theta_new <- c()
+  
+  for (q in Q) {
+    grad_bqs <- 0
+    grad_bqe <- 0
+    
+    bos <- ts[q]
+    boe <- te[q]
+    
+    bqs <- vts[q]
+    bqe <- vte[q]
+    
+    delta_o <- boe - bos
+    delta_q <- if (bqe - bqs == 0) 1 else bqe - bqs
+    
+    x_q <- res$X[res$int_idx == q]
+    y_r <- res$y[res$int_idx == q]
+    
+    if (weightErr > 0) {
+      for (i in seq_len(length(x_q))) {
+        x_qi <- x_q[i]
+        gamma_i <- delta_o * (x_qi - bqs)
+        psi_i <- (gamma_i / delta_q) + bos
+        
+        big_fac <- 2 * (y_r[i] - f(psi_i)) * f_p(psi_i) / (1 + y_r[i] - f(psi_i))^2
+        
+        grad_bqs <- grad_bqs + big_fac * -1 * ((gamma_i / delta_q^2) - (delta_o / delta_q))
+        grad_bqe <- grad_bqe + big_fac * (gamma_i / delta_q^2)
+      }
+      
+      grad_bqs <- weightErr * grad_bqs
+      grad_bqe <- weightErr * grad_bqe
+    }
+    
+        
+    if (weightR1 > 0) {
+      # First, we gotta compute \phi_{u_q}:
+      phi_u_q <- p_phi(vts_or[q], vts_o[q]) + p_phi(vte_or[q], vte_o[q])
+      
+      # Next, we compute the common denominator:
+      r1_denom <- phi_u_q - (
+        R(vts[q] - bqs) * H(R(vts[q] - bqs)) + R(bqs - vts[q]) *
+          H(R(bqs - vts[q])) + R(vte[q] - bqe) * H(R(vte[q] - bqe)) +
+          R(bqe - vte[q]) * H(R(bqe - vte[q]))
+      )
+      if (r1_denom == 0) {
+        # TODO: check of .Machine$double.eps is better..
+        r1_denom <- sqrt(.Machine$double.eps)
+      }
+      
+      # Now for \nabla b_{q_s}, \nabla b_{q_e}:
+      r1_num_bqs <- -1 * H(R(vts[q] - bqs)) * H(vts[q] - bqs) +
+        H(R(bqs - vts[q])) * H(bqs - vts[q])
+      r1_num_bqe <- -1 * H(R(vte[q] - bqe)) * H(vte[q] - bqe) +
+        H(R(bqe - vte[q])) * H(bqe - vte[q])
+      
+      if (is.na(phi_u_q) || is.na(r1_denom) || is.na(r1_num_bqs) || is.na(r1_num_bqe)) {
+        stop(42)
+      }
+      
+      
+      grad_bqs <- grad_bqs + weightR1 * (r1_num_bqs / r1_denom)
+      grad_bqe <- grad_bqe + weightR1 * (r1_num_bqe / r1_denom)
+    }
+    
+    if (weightR2 > 0) {
+      # TODO: check what makes sense: 1 or .Machine$double.eps
+      temp_i <- if (bqs - bqe == 0) sqrt(.Machine$double.eps) else bqs - bqe
+      # TODO: same as above
+      temp_j <- if (bqe - bqs == 0) sqrt(.Machine$double.eps) else bqe - bqs
+      
+      grad_bqs <- grad_bqs + weightR2 * (1 / temp_j)
+      grad_bqe <- grad_bqe + weightR2 * (1 / temp_i)
+    }
+    
+    
+    if (weightR3 > 0) {
+      X_r <- range(theta_b_org)
+      mu <- (X_r[2] - X_r[1]) / (length(theta_b_org) - 1)
+      
+      temp_num <- 2 * (bqe - bqs - mu)
+      temp_denom <- 1 + (bqe - bqs - mu)^2
+      if (temp_denom == 0) {
+        temp_denom <- 1 # TODO: Check if 1 is good..
+      }
+      
+      grad_bqs <- grad_bqs + weightR3 * -1 * (temp_num / temp_denom)
+      grad_bqe <- grad_bqe + weightR3 * (temp_num / temp_denom)
+    }
+    
+    
+    if (weightR4 > 0) {
+      # TODO: In a final model, this should probably be discrete parameters.
+      lb <- min(theta_b_org)
+      ub <- max(theta_b_org)
+      
+      temp_denom <- 1 + R(lb - bqs) + R(bqs - ub) + R(lb - bqe) + R(bqe - ub)
+      if (temp_denom == 0) {
+        temp_denom <- 1 # TODO: ..
+      }
+      
+      grad_bqs <- grad_bqs + weightR4 * ((H(bqs - ub) - H(lb - bqs)) / temp_denom)
+      grad_bqe <- grad_bqe + weightR4 * ((H(bqe - ub) - H(lb - bqe)) / temp_denom)
+    }
+    
+    
+    if (q <= max(Q)) {
+      theta_new <- c(theta_new, grad_bqs)
+    }
+    if (q == max(Q)) {
+      theta_new <- c(theta_new, grad_bqe)
+    }
+  }
+  
+  theta_new
+}
 
 
 
