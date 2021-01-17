@@ -270,6 +270,32 @@ Now we got us a great gradient of the loss- or cost-function.
 
 Note: Like in the previous attempts, recall that an interval is defined such that it includes the starting boundary, but excludes the ending boundary, except for the last interval, which includes both, i.e., $i_{\forall\,q<\max{Q}}=[b_{s_q}, b_{e_q})$ and $i_{\max{Q}}=[b_{s_q}, b_{e_q}]$. that means, that for all but the last sub-model, we will compute the gradient only for $\partial\,b_{q_s}$, but not $\partial\,b_{q_e}$, as that would be redundant (and slightly wrong).
 
+### Loss with logarithm
+
+It turns out we made a mistake when not taking the logarithm of the loss function, because the two regularizers do so. We need to define an alternate version that uses the logarithm. Below we define that alternate version. We add $1$ to the RSS before taking the logarithm, such that the result will always be $\geq 0$.
+
+$$
+\begin{aligned}
+  \text{RSS}_{\mathsf{M}}^{\text{log}}=&\;\log{\Bigg(1+\sum_{q=1}^{\max{Q}}\sum_{i=1}^{\lvert\mathbf{x}_q\rvert}\;\big(\mathbf{y}_i - m_q(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,\mathbf{x}_{q,i})\big)^2\Bigg)}\;\text{using}
+  \\[1ex]
+  \gamma_i=&\;\delta_o\times(\mathbf{x}_{q,i}-b_{q_s})\;\text{,}
+  \\[1ex]
+  \delta_q=&\;b_{q_e}-b_{q_s}\;\text{, }\;\psi_i\;\text{, and}
+  \\[1ex]
+  \psi_i=&\;\frac{\gamma_i}{\delta_q}+b_{o_s}\;\text{, the gradient now becomes:}
+  \\[1em]
+  \nabla\,\text{RSS}_{\mathsf{M}}^{\text{log}}=&\;\Bigg[\frac{\partial\,\text{RSS}_m^{\text{log}}}{\partial\,b_{q_s}}\;,\;\frac{\partial\,\text{RSS}_m^{\text{log}}}{\partial\,b_{q_e}}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\sum_{i=1}^{\lvert\mathbf{x}_q\rvert}\;\Bigg[-1\times\frac{2\Big(\frac{\gamma_i}{{\delta_q}^2}-\frac{\delta_o}{\delta_q}\Big)\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi\big)}{1+\Big(\mathbf{y_i}-f(\psi_i)\Big)^2}\;,
+  \\[1ex]
+  &\;\;\;\;\;\;\;\;\;\;\;\;\frac{2\,\gamma_i\,\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{{\delta_q}^2\times\Big(1+\big(\mathbf{y}_i-f(\psi_i)\big)^2\Big)}\Bigg]\;\text{, can be shortened to}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\sum_{i=1}^{\lvert\mathbf{x}_q\rvert}\;\frac{2\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi\big)}{1+\big(\mathbf{y}_i-f(\psi_i)\big)^2}\times\Bigg[-\bigg(\frac{\gamma_i}{{\delta_q}^2}-\frac{\delta_o}{\delta_q}\bigg)\;,\;\frac{\gamma_i}{{\delta_q}^2}\Bigg]\;\text{.}
+\end{aligned}
+$$
+
+When combining losses, all of them should use the same realm. So, in our cases, the regularizers return a logarithmic result, and with the above definition, we now have a logarithmic loss, too.
+
 
 ## Regularizing
 
@@ -473,6 +499,51 @@ $$
 The last reformulation is important, as it makes the regularizer compatible with our existing formulations for the residual sum of squares loss function and its gradient.
 
 
+### Penalize extreme intervals
+
+The second regularizer is very simple and straightforward, but it does not penalize extreme cases. For example, if all but one interval are of length zero, and the remaining interval covers the whole reference, the second regularizer would not impose a penalty. Another extreme case we have observed is intervals of negative length. So, not only need all intervals together cover a feasible range, intervals among themselves need to retain a somewhat healthy relation, too. At the same time, we must allow very short and very long intervals, but those should come with a cost that is proportional to their disagreement with the other intervals. One measure that describes all intervals is the mean length of them. The following regularizer sums up the squared differences. Note that we do not take the absolute value of $b_{q_e}-b_{q_s}$, as described previously, the optimization may choose intervals of negative length, and that will result in an even farther difference from the mean.
+
+$$
+\begin{aligned}
+  \mu=&\;\overline{\mathcal{I}}\;\text{, the mean length of all reference-intervals,}
+  \\[1ex]
+  =&\;\frac{\max{\mathcal{X}^r} - \min{\mathcal{X}^r}}{\lvert\,\bm{\theta}_b-1\,\rvert}
+  \\[1ex]
+  R_3=&\;\log\Bigg({1+\sum_{q=1}^{\max{Q}}}\;(b_{q_e}-b_{q_s}-\mu)^2\Bigg)\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,R_3=&\;\Bigg[\frac{\partial\,R_3}{\partial\,b_{q_s}}\;,\;\frac{\partial\,R_3}{\partial\,b_{q_e}}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\;\Bigg[-1\times\frac{2(b_{q_e}-b_{q_s}-\mu)}{1+(b_{q_e}-b_{q_s}-\mu)^2}\;,\;\frac{2(b_{q_e}-b_{q_s}-\mu)}{1+(b_{q_e}-b_{q_s}-\mu)^2}\Bigg]\;\text{, or shorter}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\;\frac{2(b_{q_e}-b_{q_s}-\mu)}{1+(b_{q_e}-b_{q_s}-\mu)^2}\times\Big[-1\;,\;1\Big]\;\text{.}
+\end{aligned}
+$$
+
+
+### Constrain Box-bounds
+
+Similar to DTW, the adjusted query must not extend beyond the reference signal, i.e., it must not be less or greater than the support of the reference. We introduce a 4th kind of regularizer that can be added to enforce these constraints. The idea is similar to the 3rd kind of regularizer, we will sum up all transgressions and return the logarithm of it. However, a transgression should be penalized based on its boundaries, not the interval delimited by it. In other words, we penalize every boundary and whether its outside the box, as the other regularizers take already care of the other properties, such as whether the starting boundary comes after then end. Each boundary is checked for whether it is larger than (or equal to) the lower bound, and less than (or equal to) the upper bound:
+
+
+$$
+\begin{aligned}
+  \nu_l,\nu_u\;\dots&\;\text{the lower and upper box-bounds, respectively,}
+  \\[1ex]
+  \mathcal{R},\mathcal{H}\;\dots&\;\text{, the ramp- and Heaviside step functions,}
+  \\[1ex]
+  R_4=&\;\log{\Bigg(1+\sum_{q=1}^{\max{Q}}\;\mathcal{R}(\nu_l-b_{q_s})+\mathcal{R}(b_{q_s}-\nu_u)+\mathcal{R}(\nu_l-b_{q_e})+\mathcal{R}(b_{q_e}-\nu_u)}\Bigg)\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,R_4=&\;\Bigg[\frac{\partial\,R_4}{\partial\,b_{q_s}}\;,\;\frac{\partial\,R_4}{\partial\,b_{q_e}}\Bigg]\;\text{,}
+  \\[1ex]
+  =&\;\sum_{q=1}^{\max{Q}}\;\Bigg[\frac{\mathcal{H}(b_{q_s}-\nu_u)-\mathcal{H}(\nu_l-b_{q_s})}{1+\mathcal{R}(\nu_l-b_{q_s})+\mathcal{R}(b_{q_s}-\nu_u)+\mathcal{R}(\nu_l-b_{q_e})+\mathcal{R}(b_{q_e}-\nu_u)}\;,
+  \\[1ex]
+  &\;\;\;\;\;\;\;\;\;\;\;\;\;\frac{\mathcal{H}(b_{q_e}-\nu_u)-\mathcal{H}(\nu_l-b_{q_e})}{1+\mathcal{R}(\nu_l-b_{q_s})+\mathcal{R}(b_{q_s}-\nu_u)+\mathcal{R}(\nu_l-b_{q_e})+\mathcal{R}(b_{q_e}-\nu_u)}\Bigg]\;\text{, or shorter}
+  \\[1em]
+  =&\;\sum_{q=1}^{\max{Q}}\;\frac{\bigg[\mathcal{H}(b_{q_s}-\nu_u)-\mathcal{H}(\nu_l-b_{q_s})\;,\;\mathcal{H}(b_{q_e}-\nu_u)-\mathcal{H}(\nu_l-b_{q_e})\bigg]}{1+\mathcal{R}(\nu_l-b_{q_s})+\mathcal{R}(b_{q_s}-\nu_u)+\mathcal{R}(\nu_l-b_{q_e})+\mathcal{R}(b_{q_e}-\nu_u)}\;\text{.}
+\end{aligned}
+$$
+
+
 # Optimization
 
 We have previously introduced the model Boundary Time Warping, and shown how to compute its gradient and loss (and gradient thereof), as well as presenting two regularizers for this model. The goal now is to bring everything together, such that we can train the model to minimize an objective function.
@@ -503,17 +574,21 @@ We have defined all of the above (except for the Hessian, that we will do later)
 
 $$
 \begin{aligned}
-  \text{Using}\;\bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime,\bm{\phi}_v,\bm{\phi}_u,\mathcal{X}^r\;\dots&\;\text{as defined previously,}
+  \text{Using}\;\bm{\vartheta}^s\prime,\bm{\vartheta}^e\prime,\bm{\phi}_v,\bm{\phi}_u,\mu,\nu_l,\nu_u,\mathcal{X}^r\;\dots&\;\text{as defined previously,}
   \\[1em]
-  \mathcal{L}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e,r,f)=&\;\text{RSS}_{\mathsf{M}} + R_1^{\text{new}}\prime + R_2\;\text{, with}
+  \mathcal{L}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e,r,f)=&\;\text{RSS}_{\mathsf{M}}^{\text{log}} + R_1^{\text{new}} + R_2 + R_3 + R_4\;\text{, with}
   \\[1ex]
   \mathbf{y},\hat{\mathbf{y}}=&\;\mathsf{M}(\bm{\theta}^s,\bm{\theta}^e,\bm{\vartheta}^s,\bm{\vartheta}^e, r,f)\text{, }\mathcal{L}\;\text{becomes}
   \\[1ex]
-  =&\;\Bigg[\sum_{i=1}^{N}\;\big(\mathbf{y}-\hat{\mathbf{y}}\big)^2\Bigg]
+  =&\;\;\log{\Bigg(1+\sum_{q=1}^{\max{Q}}\sum_{i=1}^{\lvert\mathbf{x}_q\rvert}\;\big(\mathbf{y}_i - m_q(b_{o_s}, b_{o_e}, b_{q_s}, b_{q_e},\;f,\mathbf{x}_{q,i})\big)^2\Bigg)}
   \\
   &\;-\log{\bigg(1-\frac{\bm{\phi}_v}{\bm{\phi}_u}\bigg)}
   \\
-  &\;-\log\Bigg(\Bigg[\sum_{q=1}^{\max{Q}}\,b_{q_e}-b_{q_s}\Bigg]\;\Big/\;\Big(\max{\mathcal{X}^r}-\min{\mathcal{X}^r}\Big)\Bigg)\;\text{.}
+  &\;-\log\Bigg(\Bigg[\sum_{q=1}^{\max{Q}}\,b_{q_e}-b_{q_s}\Bigg]\;\Big/\;\Big(\max{\mathcal{X}^r}-\min{\mathcal{X}^r}\Big)\Bigg)
+  \\[1ex]
+  &\;+\log\Bigg({1+\sum_{q=1}^{\max{Q}}}\;(b_{q_e}-b_{q_s}-\mu)^2\Bigg)
+  \\[1ex]
+  &\;+\log{\Bigg(1+\sum_{q=1}^{\max{Q}}\;\mathcal{R}(\nu_l-b_{q_s})+\mathcal{R}(b_{q_s}-\nu_u)+\mathcal{R}(\nu_l-b_{q_e})+\mathcal{R}(b_{q_e}-\nu_u)}\Bigg)
 \end{aligned}
 $$
 
@@ -521,21 +596,31 @@ The gradient of this loss function is:
 
 $$
 \begin{aligned}
-  \delta_o,\psi_i,\mathbf{x}_q\;\dots&\;\text{as defined previously,}
+  \delta_o,\psi_i,\mathbf{x}_{q,i}\;\dots&\;\text{as defined previously,}
   \\[1ex]
   \nabla\,\mathcal{L}(\dots)=&\;\Big[\frac{\partial\,\mathcal{L}}{\partial\,b_{q_s}}\;,\;\frac{\partial\,\mathcal{L}}{\partial\,b_{q_e}}\Big]\;\text{,}
   \\[1ex]
-  =&\;\nabla\,\text{RSS}_{\mathsf{M}}\;+\;\nabla\,R_1^{\text{new}}\prime\;+\;\nabla\,R_2\;\text{,}
+  =&\;\nabla\,\text{RSS}_{\mathsf{M}}^{\text{log}}\;+\;\nabla\,R_1^{\text{new}}\;+\;\nabla\,R_2\;+\;\nabla\,R_3\;+\;\nabla\,R_4\text{,}
   \\[1ex]
   =&\;\Bigg[\sum_{q=1}^{\max{Q}}\sum_{i=1}^{\lvert\mathbf{x}_{q}\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_{q_i}\;,\;\mathbf{x}_{q_i}-b_{q_s}\bigg]\Bigg]\;\text{,}
   \\[1ex]
   &\;+\nabla\,R_1^{\text{new}}=\;\dots\;\text{(too big to paste here))}
   \\[1ex]
-  &\;+\sum_{q=1}^{\max{Q}}\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{(the gradient of}\;R_2\;\text{is no longer negative),}
+  &\;+\sum_{q=1}^{\max{Q}}\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{(the gradient of}\;R_2\;\text{is no longer negative)}
+  \\[1ex]
+  &\;+\sum_{q=1}^{\max{Q}}\;\frac{2(b_{q_e}-b_{q_s}-\mu)}{1+(b_{q_e}-b_{q_s}-\mu)^2}\times\Big[-1\;,\;1\Big]
+  \\[1ex]
+  &\;+\sum_{q=1}^{\max{Q}}\;\frac{\bigg[\mathcal{H}(b_{q_s}-\nu_u)-\mathcal{H}(\nu_l-b_{q_s})\;,\;\mathcal{H}(b_{q_e}-\nu_u)-\mathcal{H}(\nu_l-b_{q_e})\bigg]}{1+\mathcal{R}(\nu_l-b_{q_s})+\mathcal{R}(b_{q_s}-\nu_u)+\mathcal{R}(\nu_l-b_{q_e})+\mathcal{R}(b_{q_e}-\nu_u)}\;\text{,}
   \\[1ex]
   =&\;\sum_{q=1}^{\max{Q}}\Bigg[\sum_{i=1}^{\lvert\mathbf{x}_q\rvert}\;\frac{2\,\delta_o\times\Big(\mathbf{y}_i-f\big(\psi_i\big)\Big)\times f'\big(\psi_i\big)}{\big(b_{q_s}-b_{q_e}\big)^2}\times\bigg[b_{q_e}-\mathbf{x}_{q_i}\;,\;\mathbf{x}_{q_i}-b_{q_s}\bigg]\Bigg]
   \\[1ex]
-  &\;+\nabla\,R_1^{\text{new}}\dots+\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{.}
+  &\;+\nabla\,R_1^{\text{new}}\dots
+  \\[1ex]
+  &\;+\Bigg[\frac{1}{b_{q_e}-b_{q_s}}\;,\;\frac{1}{b_{q_s}-b_{q_e}}\Bigg]\;\text{,}
+  \\[1ex]
+  &\;+\frac{2(b_{q_e}-b_{q_s}-\mu)}{1+(b_{q_e}-b_{q_s}-\mu)^2}\times\Big[-1\;,\;1\Big]
+  \\[1ex]
+  &\;+\frac{\bigg[\mathcal{H}(b_{q_s}-\nu_u)-\mathcal{H}(\nu_l-b_{q_s})\;,\;\mathcal{H}(b_{q_e}-\nu_u)-\mathcal{H}(\nu_l-b_{q_e})\bigg]}{1+\mathcal{R}(\nu_l-b_{q_s})+\mathcal{R}(b_{q_s}-\nu_u)+\mathcal{R}(\nu_l-b_{q_e})+\mathcal{R}(b_{q_e}-\nu_u)}
 \end{aligned}
 $$
 
@@ -650,22 +735,52 @@ plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp$optR$par)
 This works somewhat, with the major problem being overlapping boundaries, and BTW not being able to solve this problem without the regularizers (the $R_1$ regularizer does this). However, it seems to cover the whole reference in this example, even without the $R_2$ regularizer.
 
 ```{r}
+set.seed(1337)
+useBounds <- c(0, sort(runif(23)), 1)
+#useBounds <- query_bounds
+
+fitResult <- FitResult$new(paramNames = "loss")$start()
+
 optR <- stats::optim(
-  par = query_bounds,
-  method = "L-BFGS-B",
-  lower = rep(0, length(query_bounds)),
-  upper = rep(1, length(query_bounds)),
+  par = useBounds,
+  method = "BFGS",
+  # lower = rep(0, length(useBounds)),
+  # upper = rep(1, length(useBounds)),
   fn = function(x) {
-    loss <- L_final(theta_b_org = query_bounds, theta_b = x, r = r, f = f, useR1 = TRUE, useR2 = TRUE)
-    fitResult$stopStep(resultParams = c(x, loss), verbose = interactive())
+    #print(format(x, digits = 3, nsmall = 3, scientific = FALSE))
+    fitResult$startStep()
+    loss <- L_final_log(
+      theta_b_org = useBounds, theta_b = x, r = r, f = f, zNormalize = FALSE,
+      weightErr = 2/3, weightR1 = 1, weightR2 = .2, weightR3 = .5, weightR4 = 1)
+    #print(loss)
+    fitResult$stopStep(resultParams = loss, verbose = TRUE)
     loss
-  },
-  gr = function(x) {
-    L_final_grad(theta_b_org = query_bounds, theta_b = x, r = r, f = f, f_p = f_deriv1, useR1 = TRUE, useR2 = TRUE)
+  # },
+  # gr = function(x) {
+  #   pracma::grad(x0 = x, f = function(x) {
+  #     L_final_log(theta_b_org = useBounds, theta_b = x, r = r, f = f, weightErr = .5, weightR2 = .5)
+  #   })
+  #   # grad <- L_final_log_grad(
+  #   #   theta_b_org = useBounds, theta_b = x, r = r, f = f, f_p = f_deriv1,
+  #   #   weightErr = .5, weightR1 = 1, weightR2 = .5, weightR3 = 1, weightR4 = 1)
+  #   # 
+  #   # print(format(grad, digits = 3, nsmall = 3, scientific = FALSE))
+  #   # grad
   }
 )
+
+fitResult$finish()
 ```
 
+```{r}
+temp3 <- M_final(
+  theta_b_org = useBounds,
+  theta_b = optR$par,
+  r = signal_ref,
+  f = signal_query)
+
+plotBtw(data.frame(x = temp3$X, y = temp3$y_hat), optR$par)
+```
 
 
 
