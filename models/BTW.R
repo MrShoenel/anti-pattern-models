@@ -388,7 +388,7 @@ L_final_log <- function(
     lb <- min(theta_b_org)
     ub <- max(theta_b_org)
     
-    loss <- loss + weightR3 * log(1 + sum(R(lb - vts) + R(vts - lb) + R(lb - vte) + R(vte - ub)))
+    loss <- loss + weightR4 * log(1 + sum(R(lb - vts) + R(vts - lb) + R(lb - vte) + R(vte - ub)))
   }
   
   loss

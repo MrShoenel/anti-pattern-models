@@ -106,7 +106,7 @@ $$
   \\
   &\;\text{(concatenate all models' results), and finally}
   \\[1ex]
-  \mathsf{M}(\bm{\theta},\bm{\vartheta},\;r,f)=&\;\Big[\,\mathbf{y}^\top,\hat{\mathbf{y}}^\top\Big]\;\text{, compute the reference- and transformed query-signal.}
+  \mathsf{M}(\bm{\theta},\bm{\vartheta}_L,s,\;r,f)=&\;\Big[\,\mathbf{y}^\top,\hat{\mathbf{y}}^\top\Big]\;\text{, compute the reference- and transformed query-signal.}
 \end{aligned}
 $$
 
@@ -167,7 +167,7 @@ ggarrange(
   ncol = 1,
   plotBtw(data.frame(x = temp$X, y = temp$y)),
   plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
-  plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp2_bounds)
+  plotBtw(data.frame(x = temp$X, y = temp2$y_hat), bounds = temp2_bounds)
 )
 ```
 
@@ -245,18 +245,45 @@ A simple model using only this loss for the data and no regularizers should conv
 ## Testing without gradient
 
 ```{r}
-optR <- stats::optim(
-  control = (maxit = 1e3),
-  method = "L-BFGS-B",
+cl <- parallel::makePSOCKcluster(4)
+parallel::clusterExport(cl, varlist = c("M_updated", "query_bounds", "r", "f", "Stabilize", "signal_ref", "signal_query", "L_updated_log", "H", "R"))
+
+set.seed(1337)
+optRp <- optimParallel::optimParallel(
+  par = query_bounds,
+  fn = function(x) {
+    L_updated_log(theta_b_org = query_bounds, theta_b = x, r = r, f = f)
+  },
   lower = rep(0, length(query_bounds)),
   upper = rep(1, length(query_bounds)),
+  parallel = list(
+    cl = cl,
+    forward = FALSE,
+    loginfo = TRUE
+  )
+)
+
+parallel::stopCluster(cl)
+optRp
+```
+
+
+```{r}
+optR <- stats::optim(
+  control = list(maxit = 1e3, abstol = 1e-3),
+  method = "BFGS",
+  #lower = rep(0, length(query_bounds)),
+  #upper = rep(1, length(query_bounds)),
   par = query_bounds,
   fn = function(x) {
     loss <- L_updated_log(
       theta_b_org = query_bounds,
       theta_b = x,
       r = r,
-      f = f
+      f = f,
+      weightErr = .75,
+      weightR4 = .2,
+      weightR5 = 1
     )
     print(loss)
     loss
@@ -265,7 +292,7 @@ optR <- stats::optim(
 ```
 
 ```{r}
-temp3 <- M_updated(
+temp3 <- M_final_no_NA(
   theta_b_org = query_bounds,
   theta_b = optR$par,
   r = signal_ref,
