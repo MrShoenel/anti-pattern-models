@@ -659,4 +659,57 @@ L_final_log_grad <- function(
 
 
 
+L_final_update_log <- function(
+  theta_b_org,
+  theta_b,
+  r, f,
+  weightErr = 1
+) {
+  loss <- 0
+  res <- M_final(theta_b_org = theta_b_org, theta_b = theta_b, r = r, f = f)
+  
+  ######### KL
+  # idx_not_NA <- !(is.na(res$y) | is.na(res$y_hat))
+  # if (sum(idx_not_NA) == 0) {
+  #   stop("All data is NA.")
+  # }
+  # y_not_NA <- res$y[idx_not_NA]
+  # y_hat_not_NA <- res$y_hat[idx_not_NA]
+  # 
+  # y_not_NA <- y_not_NA - min(y_not_NA)
+  # y_not_NA <- y_not_NA / sum(y_not_NA)
+  # y_hat_not_NA <- y_hat_not_NA - min(y_hat_not_NA)
+  # y_hat_not_NA <- y_hat_not_NA / sum(y_hat_not_NA)
+  # 
+  # idx_not_0 <- !(y_not_NA == 0 | y_hat_not_NA == 0)
+  # if (sum(idx_not_0) == 0) {
+  #   stop("All data is 0.")
+  # }
+  # 
+  # y_not_NA <- y_not_NA[idx_not_0]
+  # y_hat_not_NA <- y_hat_not_NA[idx_not_0]
+  # 
+  # dkl_pq <- sum(y_not_NA * log(y_not_NA / y_hat_not_NA))
+  # dkl_qp <- sum(y_hat_not_NA * log(y_hat_not_NA / y_not_NA))
+  # 
+  # loss <- weightErr * (dkl_pq + dkl_qp)
+  
+  
+  
+  
+  ######### 
+  #numData <- sum(complete.cases(res$y_hat))
+  #loss <- weightErr * log(1 + sum(na.omit(res$y - res$y_hat)^2) / numData)
+  
+  
+  ######## RSS
+  # loss <- loss + weightErr * log(1 + sum(na.omit(res$y - res$y_hat)^2))
+  
+  ######### RMSE
+  numData <- sum(complete.cases(res$y_hat))
+  loss <- weightErr * log(1 + sum(abs(na.omit(res$y - res$y_hat))))
+  
+  loss
+}
+
 
