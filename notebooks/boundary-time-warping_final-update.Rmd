@@ -274,15 +274,16 @@ optR <- stats::optim(
   method = "BFGS",
   #lower = rep(0, length(query_bounds)),
   #upper = rep(1, length(query_bounds)),
-  par = query_bounds,
+  par = c(query_bounds, 1, 1, 1),
   fn = function(x) {
     loss <- L_updated_log(
       theta_b_org = query_bounds,
-      theta_b = x,
+      theta_b = x[1:length(query_bounds)],
+      theta_w = tail(x, 3),
       r = r,
       f = f,
-      weightErr = .75,
-      weightR4 = .2,
+      weightErr = 2/3,
+      weightR4 = 0,
       weightR5 = 1
     )
     print(loss)
@@ -294,11 +295,11 @@ optR <- stats::optim(
 ```{r}
 temp3 <- M_final_no_NA(
   theta_b_org = query_bounds,
-  theta_b = optR$par,
+  theta_b = optR$par[1:11],
   r = signal_ref,
   f = signal_query)
 
-plotBtw(data.frame(x = temp3$X, y = temp3$y_hat), optR$par)
+plotBtw(data.frame(x = temp3$X, y = temp3$y_hat), optR$par[1:11])
 ```
 
 

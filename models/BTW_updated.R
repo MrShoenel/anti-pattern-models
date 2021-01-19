@@ -187,11 +187,33 @@ L_updated_log <- function(
   r, f,
   weightErr = 1,
   weightR4 = 1,
-  weightR5 = 1
+  weightR5 = 1,
+  theta_w = c(1, 1, 1)
 ) {
   loss_raw <- 0
   loss <- 0
   res <- M_final_no_NA(theta_b_org = theta_b_org, theta_b = theta_b, r = r, f = f)
+  
+  
+  
+  # Regularizer for theta_w loss:
+  # 1) Check that all weights are within [0,1]
+  # 2) Check that all weights sum to 1
+  
+  # 1)
+  lb <- 2 * (1 / length(theta_w))^2
+  temp <- abs(R(lb - theta_w)) + abs(R(theta_w - ub))
+  temp <- temp[temp > 0]
+  loss_raw <- loss_raw + sum(1 + temp)^(1 + length(theta_w) + length(temp))
+  loss <- loss + log(1 + sum(1 + temp)^(1 + length(theta_w) + length(temp)))
+  
+  # 2)
+  temp <- abs(1 - sum(theta_w)) # ideally, this is 0
+  loss_raw <- loss_raw - log(1 / (1 + temp)^(1 + temp))
+  loss <- loss - log(1 / (1 + temp)^(1 + temp))
+  
+  
+  
   
   # ######## KL
   # idx_not_NA <- !(is.na(res$y) | is.na(res$y_hat))
@@ -228,8 +250,8 @@ L_updated_log <- function(
   
   
   ####### RSS
-  loss_raw <- loss_raw + weightErr * sum((res$y - res$y_hat)^2)
-  loss <- loss + weightErr * log(1 + sum((res$y - res$y_hat)^2))
+  loss_raw <- loss_raw + abs(theta_w[1]) * sum((res$y - res$y_hat)^2)
+  loss <- loss + abs(theta_w[1]) * log(1 + sum((res$y - res$y_hat)^2))
   
   
   
@@ -285,14 +307,14 @@ L_updated_log <- function(
   lb <- min(theta_b_org)
   ub <- max(theta_b_org)
   temp <- abs(theta_b[theta_b < lb | theta_b > ub])
-  loss_raw <- loss_raw + weightR4 * (sum(1 + temp)^length(temp) - 1)
-  loss <- loss + weightR4 * log(sum(1 + temp)^length(temp))
+  loss_raw <- loss_raw + abs(theta_w[2]) * (sum(1 + temp)^length(temp) - 1)
+  loss <- loss + abs(theta_w[2]) * log(sum(1 + temp)^length(temp))
   
   
   ###### R5 (neg Intervals):
   neg_l <- abs(theta_l[theta_l < 0])
-  loss_raw <- loss_raw + weightR5 * (sum(1 + neg_l)^length(neg_l) - 1)
-  loss <- loss + weightR5 * log(sum(1 + neg_l)^length(neg_l))
+  loss_raw <- loss_raw + abs(theta_w[3]) * (sum(1 + neg_l)^length(neg_l) - 1)
+  loss <- loss + abs(theta_w[3]) * log(sum(1 + neg_l)^length(neg_l))
   
   
   
@@ -300,6 +322,7 @@ L_updated_log <- function(
   
   
   loss
+  # log(1 + loss_raw)
 }
 
 
