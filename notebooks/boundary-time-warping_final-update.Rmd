@@ -1,0 +1,329 @@
+---
+title: "Boundary Time Warping (final, update)"
+bibliography: ../inst/REFERENCES.bib
+header-includes:
+  - \usepackage{bm}
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  word_document: default
+---
+
+```{r echo=FALSE, warning=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/BTW_updated.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+# Update BTW
+
+This notebook is a somewhat continuation of the "final" Boundary Time Warping notebook. The goal here is to simplify and break down the whole process, and to take little steps towards a working solution. In the previous notebook, we did not manage to make the gradient working, and we have probably overdone some of the regularizers. Here, we want to do the following:
+
+* Use the same model as before, together with a simple example for testing.
+* Instead of the RSS, we will use the (R)MSE. The reason for that is that during optimization, often parameters leading to invalid intervals are chosen, and there is no way for the model to samples from these. We allow the model to return `NA` then. But since this leads to fewer errors included, it should be normalized, otherwise we would require a regularizer.
+* Start without regularizers, so that we can fully test the loss and its gradient with a high chance of the simple example working.
+  * This has to work: `optim()` without and with the analytical gradient, then also a simple gradient descent method
+* When the gradient works, implement 2nd-order optimization with the Hessian.
+
+We will also keep the included Latex here shorter.
+
+## The updated model
+
+Instead of using absolute offsets for each interval, the updated model uses one absolute offsets for the start of the first interval, and any subsequent interval's start and end are determined by that plus the lengths of all preceding intervals. By design, this avoids the problem of overlapping intervals (or gaps between them).
+
+The updated model uses similar definitions for intervals:
+
+$$
+\begin{aligned}
+  \bm{\theta}\;\dots&\;\text{a vector of boundaries,}
+  \\[1ex]
+  n=&\;\lvert\,\bm{\theta}\,\rvert\;\text{, the length of that vector,}
+  \\[1ex]
+  q\in Q;\;Q=&\;\{1,\;\dots\;,n-1\}\;\text{, where}\;Q\;\text{is ordered low to high, i.e.,}\;q_n\prec q_{n+1}\text{,}
+  \\[0ex]
+  \mathcal{I}\;\dots&\;\text{the set of intervals with length}\;[\max{Q}]\text{, with each interval delimited by}
+  \\[0ex]
+  I_q=&\;\Big[\,\bm{\theta}_q,\bm{\theta}_{q+1}\,\Big)\;\text{, resp.}
+  \\[0ex]
+  I_{q}=&\;\Big[\,\bm{\theta}_q,\bm{\theta}_{q+1}\,\Big]\;\text{, for the last interval (where}\;q=\max{Q}\text{).}
+\end{aligned}
+$$
+
+The updated model is defined as follows:
+
+$$
+\begin{aligned}
+  \bm{\theta}_B\;\dots&\;\big\{\;b_1,b_2,\;\dots,\;b_n\;\big\}\text{, ordered set of reference-boundaries (}b_{n-1}\prec b_n\text{),}
+  \\[1ex]
+  \bm{\vartheta}_B\;\dots&\;\text{set of query-boundaries,}
+  \\[1ex]
+  s=&\;\bm{\vartheta}_{B_1}\;\text{, the absolute start of all intervals,}
+  \\[1ex]
+  \bm{\vartheta}_L=&\;\{\;l_1=\bm{\vartheta}_{B_2}-\bm{\vartheta}_{B_1},\;\dots,\;l_q=\bm{\vartheta}_{B_{q+1}}-\bm{\vartheta}_{B_q}\;\}\;\text{, set of interval lengths,}
+  \\[1ex]
+  b_{o_s}=\bm{\theta}_{B_q},\;b_{o_e}=&\;\bm{\theta}_{B_{q+1}}\;\text{, start and end of the}\;q\text{-th reference-interval,}
+  \\[1ex]
+  \mathcal{X}^r=&\;\Big[\min{\bm{\theta}_B}\,,\,\max{\bm{\theta}_B}\Big]\;\text{, the support of the reference-signal,}
+  \\[1ex]
+  \mathbf{x}_q\subset\mathcal{X}^q=&\;\Big[\bm{\vartheta}_{B_q}\,,\,\bm{\vartheta}_{B_{q+1}}\Big)\;\text{, for the first}\;Q-1\;\text{intervals,}
+  \\[0ex]
+  =&\;\Big[\bm{\vartheta}_{B_q}\,,\,\bm{\vartheta}_{B_{q+1}}\Big]\;\text{, for the last interval; }
+  \\[1ex]
+  &\;\text{proper sub-supports for model}\;m_q\;\text{and its interval}\;I_q\text{, such that}
+  \\[1ex]
+  &\;\mathbf{x}_q\prec\mathbf{x}_{q+1}\;\text{, i.e., sub-supports are ordered,}
+  \\[1ex]
+  l_q=&\;\bm{\vartheta}_{L_q}\;\text{, the length of the}\;q\text{-th query-interval,}
+  \\[1ex]
+  \phi_q=&\;\begin{cases}
+    0,&\text{if}\;q=1,
+    \\
+    \sum_{j=1}^{q-1}\;l_j,&\text{otherwise,}
+  \end{cases}\;\text{, sum of the lengths of preceding query-intervals,}
+  \\[1ex]
+  m_q(b_{o_s},b_{o_e},s,\phi_q,l_q,\;f,x)=&\;f\Bigg(\frac{(b_{o_e}-b_{o_s})\times(x-s-\phi_q)}{l_q}+b_{o_s}\Bigg)\;\text{,}
+  \\[1ex]
+  \mathbf{y}=&\;r(\mathcal{X}^r)\;\text{, the reference-signal,}
+  \\[1ex]
+  \hat{\mathbf{y}}=&\;\Big\{\;m_1(\dots)\,\frown\,\dots\,\frown m_q(\bm{\theta}_{B_q},\bm{\theta}_{B_{q+1}},s,\phi_q,l_q,\;f,\mathbf{x}_q)\;\Big\},\;\forall\,q\in Q
+  \\
+  &\;\text{(concatenate all models' results), and finally}
+  \\[1ex]
+  \mathsf{M}(\bm{\theta},\bm{\vartheta},\;r,f)=&\;\Big[\,\mathbf{y}^\top,\hat{\mathbf{y}}^\top\Big]\;\text{, compute the reference- and transformed query-signal.}
+\end{aligned}
+$$
+
+```{r echo=FALSE}
+btwRef <- data.frame(
+  x = seq(0, 1, length.out = 1e3),
+  y = sin(seq(0, 2 * pi, length.out = 1e3))
+)
+
+btwQueryBounds <- c(.1, .2, .5, .6, .8)
+btwQuery <- data.frame(
+  x = c(
+    seq(0, btwQueryBounds[1], length.out =  75),
+    seq(btwQueryBounds[1], btwQueryBounds[2], length.out =  25),
+    seq(btwQueryBounds[2], btwQueryBounds[3], length.out = 150),
+    seq(btwQueryBounds[3], btwQueryBounds[4], length.out = 300),
+    seq(btwQueryBounds[4], btwQueryBounds[5], length.out =  50),
+    seq(btwQueryBounds[5], 1, length.out = 400)
+  ),
+  y = btwRef$y
+)
+
+plotBtw <- function(df, bounds = c()) {
+  g <- ggplot(data = df, aes(x = x, y = y)) + theme_light() + geom_line()
+  for (i in 1:length(bounds)) {
+    g <- g + geom_vline(xintercept = bounds[i])
+  }
+  g
+}
+
+signal_ref <- stats::approxfun(x = btwRef$x, y = btwRef$y, ties = mean)
+signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
+
+query_bounds <- seq(0, 1, by = 0.1)
+
+temp <- M_updated(
+  theta_b_org = query_bounds,
+  theta_b = query_bounds,
+  r = signal_ref,
+  f = signal_query)
+
+# We know how the reference signal was distorted previously. Let's make
+# a test where we manually undo this by moving the boundaries.
+temp2_bounds <- c(
+  0,
+  .075, .1, .15, .2, .25,
+  .55, .575, .6,  .8, 1)
+temp2 <- M_updated(
+  theta_b_org = query_bounds,
+  theta_b = temp2_bounds,
+  r = signal_ref,
+  f = signal_query)
+```
+
+
+```{r}
+ggarrange(
+  ncol = 1,
+  plotBtw(data.frame(x = temp$X, y = temp$y)),
+  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
+  plotBtw(data.frame(x = temp2$X, y = temp2$y_hat), bounds = temp2_bounds)
+)
+```
+
+Great, this model works, too. Now we can define the gradient for it.
+
+
+# Gradient of the updated model
+
+The updated model uses the absolute start for all intervals and the sum of lengths of preceding intervals to obtain absolute start- and end boundaries. In each sub-model $m_q$ we have the parameter $s$. The gradient for $s$ depends hence on all sub-models, which makes sense, as each sub-model wishes to change the absolute offset in some way, and we have to add these desired changes together (the error function does this). Each $q$-th model also has $l_q$, and all other $l_q$ that precede it. If we inspect above model definition, it appears we have three "categories" for the gradient, and the gradient is identical for each category with a few exceptions:
+
+* __Category 1__: This is the gradient for $s$. It is the same for each sub-model $q$, and the only parameter that changes is $\phi_q$.
+* __Category 2__: The sum of $l_q$'s that appear in the numerator. Again, only $\phi_q$ changes.
+* __Category 3__: The $l_q$ in the denominator.
+
+Each category is then its own function, and which category/function to pick depends on $q$ and whether we are deriving for $s$, or some $l_q$ that is either in the numerator or denominator.
+
+
+## Loss for the data
+
+In some of our other tests it turned out that a slightly modified logarithmic residual sum of squares is the most robust and consistently required the least iterations. The modified version adds $1$ to the strictly positive result of the RSS and returns the logarithm of it. This loss converges to $+0$.
+
+$$
+\begin{aligned}
+  \mathcal{L}^{\text{data}}=&\;\log{\Big(1+\text{RSS}\Big)}\;\text{,}
+  \\[1ex]
+  =&\;\log{\bigg(1+\sum_{i=1}^{N}\;\Big(\mathbf{y}_i-m_{q=f(i)}\big(\mathbf{x}_i\big)\Big)^2\bigg)}\;\text{, where}\;f\;\text{selects}\;q\;\text{according to}\;i\text{.}
+\end{aligned}
+$$
+
+
+
+
+## Regularized loss for the data
+
+$$
+\begin{aligned}
+  \text{RMSE}=&\;\sqrt{\frac{1}{N}\;\sum_{i=1}^{N}\;(\mathbf{y}_i-\mathbf{\hat{y}}_i)^2}\;\text{,}
+  \\[1ex]
+  =&\;\sqrt{\frac{1}{N}\;\Bigg[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;\Bigg(\mathbf{y}_i-f\bigg(\frac{(\mathbf{x}_i - b_{q_s})\times(b_{o_e} - b_{o_s})}{b_{q_e}-b_{q_s}} + b_{o_s}\bigg)\Bigg)^2\Bigg]}\;\text{, and our data-loss will be:}
+  \\[1em]
+  \mathcal{L}^{\text{data}}=&\;\log{\big(1+\text{RMSE}\big)}\;\text{, with gradient}
+  \\[1ex]
+  \frac{\partial\,\mathcal{L}^{\text{data}}}{b_{q_s}}=&\;-1\times\frac{
+    \sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;
+    \Big(\frac{(b_{o_e}-b_{o_s})\times(\mathbf{x}_i-b_{q_s})}{(b_{q_e}-b_{q_s})^2}-\frac{b_{o_e}-b_{o_s}}{b_{q_e}-b_{q_s}}\Big)\times
+    \Big(\mathbf{y}_i-f(\psi_i)\Big)\times
+    f'(\psi_i)
+  }{
+    N\times\Bigg(1+\sqrt{
+      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
+    }\,\Bigg)\times
+    \sqrt{
+      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
+    }
+  }\;\text{,}
+  \\[1ex]
+  \frac{\partial\,\mathcal{L}^{\text{data}}}{b_{q_e}}=&\;\frac{
+    \sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(b_{o_e}-b_{o_s})\times(\mathbf{x}_i-b_{q_s})\times(\mathbf{y}_i-f(\psi_i))\times f'(\psi_i)
+  }{
+    N\times(b_{q_e}-b_{q_s})^2\times\Bigg(1+\sqrt{
+      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
+    }\,\Bigg)\times
+    \sqrt{
+      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
+    }
+  }\;\text{.}
+\end{aligned}
+$$
+
+While this is not pretty, it is robust for two reasons: First, we are normalizing the error by dividing through the mean, then taking the root. Secondly, since the error is always positive, but not guaranteed to be greater than $1$, we add this before we pass it to the logarithm.
+
+A simple model using only this loss for the data and no regularizers should converge with and without the gradient.
+
+
+## Testing without gradient
+
+```{r}
+optR <- stats::optim(
+  control = (maxit = 1e3),
+  method = "L-BFGS-B",
+  lower = rep(0, length(query_bounds)),
+  upper = rep(1, length(query_bounds)),
+  par = query_bounds,
+  fn = function(x) {
+    loss <- L_updated_log(
+      theta_b_org = query_bounds,
+      theta_b = x,
+      r = r,
+      f = f
+    )
+    print(loss)
+    loss
+  }
+)
+```
+
+```{r}
+temp3 <- M_updated(
+  theta_b_org = query_bounds,
+  theta_b = optR$par,
+  r = signal_ref,
+  f = signal_query)
+
+plotBtw(data.frame(x = temp3$X, y = temp3$y_hat), optR$par)
+```
+
+
+$$
+\begin{aligned}
+  \mathcal{I}\dots&\;\text{the set of ordered intervals},
+  \\[1ex]
+  l\in\mathcal{S}\dots&\;\text{the set of ordered intervals' lengths,}
+  \\[1ex]
+  q\in Q\dots&\;\text{, and}\;Q=\{1,\;\dots,\;\lvert\mathcal{I}\rvert\}\;\text{, where}\;q_i\prec q_{i+1}\text{,}
+  \\[1ex]
+  \kappa(x)=&\;\{q\}\;\text{, function to return the interval-index}\;x\;\text{falls into,}
+  \\[1ex]
+  \sigma_q(i)=&\;s+\begin{cases}
+    0,&\text{if}\;i=1,
+    \\
+    \sum_{j=1}^{i-1}\;l_j,&\text{otherwise,}
+  \end{cases}\;\text{function to return the start offset for interval}\;q\text{,}
+  \\[1ex]
+  \nabla\,\sigma_q(i)=&\;\bigg[\frac{\partial\,\sigma_q(i)}{\partial\,s}\;,\;\frac{\partial\,\sigma_q(i)}{\partial\,\forall\,q}\bigg]\;\text{,}
+  \\[1ex]
+  =&\;\bigg[1\;,\;\begin{cases}
+    0,&\text{if}\;i\leq q,
+    \\
+    1,&\text{otherwise}
+  \end{cases}\bigg]\;\text{,}
+  \\[1em]
+  m_q=&\;\sum_{\mathbf{x}^q}\;f\Bigg(\frac{(b_{o_e}-b_{o_s})\times(\mathbf{x}^q_i-\sigma_q(q))}{l_q}+b_{o_s}\Bigg)\;\text{,}
+  \\[1ex]
+  \nabla\,m_q=&\;\sum_{\mathbf{x}^q}\;\Bigg[\frac{\partial\,m_q}{\partial\,s}\;,\;\frac{\partial\,m_q}{\partial\,\forall\,q}\Bigg]\;\text{,}
+\end{aligned}
+$$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
