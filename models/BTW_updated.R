@@ -188,7 +188,7 @@ L_updated_log <- function(
   weightErr = 1,
   weightR4 = 1,
   weightR5 = 1,
-  theta_w = c(1, 1, 1)
+  theta_w = rep(1/3, 3)
 ) {
   loss_raw <- 0
   loss <- 0
@@ -201,16 +201,28 @@ L_updated_log <- function(
   # 2) Check that all weights sum to 1
   
   # 1)
-  lb <- 2 * (1 / length(theta_w))^2
+  lb <- (1 / length(theta_w))^2
+  ub <- 1
   temp <- abs(R(lb - theta_w)) + abs(R(theta_w - ub))
   temp <- temp[temp > 0]
-  loss_raw <- loss_raw + sum(1 + temp)^(1 + length(theta_w) + length(temp))
-  loss <- loss + log(1 + sum(1 + temp)^(1 + length(theta_w) + length(temp)))
+  # loss_raw <- loss_raw + sum(1 + temp)^(length(theta_w) * length(temp)) - 1
+  # loss <- loss + log(sum(1 + temp)^(length(theta_w) * length(temp)))
+  # loss_raw <- loss_raw + (length(theta_w) * sum(temp))^(length(theta_w) * length(temp))
+  # loss <- loss - log(1 / (1 + (length(theta_w) * sum(temp))^(length(theta_w) * length(temp))))
+  ###### WORKS, but log(2) Rest..
+  loss_raw <- loss_raw + (length(theta_w) * sum(1 + temp))^(length(theta_w) * length(temp))
+  loss <- loss + log(1 + (length(theta_w) * sum(1 + temp))^(length(theta_w) * length(temp)))
   
   # 2)
   temp <- abs(1 - sum(theta_w)) # ideally, this is 0
-  loss_raw <- loss_raw - log(1 / (1 + temp)^(1 + temp))
-  loss <- loss - log(1 / (1 + temp)^(1 + temp))
+  # loss_raw <- loss_raw - log(1 / (1 + temp)^(1 + temp))
+  # loss <- loss - log(1 / (1 + temp)^(1 + temp))
+  loss_raw <- loss_raw + log(1 + length(theta_w) * temp)
+  loss <- loss + log(1 + length(theta_w) * temp)
+  
+  # if (is.infinite(loss)) {
+  #   stop(42)
+  # }
   
   
   
