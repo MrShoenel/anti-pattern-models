@@ -1,0 +1,327 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+So it turns out that all BTW models so far were wrong in one common regard: They were fitting the query to the reference. While this sounds correct, the way to do this is to fit the reference to the query, and the reason is essential and simple:
+
+Given a query signal, we divided it into intervals using boundaries. We then used a model that translates and scales the query signal (well, the currently chosen interval) to fit the y-data of the reference, that was selected using the same offsets as the relative query interval. This cannot work correctly, as each interval has no way of "seeing" what is left or right from it, because the Y-values are not constant and always depend on the support delimited by the query boundaries.
+
+The fix may be simple: Each interval is constant, and needs access to the whole reference, such that it can be translated and scaled to where it fits best. However, this task needs to be inversed, as we cannot change the data in an interval. For example, we may have a certain amount of discrete samples in it, and no matter how we translate and scale the x-values that belong to them, the y-values will stay exactly the same in this case. So the solution is to apply translation and scaling to the reference signal, such that some cost between it and an interval is minimized. This also makes more sense from a calculus point of view: Using the reference and its gradient, and given some error function, we can now change the reference using the steepest descend.
+
+
+# Tikhonov Point Translation
+
+```{r}
+r <- Vectorize(function(x) {
+  (sin(x) + 1) / 2
+})
+```
+
+Let's find the point $\{5,0.9\}$ on the curve $r$.
+
+```{r}
+o <- function(x) {
+  (.9 - r(x + 5))^2
+}
+
+optR <- optim(
+  par = c(5),
+  fn = o,
+  method = "BFGS"
+)
+
+optR
+```
+
+```{r}
+r_prime <- function(x) r(optR$par + x)
+curve(r, 0, 2 * pi)
+curve(r_prime, 0, 2 * pi, add = TRUE)
+points(x = 5, y = .9, pch = 25)
+```
+
+Ok, that works with one point. Let's make another example with some more points.
+
+```{r}
+q <- matrix(ncol = 2, data = c(
+  seq(0.1, 2 * pi, length.out = 100),
+  (1 + sin(seq(pi / 2, 3/2 * pi, length.out = 100))) / 2
+))
+
+curve(r, 0, 2*pi)
+lines(x = q[, 1], y = q[, 2], type = "b")
+```
+
+The goal is to find a translation for each point of the dash-dotted line.
+
+```{r}
+o2 <- function(x) {
+  log(1 + sum((q[, 2] - r(x + q[, 1]))^2))
+}
+
+optR2 <- optim(
+  par = q[, 1],
+  fn = o2,
+  method = "BFGS"
+)
+
+optR2
+```
+
+```{r}
+# idx <- 10
+# r_prime2 <- function(x) r(optR2$par[idx] + x)
+# 
+# curve(r_prime2, 0, 2 * pi)
+# points(x = q[idx, 1], y = q[idx, 2], pch = 25)
+q_prime <- q
+q_prime[, 1] <- q_prime[, 1] + optR2$par
+
+curve(r, 0, 4*pi)
+lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
+```
+
+So this works, but we could use some regularizations:
+
+* The box bounds are violated, the example chosen should not go beyond $[0,2\pi]$. So any $\tau$ resulting in an x-coordinate pushed outside of bounds needs to be penalized.
+* Negative intervals (resulting from $\tau_i>\tau_{i+1}$) should be avoided; the chosen example can actually do without them.
+* Extreme intervals (each length between any $\tau_i,\tau_{i+1}$) should be possible/allowed, but also be costly.
+
+
+Let's add the box-bounds regularizer:
+
+```{r}
+o3 <- function(x) {
+  # data-loss:
+  loss <- log(1 + sum((q[, 2] - r(x + q[, 1]))^2))
+  
+  # regularizer box-bounds:
+  temp <- q[, 1] + x
+  temp <- abs(temp[temp < 1/2*pi | temp > 3/2 * pi])
+  loss <- loss + log(1 + sum(temp)^length(temp))
+  
+  loss
+}
+
+optR3 <- optim(
+  par = q[, 1],
+  fn = o3,
+  method = "BFGS"
+)
+
+optR3
+```
+
+```{r}
+q_prime <- q
+q_prime[, 1] <- q_prime[, 1] + optR3$par
+
+curve(r, 0, 4*pi)
+lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
+```
+
+This solution is a better w.r.t. the box-bound constraints, but still, some points are outside it. Also, we still got extreme and negative intervals. Let's additionally penalize negative intervals next:
+
+```{r}
+o4 <- function(x) {
+  # data-loss:
+  loss <- log(1 + sum((q[, 2] - r(x + q[, 1]))^2))
+  
+  # regularizer box-bounds:
+  temp <- q[, 1] + x
+  temp <- abs(temp[temp < 1/2*pi | temp > 3/2 * pi])
+  loss <- loss + log(1 + sum(temp)^length(temp))
+  
+  # regularizer negative intervals:
+  temp <- q[, 1] + x
+  neg <- c()
+  for (i in seq_len(length.out = length(x) - 1)) {
+    l <- temp[i + 1] - temp[i]
+    if (l < 0) {
+      neg <- c(neg, l)
+    }
+  }
+  if (length(neg) > 0) {
+    neg <- abs(neg)
+    loss <- loss + log(1 + sum(neg)^length(neg))
+  }
+  
+  
+  loss
+}
+
+optR4 <- optim(
+  par = q[, 1],
+  fn = o4,
+  method = "BFGS"
+)
+
+optR4
+```
+
+```{r}
+q_prime <- q
+q_prime[, 1] <- q_prime[, 1] + optR4$par
+
+curve(r, -.5, 2*pi)
+lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
+```
+
+That did not work, but let's add the last regularizer for extreme intervals. An extreme interval is one that has its length deviate strongly from the mean.
+
+```{r}
+temp <- c()
+for (i in seq_len(length.out = nrow(q) - 1)) {
+  temp <- c(temp, q[i + 1, 1] - q[i, 1])
+}
+mu <- mean(temp)
+mu
+```
+
+```{r}
+o5 <- function(x) {
+  loss <- 0
+  # data-loss:
+  loss <- loss + log(1 + .01 * sum((q[, 2] - r(x + q[, 1]))^2))
+  
+  # regularizer box-bounds:
+  temp <- q[, 1] + x
+  temp <- abs(temp[temp < 1/2*pi | temp > 3/2 * pi])
+  loss <- loss + log(1 + sum(temp)^length(temp))
+  
+  # regularizer negative intervals:
+  temp <- q[, 1] + x
+  neg <- c()
+  for (i in seq_len(length.out = length(x) - 1)) {
+    l <- temp[i + 1] - temp[i]
+    if (l < 0) {
+      neg <- c(neg, l)
+    }
+  }
+  if (length(neg) > 0) {
+    neg <- abs(neg)
+    loss <- loss + log(1 + sum(neg)^length(neg))
+  }
+  
+  # regularizer extreme lengths:
+  temp <- q[, 1] + x
+  extr <- c()
+  for (i in seq_len(length.out = nrow(q) - 1)) {
+    extr <- c(extr, temp[i + 1] - temp[i])
+  }
+  extr <- extr - mu
+  loss <- loss + log(1 + sum(extr^2))
+  
+  
+  
+  loss
+}
+
+optR5 <- optim(
+  par = q[, 1],
+  fn = o5,
+  method = "BFGS"
+)
+
+optR5
+```
+
+```{r}
+q_prime <- q
+q_prime[, 1] <- q_prime[, 1] + optR5$par
+
+curve(r, -2*pi, 2*pi)
+lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
+```
+
+Ok, the last two regularizers did not work at all. The best result so far we got after regularizing the box-bounds:
+
+```{r}
+q_prime <- q
+q_prime[, 1] <- q_prime[, 1] + optR3$par
+
+curve(r, 0, 4*pi)
+lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
+```
+
+I just thought of another regularizer: One that imposes a penalty for each x-coordinate, based on by how much it deviates from its _expected_ value. But what could that be? If we look at how the points were spaced originally, then we could determine the relative distance for each point from its preceding point. This should then be scaled using the _extent_ of the query signal. During optimization, when the spacing is changed, we can re-calculate and re-scale this value, and this would be our expectation.
+
+```{r}
+qx_exp <- q[, 1] - (q[1, 1]) # NOT min!
+qx_exp <- qx_exp / (max(qx_exp) - min(qx_exp))
+```
+
+
+
+```{r}
+o6 <- function(x) {
+  # data-loss:
+  loss <- log(1 + sum((q[, 2] - r(x + q[, 1]))^2))
+  
+  # regularizer box-bounds:
+  temp <- q[, 1] + x
+  temp <- abs(temp[temp < 1/2*pi | temp > 3/2 * pi])
+  if (length(temp) > 0) {
+    loss <- loss + log(1 + sum(temp)^length(temp))
+  }
+  
+  # deviation from expected distance:
+  temp <- q[, 1] + x
+  temp <- temp - temp[1]
+  temp <- temp / (max(temp) - min(temp))
+  loss <- loss + log(1 + sum((temp - qx_exp)^2))
+  
+  # # This works only when we use the previous regularizer but not stand-alone.
+  # # Tikhonov:
+  # temp <- (x - mean(x)) / sd(x)
+  # # Tikhonov alternative (requires few more iterations):
+  # # temp <- q[, 1] + x
+  # # temp <- (temp - mean(temp)) / sd(temp)
+  # loss <- loss + log(1 + sum(temp^2))
+  
+  loss
+}
+
+optR6 <- optim(
+  par = q[, 1],
+  fn = o6,
+  method = "BFGS",
+  # gr = function(x) pracma::grad(f = o6, x0 = x)
+  # This one works as good!
+  gr = function(x) {
+    x_prime <- rep(NA_real_, length(x))
+    for (i in seq_len(length.out = length(x))) {
+      x_prime[i] <- pracma::fderiv(f = function(t) {
+        use_x <- x
+        use_x[i] <- t
+        o6(use_x)
+      }, x = x[i], method = "central")
+    }
+    x_prime
+  }
+)
+
+optR6
+```
+
+```{r}
+q_prime <- q
+q_prime[, 1] <- q_prime[, 1] + optR6$par
+
+curve(r, 0, 4*pi)
+lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
+```
+
+Okay, perfect! It appears that we really should provide the best possible gradient. Note that this problem here is actually quite hard, as sine is periodic, which also led to the outliers we saw in the non-regularized versions.
+
+Also, Tikhonov regularization works when used in conjunction with the expected distance regularizer, but is not required. It increases the amount of iterations required, but it is likely that increases the robustness of the solution.
+
+
+
+
+
+
+
+
+
