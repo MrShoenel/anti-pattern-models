@@ -104,8 +104,9 @@ M_final_no_NA <- function(
   stopifnot(is.function(r) && is.function(f))
   stopifnot(num_samples >= length(theta_b))
   
+  X_r <- seq(from = min(theta_b_org), to = max(theta_b_org), length.out = num_samples)
   X <- seq(from = min(theta_b), to = max(theta_b), length.out = num_samples)
-  y <- Vectorize(r)(X)
+  y <- Vectorize(r)(X_r)
   
   # Contrary to the pseudo-code, we will create a list of
   # all intervals and scaled+translated functions to look
@@ -185,44 +186,49 @@ L_updated_log <- function(
   theta_b_org,
   theta_b,
   r, f,
-  weightErr = 1,
-  weightR4 = 1,
-  weightR5 = 1,
-  theta_w = rep(1/3, 3)
+  model = M_updated,
+  theta_w = NULL,
+  weightErr = theta_w[1],
+  weightR4 = theta_w[2],
+  weightR5 = theta_w[3]
 ) {
   loss_raw <- 0
   loss <- 0
-  res <- M_final_no_NA(theta_b_org = theta_b_org, theta_b = theta_b, r = r, f = f)
+  res <- model(theta_b_org = theta_b_org, theta_b = theta_b, r = r, f = f)
   
   
-  
-  # Regularizer for theta_w loss:
-  # 1) Check that all weights are within [0,1]
-  # 2) Check that all weights sum to 1
-  
-  # 1)
-  lb <- (1 / length(theta_w))^2
-  ub <- 1
-  temp <- abs(R(lb - theta_w)) + abs(R(theta_w - ub))
-  temp <- temp[temp > 0]
-  # loss_raw <- loss_raw + sum(1 + temp)^(length(theta_w) * length(temp)) - 1
-  # loss <- loss + log(sum(1 + temp)^(length(theta_w) * length(temp)))
-  # loss_raw <- loss_raw + (length(theta_w) * sum(temp))^(length(theta_w) * length(temp))
-  # loss <- loss - log(1 / (1 + (length(theta_w) * sum(temp))^(length(theta_w) * length(temp))))
-  ###### WORKS, but log(2) Rest..
-  loss_raw <- loss_raw + (length(theta_w) * sum(1 + temp))^(length(theta_w) * length(temp))
-  loss <- loss + log(1 + (length(theta_w) * sum(1 + temp))^(length(theta_w) * length(temp)))
-  
-  # 2)
-  temp <- abs(1 - sum(theta_w)) # ideally, this is 0
-  # loss_raw <- loss_raw - log(1 / (1 + temp)^(1 + temp))
-  # loss <- loss - log(1 / (1 + temp)^(1 + temp))
-  loss_raw <- loss_raw + log(1 + length(theta_w) * temp)
-  loss <- loss + log(1 + length(theta_w) * temp)
-  
-  # if (is.infinite(loss)) {
-  #   stop(42)
-  # }
+  if (!missing(theta_w) && is.numeric(theta_w)) {
+    # Regularizer for theta_w loss:
+    # 1) Check that all weights are within [0,1]
+    # 2) Check that all weights sum to 1
+    
+    # 1)
+    lb <- (1 / length(theta_w))^2
+    ub <- 1
+    temp <- abs(R(lb - theta_w)) + abs(R(theta_w - ub))
+    temp <- temp[temp > 0]
+    # loss_raw <- loss_raw + sum(1 + temp)^(length(theta_w) * length(temp)) - 1
+    # loss <- loss + log(sum(1 + temp)^(length(theta_w) * length(temp)))
+    # loss_raw <- loss_raw + (length(theta_w) * sum(temp))^(length(theta_w) * length(temp))
+    # loss <- loss - log(1 / (1 + (length(theta_w) * sum(temp))^(length(theta_w) * length(temp))))
+    
+    
+    # ###### WORKS, but log(2) Rest..
+    # loss_raw <- loss_raw + (length(theta_w) * sum(1 + temp))^(length(theta_w) * length(temp))
+    # loss <- loss + log(1 + (length(theta_w) * sum(1 + temp))^(length(theta_w) * length(temp)))
+    # ###### WORKS (alternative), no Rest..
+    loss_raw <- loss_raw + (1 + length(theta_w))^(length(temp) * log(1 + sum(1 + temp)))
+    loss <- loss + log((1 + length(theta_w))^(length(temp) * log(1 + sum(1 + temp))))
+    
+    # 2)
+    temp <- abs(1 - sum(theta_w)) # ideally, this is 0
+    # loss_raw <- loss_raw - log(1 / (1 + temp)^(1 + temp))
+    # loss <- loss - log(1 / (1 + temp)^(1 + temp))
+    loss_raw <- loss_raw + log(1 + length(theta_w) * temp)
+    loss <- loss + log(1 + length(theta_w) * temp)
+  } else {
+    theta_w <- c(weightErr, weightR4, weightR5)
+  }
   
   
   
@@ -251,19 +257,36 @@ L_updated_log <- function(
   # dkl_pq <- sum(y_not_NA * log(y_not_NA / y_hat_not_NA))
   # dkl_qp <- sum(y_hat_not_NA * log(y_hat_not_NA / y_not_NA))
   # 
-  # loss <- weightErr * (dkl_pq + dkl_qp)
+  # loss <- loss + abs(theta_w[1]) * (dkl_pq + dkl_qp)
   
-  
-  
-  
-  ######### 
-  #numData <- sum(complete.cases(res$y_hat))
-  #loss <- weightErr * log(1 + sum(na.omit(res$y - res$y_hat)^2) / numData)
   
   
   ####### RSS
   loss_raw <- loss_raw + abs(theta_w[1]) * sum((res$y - res$y_hat)^2)
   loss <- loss + abs(theta_w[1]) * log(1 + sum((res$y - res$y_hat)^2))
+
+  
+  
+  # ####### Stat-diff
+  # f1 <- pattern_approxfun(
+  #   yData = res$y,
+  #   xData = seq(0, 1, length.out = length(res$y)))
+  # f2 <- pattern_approxfun(
+  #   yData = res$y_hat,
+  #   xData = seq(0, 1, length.out = length(res$y_hat))
+  # )
+  # a <- area_diff_2_functions_score(useUpperBoundFromData = TRUE)(f1, f2)
+  # loss <- loss - log(a)
+  # 
+  # c <- stat_diff_2_functions_cor_score(allowReturnNA = FALSE)(f1, f2)
+  # loss <- loss - log(c)
+  # 
+  # # l <- stat_diff_2_functions_arclen_score()(f1, f2)
+  # # loss <- loss - log(l)
+  # # j <- stat_diff_2_functions_symmetric_JSD_score(useSampledJSD = FALSE)(f1, f2)
+  # # loss <- loss - log(j)
+  # # j <- stat_diff_2_functions_signals_score()(f1, f2)
+  # # loss <- loss - log(prod(j))
   
   
   

@@ -142,7 +142,7 @@ signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
 
 query_bounds <- seq(0, 1, by = 0.1)
 
-temp <- M_updated(
+temp <- M_final_no_NA(
   theta_b_org = query_bounds,
   theta_b = query_bounds,
   r = signal_ref,
@@ -154,19 +154,18 @@ temp2_bounds <- c(
   0,
   .075, .1, .15, .2, .25,
   .55, .575, .6,  .8, 1)
-temp2 <- M_updated(
+temp2 <- M_final_no_NA(
   theta_b_org = query_bounds,
   theta_b = temp2_bounds,
   r = signal_ref,
   f = signal_query)
 ```
 
-
 ```{r}
 ggarrange(
   ncol = 1,
   plotBtw(data.frame(x = temp$X, y = temp$y)),
-  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
+  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds) + xlim(-.25,1.1),
   plotBtw(data.frame(x = temp$X, y = temp2$y_hat), bounds = temp2_bounds)
 )
 ```
@@ -185,106 +184,29 @@ The updated model uses the absolute start for all intervals and the sum of lengt
 Each category is then its own function, and which category/function to pick depends on $q$ and whether we are deriving for $s$, or some $l_q$ that is either in the numerator or denominator.
 
 
-## Loss for the data
-
-In some of our other tests it turned out that a slightly modified logarithmic residual sum of squares is the most robust and consistently required the least iterations. The modified version adds $1$ to the strictly positive result of the RSS and returns the logarithm of it. This loss converges to $+0$.
-
-$$
-\begin{aligned}
-  \mathcal{L}^{\text{data}}=&\;\log{\Big(1+\text{RSS}\Big)}\;\text{,}
-  \\[1ex]
-  =&\;\log{\bigg(1+\sum_{i=1}^{N}\;\Big(\mathbf{y}_i-m_{q=f(i)}\big(\mathbf{x}_i\big)\Big)^2\bigg)}\;\text{, where}\;f\;\text{selects}\;q\;\text{according to}\;i\text{.}
-\end{aligned}
-$$
-
-
-
-
-## Regularized loss for the data
-
-$$
-\begin{aligned}
-  \text{RMSE}=&\;\sqrt{\frac{1}{N}\;\sum_{i=1}^{N}\;(\mathbf{y}_i-\mathbf{\hat{y}}_i)^2}\;\text{,}
-  \\[1ex]
-  =&\;\sqrt{\frac{1}{N}\;\Bigg[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;\Bigg(\mathbf{y}_i-f\bigg(\frac{(\mathbf{x}_i - b_{q_s})\times(b_{o_e} - b_{o_s})}{b_{q_e}-b_{q_s}} + b_{o_s}\bigg)\Bigg)^2\Bigg]}\;\text{, and our data-loss will be:}
-  \\[1em]
-  \mathcal{L}^{\text{data}}=&\;\log{\big(1+\text{RMSE}\big)}\;\text{, with gradient}
-  \\[1ex]
-  \frac{\partial\,\mathcal{L}^{\text{data}}}{b_{q_s}}=&\;-1\times\frac{
-    \sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;
-    \Big(\frac{(b_{o_e}-b_{o_s})\times(\mathbf{x}_i-b_{q_s})}{(b_{q_e}-b_{q_s})^2}-\frac{b_{o_e}-b_{o_s}}{b_{q_e}-b_{q_s}}\Big)\times
-    \Big(\mathbf{y}_i-f(\psi_i)\Big)\times
-    f'(\psi_i)
-  }{
-    N\times\Bigg(1+\sqrt{
-      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
-    }\,\Bigg)\times
-    \sqrt{
-      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
-    }
-  }\;\text{,}
-  \\[1ex]
-  \frac{\partial\,\mathcal{L}^{\text{data}}}{b_{q_e}}=&\;\frac{
-    \sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(b_{o_e}-b_{o_s})\times(\mathbf{x}_i-b_{q_s})\times(\mathbf{y}_i-f(\psi_i))\times f'(\psi_i)
-  }{
-    N\times(b_{q_e}-b_{q_s})^2\times\Bigg(1+\sqrt{
-      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
-    }\,\Bigg)\times
-    \sqrt{
-      \frac{1}{N}\times\Big[\sum_{q=i}^{\max{Q}}\,\sum_{i=1}^{N}\;(\mathbf{y}_i-f(\psi_i))^2\Big]
-    }
-  }\;\text{.}
-\end{aligned}
-$$
-
-While this is not pretty, it is robust for two reasons: First, we are normalizing the error by dividing through the mean, then taking the root. Secondly, since the error is always positive, but not guaranteed to be greater than $1$, we add this before we pass it to the logarithm.
-
-A simple model using only this loss for the data and no regularizers should converge with and without the gradient.
-
 
 ## Testing without gradient
 
 ```{r}
-cl <- parallel::makePSOCKcluster(4)
-parallel::clusterExport(cl, varlist = c("M_updated", "query_bounds", "r", "f", "Stabilize", "signal_ref", "signal_query", "L_updated_log", "H", "R"))
+useBounds <- query_bounds
 
-set.seed(1337)
-optRp <- optimParallel::optimParallel(
-  par = query_bounds,
-  fn = function(x) {
-    L_updated_log(theta_b_org = query_bounds, theta_b = x, r = r, f = f)
-  },
-  lower = rep(0, length(query_bounds)),
-  upper = rep(1, length(query_bounds)),
-  parallel = list(
-    cl = cl,
-    forward = FALSE,
-    loginfo = TRUE
-  )
-)
-
-parallel::stopCluster(cl)
-optRp
-```
-
-
-```{r}
 optR <- stats::optim(
-  control = list(maxit = 1e3, abstol = 1e-3),
+  # control = list(maxit = 1e3, abstol = 1e-3),
   method = "BFGS",
-  #lower = rep(0, length(query_bounds)),
-  #upper = rep(1, length(query_bounds)),
-  par = c(query_bounds, 1/3, 1/3, 1/3),
+  #lower = rep(0, length(useBounds)),
+  #upper = rep(1, length(useBounds)),
+  par = c(useBounds, 1/3, 1/3, 1/3),
   fn = function(x) {
     loss <- L_updated_log(
-      theta_b_org = query_bounds,
-      theta_b = x[1:length(query_bounds)],
+      theta_b_org = useBounds,
+      theta_b = x[1:length(useBounds)],
+      model = M_updated,
       theta_w = tail(x, 3),
+      #weightErr = 1,
+      #weightR4 = .1,
+      #weightR5 = 1,
       r = r,
-      f = f,
-      weightErr = 2/3,
-      weightR4 = 0,
-      weightR5 = 1
+      f = f
     )
     print(loss)
     loss
@@ -296,12 +218,12 @@ optR <- stats::optim(
 optR
 
 temp3 <- M_final_no_NA(
-  theta_b_org = query_bounds,
-  theta_b = optR$par[1:11],
+  theta_b_org = useBounds,
+  theta_b = optR$par[1:length(useBounds)],
   r = signal_ref,
   f = signal_query)
 
-plotBtw(data.frame(x = temp3$X, y = temp3$y_hat), optR$par[1:11])
+plotBtw(data.frame(x = temp3$X, y = temp3$y_hat), optR$par[1:length(useBounds)])
 ```
 
 
