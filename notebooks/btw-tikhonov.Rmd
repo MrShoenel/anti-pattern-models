@@ -28,6 +28,8 @@ o <- function(x) {
 optR <- optim(
   par = c(5),
   fn = o,
+  # This one also works:
+  #gr = function(x) pracma::grad(f = o, x0 = x),
   method = "BFGS"
 )
 
@@ -70,11 +72,6 @@ optR2
 ```
 
 ```{r}
-# idx <- 10
-# r_prime2 <- function(x) r(optR2$par[idx] + x)
-# 
-# curve(r_prime2, 0, 2 * pi)
-# points(x = q[idx, 1], y = q[idx, 2], pch = 25)
 q_prime <- q
 q_prime[, 1] <- q_prime[, 1] + optR2$par
 
@@ -82,11 +79,11 @@ curve(r, 0, 4*pi)
 lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
 ```
 
-So this works, but we could use some regularizations:
+So this works, but we could use some regularization:
 
-* The box bounds are violated, the example chosen should not go beyond $[0,2\pi]$. So any $\tau$ resulting in an x-coordinate pushed outside of bounds needs to be penalized.
-* Negative intervals (resulting from $\tau_i>\tau_{i+1}$) should be avoided; the chosen example can actually do without them.
-* Extreme intervals (each length between any $\tau_i,\tau_{i+1}$) should be possible/allowed, but also be costly.
+* The box bounds are violated, the example chosen should not go beyond $[\frac{1}{2}pi,\frac{3}{2}\pi]$. So any $\tau$ resulting in an x-coordinate pushed outside of bounds needs to be penalized.
+* Negative intervals (resulting from $\tau_i+x_i>\tau_{i+1}+x_{i+1}$) should be avoided; the chosen example can actually do without them.
+* Extreme intervals (each length between any $\tau_i+x_i,\tau_{i+1}+x_{i+1}$) should be possible/allowed, but also be costly.
 
 
 Let's add the box-bounds regularizer:
@@ -255,7 +252,7 @@ qx_exp <- qx_exp / (max(qx_exp) - min(qx_exp))
 
 
 ```{r}
-o6 <- function(x, isGrad = FALSE) {
+o6 <- function(x, isGrad = FALSE, noPrint = FALSE) {
   # data-loss:
   loss <- log(1 + sum((q[, 2] - r(x + q[, 1]))^2))
   
@@ -278,13 +275,21 @@ o6 <- function(x, isGrad = FALSE) {
   
   # This works only when we use the previous regularizer but not stand-alone.
   # Tikhonov:
-  # temp <- (x - mean(x)) / sd(x)
-  # Tikhonov alternative (requires few more iterations):
+  # temp <- x - mean(x)
+  # if (sd(x) != 0) {
+  #   temp <- temp / sd(x)
+  # }
+  # loss <- loss + log(1 + sum(temp^2))
+  
+  # Tikhonov alternative (preferred):
   temp <- q[, 1] + x
-  temp <- (temp - mean(temp)) / sd(temp)
+  temp <- temp - mean(temp)
+  if (sd(temp) != 0) {
+    temp <- temp / sd(temp)
+  }
   loss <- loss + log(1 + sum(temp^2))
   
-  if (!isGrad) print(loss)
+  if (!isGrad && !noPrint) print(loss)
   loss
 }
 
@@ -310,7 +315,7 @@ abline(v = 3/2*pi)
 
 Okay, perfect! It appears that we really should provide the best possible gradient. Note that this problem here is actually quite hard, as sine is periodic, which also led to the outliers we saw in the non-regularized versions.
 
-Also, Tikhonov regularization works when used in conjunction with the expected distance regularizer, but is not required. It increases the amount of iterations required, but it is likely that increases the robustness of the solution.
+Also, Tikhonov regularization works when used in conjunction with the expected distance regularizer, but is not required. It increases the amount of iterations required, but it is likely to increase the robustness of the solution.
 
 
 
@@ -366,61 +371,21 @@ $$
 \begin{aligned}
   \bm{y}_i=&\;f(x_i)\;\text{,}
   \\[1ex]
-  \text{RSS}_{m}=&\;\sum_{i=1}\;\Big(f\big(\bm{x}_i\big)-r\big(\text{max}^{\text{var}}(\bm{\tau}_{1,\,\dots\,,\,i}+\mathbf{x}_{1,\,\dots\,,\,i})\big)\Big)^2\;\text{, with gradient}
+  \text{RSS}_{m}=&\;\log{\Bigg(1+\sum_{i=1}\;\Big(f\big(\bm{x}_i\big)-r\big(\text{max}^{\text{var}}(\bm{\tau}_{1,\,\dots\,,\,i}+\mathbf{x}_{1,\,\dots\,,\,i})\big)\Big)^2\Bigg)}\;\text{, with gradient}
   \\[1ex]
   \nabla\,\text{RSS}_m=&\;\begin{cases}
-    -2\Big(f\big(\bm{x}_i\big)-r\big(\tau_i+x_i\big)\Big)\times r'\big(\tau_i+x_i\big),&\text{(given above conditions),}
+    \frac{2r'(\tau_i+\bm{x}_i)\times(r(\tau_i+\bm{x}_i)-f(\bm{x}_i))}{-2f(\bm{x}_i)\times r(\tau_i+\bm{x}_i) + r(\tau_i+\bm{x}_i)^2 + f(\bm{x}_i)^2 + 1},&\text{(given above conditions),}
     \\
     0,&\text{otherwise.}
   \end{cases}
 \end{aligned}
 $$
 
+We have to more extensively test this model, as esp. its gradient with all of its conditions leads to mostly zeros, because any parameter only changes iff its translation results in the current maximum
+
 
 ```{r}
-o_om_r1r2 <- function(x) {
-  loss <- 0
-  
-  # regularizer box-bounds:
-  temp <- q[, 1] + x
-  temp <- abs(temp[temp < 1/2*pi | temp > 3/2 * pi])
-  if (length(temp) > 0) {
-    loss <- loss + log(1 + sum(temp)^length(temp))
-  }
-
-  # deviation from expected distance:
-  temp <- q[, 1] + x
-  temp <- temp - temp[1]
-  temp <- temp / (max(temp) - min(temp))
-  loss <- loss + log(1 + sum((temp - qx_exp)^2))
-  
-  # Tikhonov:
-  temp <- q[, 1] + x
-  temp <- (temp - mean(temp)) / sd(temp)
-  loss <- loss + log(1 + sum(temp^2))
-  
-  loss
-}
-
-
-o_om <- function(x, isGrad = FALSE) {
-  loss <- 0
-  
-  data_loss <- 0
-  for (idx in seq_len(length.out = length(x))) {
-    temp <- q[1:idx, 1] + x[1:idx]
-    data_loss <- data_loss + (q[idx, 2] - r(max(temp)))^2
-  }
-  
-  # data-loss:
-  loss <- loss + log(1 + data_loss)
-  
-  # r1,r2:
-  loss <- loss + o_om_r1r2(x)
-  
-  # if (!isGrad) print(loss)
-  loss
-}
+# o_om, o_om_r1r2 were moved
 ```
 
 
@@ -428,8 +393,8 @@ o_om <- function(x, isGrad = FALSE) {
 opt_om <- optim(
   par = rep(pi/2, nrow(q)),
   fn = o_om,
-  method = "BFGS",
-  gr = function(x) pracma::grad(f = function(t) o_om(t, TRUE), x0 = x)
+  method = "BFGS"#,
+  #gr = function(x) pracma::grad(f = function(t) o_om(t, TRUE), x0 = x)
 )
 
 opt_om
@@ -446,42 +411,14 @@ lines(x = q_prime[, 1], y = q_prime[, 2], type = "b")
 Let's implement the analytic gradient:
 
 ```{r}
-o_om_grad <- function(x) {
-  grad <- rep(Inf, length(x))
-  for (idx in seq_len(length.out = length(x))) {
-    # First we check the conditions:
-    tixi <- x[idx] + q[idx, 1]
-    
-    cond_pre <- if (idx == 1) TRUE else {
-      tjxj <- x[1:(idx - 1)] + q[1:(idx - 1), 1]
-      all(tjxj < tixi)
-    }
-    if (!cond_pre) {
-      grad[idx] <- 0
-    } else {
-      cond_post <- if (idx == length(x)) TRUE else {
-        tkxk <- x[(idx + 1):length(x)] + q[(idx + 1):length(x)]
-        all(tixi >= tkxk)
-      }
-      if (cond_post) {
-        grad[idx] <- -2 * (q[idx, 2] - r(tixi)) * pracma::fderiv(f = r, x = tixi, method = "central")
-      } else {
-        grad[idx] <- 0
-      }
-    }
-  }
-  
-  grad_r1r2 <- pracma::grad(f = o_om_r1r2, x0 = x)
-  
-  grad + grad_r1r2
-}
+# o_om_grad(..) was moved to models' file..
 ```
 
 ```{r}
 opt_om_ag <- optim(
   par = rep(pi/2, nrow(q)),
   fn = o_om,
-  method = "CG",
+  method = "BFGS",
   gr = o_om_grad
 )
 
@@ -518,7 +455,7 @@ o_om_grad_desc <- function(delta = 1e-5, steps = 1e3, par = rep(pi/2, nrow(q))) 
 ```
 
 ```{r}
-temp <- o_om_grad_desc(delta = .25)
+temp <- o_om_grad_desc(delta = .5)
 ```
 
 

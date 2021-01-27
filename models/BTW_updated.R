@@ -363,6 +363,133 @@ L_updated_log <- function(
 
 
 
+o_om_r1r2 <- function(x) {
+  loss <- 0
+  
+  # # regularizer box-bounds:
+  # temp <- q[, 1] + x
+  # temp <- abs(temp[temp < 1/2*pi | temp > 3/2 * pi])
+  # if (length(temp) > 0) {
+  #   loss <- loss + log(1 + sum(temp)^length(temp))
+  # }
+
+  # deviation from expected distance:
+  temp <- q[, 1] + x
+  temp <- temp - temp[1]
+  temp <- temp / (max(temp) - min(temp))
+  loss <- loss + log(1 + sum((temp - qx_exp)^2))
+
+  # Tikhonov:
+  temp <- q[, 1] + x
+  temp <- (temp - mean(temp)) / sd(temp)
+  loss <- loss + log(1 + sum(temp^2))
+  
+  loss
+}
+
+
+o_om_neg_int <- function(x) {
+  # Here, we penalize negative intervals.
+  loss <- 0
+  
+  negs <- c()
+  trans <- q[, 1] + x
+  for (idx in seq_len(length.out = length(x) - 1)) {
+    l <- trans[idx + 1] - trans[idx]
+    if (l < 0) {
+      negs <- c(negs, l)
+    }
+  }
+  
+  loss <- loss + log(1 + sum(negs^2)^length(negs))
+  
+  loss
+}
+
+o_om_illegal_trans <- function(x) {
+  # Here, we check that each translation t_i > t_{i-1}
+  loss <- 0
+  
+  vio <- c()
+  trans <- q[, 1] + x
+  for (idx in seq_len(length.out = length(x) - 1)) {
+    if (trans[idx] > trans[idx + 1]) {
+      vio <- c(vio, trans[idx] - trans[idx + 1])
+    }
+  }
+  
+  loss <- loss + log(1 + length(vio)^log(1 + sum((1 + vio)^2)))
+  
+  # loss <- loss + log(1 + sum((1 + vio)^2)^length(vio))
+  
+  loss
+}
+
+
+o_om <- function(x, isGrad = FALSE) {
+  loss <- 0
+  
+  data_loss <- 0
+  for (idx in seq_len(length.out = length(x))) {
+    temp <- q[1:idx, 1] + x[1:idx]
+    data_loss <- data_loss + (q[idx, 2] - r(max(temp)))^2
+  }
+  
+  # data-loss:
+  loss <- loss + log(1 + data_loss)
+  
+  # r1,r2:
+  loss <- loss + o_om_r1r2(x)
+  
+  # # R: neg_int
+  # loss <- loss + o_om_neg_int(x)
+  
+  # R: illegal_trans
+  loss <- loss + o_om_illegal_trans(x)
+  
+  if (!isGrad) print(loss)
+  loss
+}
+
+
+o_om_grad <- function(x) {
+  grad <- rep(0, length(x))
+  
+  for (idx in seq_len(length.out = length(x))) {
+    # First we check the conditions:
+    tixi <- x[idx] + q[idx, 1]
+    
+    cond_pre <- if (idx == 1) TRUE else {
+      tjxj <- x[1:(idx - 1)] + q[1:(idx - 1), 1]
+      all(tjxj < tixi)
+    }
+    if (cond_pre) {
+      # grad[idx] <- -2 * (q[idx, 2] - r(tixi)) * pracma::fderiv(f = r, x = tixi, method = "central")
+      grad_denom <- -2 * q[idx, 2] * r(tixi) + r(tixi)^2 + q[idx, 2]^2 + 1
+      if (grad_denom == 0) {
+        grad_denom <- .Machine$double.eps
+      }
+      grad_num <- 2 * pracma::fderiv(f = r, x = tixi, method = "central") * (r(tixi) - q[idx, 2])
+      grad[idx] <- grad_num / grad_denom
+    }
+  }
+  
+  grad_r1r2 <- pracma::grad(f = o_om_r1r2, x0 = x)
+  grad <- grad + grad_r1r2
+  
+  # # neg_int:
+  # grad_neg_int <- pracma::grad(f = o_om_neg_int, x0 = x)
+  # grad <- grad + grad_neg_int
+  
+  # illegal_trans:
+  grad_illegal_trans <- pracma::grad(f = o_om_illegal_trans, x0 = x)
+  grad <- grad + grad_illegal_trans
+  
+  grad
+}
+
+
+
 
 
 
