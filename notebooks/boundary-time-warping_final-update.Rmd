@@ -165,7 +165,7 @@ temp2 <- M_final_no_NA(
 ggarrange(
   ncol = 1,
   plotBtw(data.frame(x = temp$X, y = temp$y)),
-  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds) + xlim(-.25,1.1),
+  plotBtw(data.frame(x = temp$X, y = temp$y_hat), bounds = query_bounds),
   plotBtw(data.frame(x = temp$X, y = temp2$y_hat), bounds = temp2_bounds)
 )
 ```
