@@ -1,0 +1,217 @@
+---
+title: "Closed-window optimization"
+bibliography: ../inst/REFERENCES.bib
+header-includes:
+  - \usepackage{bm}
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  word_document: default
+---
+
+```{r echo=FALSE, warning=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+In this notebook, we will go back to our initial Fire Drill (FD) problem, and design models to accomodate it. The goal is to bring together everything we learned from all the notebooks in between, and to come up with solutions specifically designed to address the matter.
+
+# Problem description
+
+Initially I thought the answer would be using dynamic time Warping, but it is not suitable for an analytical solution (actually, closed-form expression). What makes our problem a bit special are the following:
+
+* __Reference__ and __Query__ signal have the same support: The FD is an AP that spans the entire project, start to finish. Matching must be attempted at the very beginning of the data, and is concluded at the very end. The query signal is scaled such that the extent of its support is the same as the reference's.
+* All data has to be used: We can apply local time warping to the query signal, but nothing can be left out. The warping may even result in a length of zero of some intervals, but they must not be negative.
+
+
+## Optimization goals
+
+We have __3__ optimization goals for the joint paper/article (each of them has a dedicated section in this notebook):
+
+* Fitting of project data to a defined AP (here: the Fire Drill)
+* Validate selection of sub-models andscores; also: calibration of scores
+* Averaging the reference pattern over allknown ground truths
+
+
+# Optimization goal I: Fitting of project data to a defined AP
+
+This is the primary problem, and we should start with a visualization:
+
+```{r echo=FALSE}
+# Save everything so it can be reused elsewhere:
+dens_acp_data <- readRDS(file = "../data/dens_acp_data.rds")
+# Also save the pattern:
+fd_data_concat <- readRDS(file = "../data/fd_data_concat.rds")
+
+bounds <- c(0.085, 0.625, 0.875)
+
+ggarrange(
+  plot_project_data(fd_data_concat, boundaries = bounds),
+  plot_project_data(dens_acp_data),
+  nrow = 2
+)
+```
+
+The first plot is the reference pattern, the second is a random project. All data has already been scaled and normalized, for example, both supports are the same. We are going to use an entirely new approach to warp the project data from the 2nd plot the reference data from the first plot.
+
+## Approach
+
+In order to understand this problem, we need to make some statements:
+
+* The reference pattern is subdivided into intervals by some boundaries (blue in the above plot). The data in each such interval is considered __constant__. That means, if we were to sample from that interval, these samples would always be identical. If we were to look at each interval as a function, then it always show the same behavior. Each interval has its own __support__.
+* The first interval starts at $0$ and the last interval ends at $1$ (we always expect that all data has been scaled and translated to $[0,1]$ prior to this, to keep things simple).
+* Any and all variables are strictly __positive__, with a co-domain of $[0,1]$ as well. We require this for reasons of simplification, although negative values would be no problem (but require extra effort at this point).
+* An interval's __length__ is never negative. In practice, one may even want to define a minimum length for all or each interval.
+* An interval's __offset__ is the sum of the lengths of its preceding intervals. All intervals' lengths sum up to $1$.
+
+To find the sub-support of the query that best matches a variable (or many) in an interval, the query signal is translated and scaled. Another way to think about this is that the query signal is translated and only valid in the support that starts with the translate, and ends there plus the length of the current interval. I mention this because this is how we will begin.
+
+In the above plot, there are $4$ intervals, and let's say we index them with the parameter $q$. If we were to describe the reference- and query-signals through the two functions $r,f$, and we were given some boundary $b_q$ that delimits the reference-interval, for $q=1$ we would get:
+
+$$
+\begin{aligned}
+  r_q=&\;r(\cdot)\;\text{, reference-signal for interval}\;q,
+  \\[1ex]
+  \text{supp}(r_q)=&\;[0,b_q)\;\text{, the support of}\;r_q.
+\end{aligned}
+$$
+
+During optimization, the goal is to find the best length for each interval. Assuming a given vector that contains these four lengths, $\bm{\vartheta}$, we get:
+
+$$
+\begin{aligned}
+  f_q=&\;f(\cdot)\;\text{, query-signal for interval}\;q,
+  \\[1ex]
+  \text{supp}(f_q)=&\;\big\{\;x\in\mathbb{R}\;\rvert\;x\geq0\;\land\;x<\bm{\vartheta}_q\;\big\}\;\text{, the support of}\;f_q.
+\end{aligned}
+$$
+
+The supports will always almost differ (especially for $q>1$). For the discrete case this may not be important, because the model may choose to always take the same amount of equidistantly-spaced samples from the reference- and query-intervals, regardless of the support. This is essentially the same as scaling and translating the query-support to be the same as the reference support. This is what would be required for the continuous case.
+
+The result of the previous definition is an __unchanged__ query-signal; however, we specify its support that _corresponds_ to the support of the current reference interval. In general, to translate (and scale) an interval from one offset and length to another offset and length, the expression is:
+
+$$
+\begin{aligned}
+  f(x)\dots&\;\text{function to be translated,}
+  \\[1ex]
+  f'(x)=&\;f\Bigg(\frac{(x - t_b) * (s_e - s_b)}{t_e - t_b} + e_b\Bigg)\;\text{, where}
+  \\[1ex]
+  s_b,s_e,t_b,t_e\dots&\;\text{begin (b) and end (e) of the source- (s) and target-intervals/supports (t).}
+\end{aligned}
+$$
+
+We will do some testing with the pattern and data we have, focusing on the __adaptive__ (__A__) variable:
+
+```{r echo=FALSE}
+a_ref <- fd_data_concat[fd_data_concat$t == "A", ]
+a_query <- dens_acp_data[dens_acp_data$t == "A", ]
+
+r <- stats::approxfun(x = a_ref$x, y = a_ref$y)
+f <- stats::approxfun(x = a_query$x, y = a_query$y)
+
+ggarrange(
+  plot_project_data(a_ref, boundaries = bounds),
+  plot_project_data(a_query),
+  nrow = 2
+)
+```
+
+We will do a test with $f_q$ and $f'_q$, and set $q$ to $1$ and then to $3$. In the first case, no re-definition of $f$ is required. We only need to define where to query-intervals should be (thus their length).
+
+```{r}
+# Use these lengths for q=3:
+vt_q3 <- c(0.15, 0.45, 0.1, 0.3)
+
+a_ref_q3 <- a_ref[a_ref >= bounds[2] & a_ref < bounds[3], ]
+a_query_q3 <- a_query[a_query >= (vt_q3[1] + vt_q3[2]) & a_query < (1 - vt_q3[4]), ]
+
+r_q3 <- stats::approxfun(x = a_ref_q3$x, y = a_ref_q3$y)
+f_q3 <- stats::approxfun(x = a_query_q3$x, y = a_query_q3$y)
+
+ggplot() +
+  stat_function(fun = r_q3, aes(color = "r_q3")) +
+  stat_function(fun = f_q3, aes(color = "f_q3")) +
+  xlim(.6, .9)
+```
+
+And now we re-define $f$ such that it has the same support as `r_q3`:
+
+```{r}
+f_prime_proto <- function(x, target_b, target_e, source_b, source_e) {
+  f((((x - target_b) * (source_e - source_b)) / (target_e - target_b)) + source_b)
+}
+
+f_q3_prime <- function(x) {
+  # These two are where the signal currently is (translation source range)
+  phi_q <- vt_q3[1] + vt_q3[2]
+  vartheta_q <- vt_q3[3]
+  # These two is where we want the signal to be (translation target range)
+  # theta_q <- bounds[3] - bounds[2]
+  
+  source_b <- phi_q
+  source_e <- phi_q + vartheta_q
+  target_b <- bounds[2]
+  target_e <- bounds[3]
+  
+  f_prime_proto(x, target_b = target_b, target_e = target_e,
+                source_b = source_b, source_e = source_e)
+}
+
+curve(f_q3_prime, 0, 1)
+
+ggplot() +
+  stat_function(fun = r_q3, aes(color = "r_q3")) +
+  stat_function(fun = f_test, aes(color = "f_q3_prime")) +
+  geom_vline(xintercept = bounds[2]) +
+  geom_vline(xintercept = bounds[3]) +
+  xlim(bounds[2:3])
+```
+
+
+In practice, we want to re-define $f$, such that we scale and translate it in a way that its support and the reference support perfectly overlap.:
+
+$$
+\begin{aligned}
+  f'_q=&\;f\Big(\bm{\theta}_q\times(x-\phi_q)\times\bm{\vartheta}_q^{-1}+\bm{\sigma}_q\Big)\;\text{, where}
+  \\[1ex]
+  \bm{\theta}_q=&\;\dots\text{, the length of the reference-interval,}
+  \\[1ex]
+  \bm{\sigma}_q=&\;\dots\text{, the offset of the reference-interval,}
+  \\[1ex]
+  \phi_q=&\;\begin{cases}
+    0,&\text{if}\;q=1,
+    \\
+    \sum_{j=1}^{q-1}\bm{\vartheta}_j,&\text{otherwise.}
+  \end{cases}\text{(the sum of lengths of preceding intervals)}
+\end{aligned}
+$$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
