@@ -1,3 +1,13 @@
+Stabilize <- function(f, lb, ub) {
+  Vectorize(function(x) {
+    if (x < lb) f(lb) else if (x > ub) f(ub) else f(x)
+  })
+}
+
+R <- Vectorize(function(x) if (x < 0) 0 else x)
+
+H <- Vectorize(function(x) if (x > 0) 1 else 0)
+
 
 M_updated <- function(theta_b_org, theta_b, r, f, num_samples = 1e3, zNormalize = FALSE, valueForZeroLenIntervals = 0) {
   stopifnot(length(theta_b_org) == length(theta_b))

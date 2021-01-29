@@ -1604,3 +1604,22 @@ create_fire_drill_model <- function(
 
 
 
+plot_project_data <- function(data, boundaries = c()) {
+  p <- ggplot(data, aes(x = x, y = y)) +
+    geom_line(aes(color = t), size = .75) +
+    theme_light() +
+    scale_x_continuous(breaks = seq(0, 1, by = 0.05), limits = c(0, 1)) +
+    scale_y_continuous(breaks = seq(0, 1, by = 0.10), limits = c(0, 1)) +
+    theme(axis.text.x = element_text(angle = -45, vjust = 0)) +
+    labs(color = "Activity") +
+    scale_color_brewer(palette = "Set1")
+  
+  for (b in boundaries) {
+    p <- p + geom_vline(xintercept = b, color = "blue", size = .5)
+  }
+  
+  p
+}
+
+
+

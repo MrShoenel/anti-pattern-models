@@ -140,6 +140,9 @@ plotBtw <- function(df, bounds = c()) {
 signal_ref <- stats::approxfun(x = btwRef$x, y = btwRef$y, ties = mean)
 signal_query <- stats::approxfun(x = btwQuery$x, y = btwQuery$y, ties = mean)
 
+r <- Stabilize(signal_ref, 0, 1)
+f <- Stabilize(signal_query, 0, 1)
+
 query_bounds <- seq(0, 1, by = 0.1)
 
 temp <- M_final_no_NA(

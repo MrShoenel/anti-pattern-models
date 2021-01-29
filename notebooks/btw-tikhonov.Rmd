@@ -1,6 +1,25 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "Point Time Warping (Tikhonov)"
+bibliography: ../inst/REFERENCES.bib
+header-includes:
+  - \usepackage{bm}
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  word_document: default
 ---
 
 So it turns out that all BTW models so far were wrong in one common regard: They were fitting the query to the reference. While this sounds correct, the way to do this is to fit the reference to the query, and the reason is essential and simple:
