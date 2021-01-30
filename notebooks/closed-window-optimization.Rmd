@@ -200,7 +200,7 @@ curve(f_q3_test2, 0, 1)
 ```
 
 
-## Model formulation
+## Sub-Model formulation
 
 In practice, we want to re-define $f$, such that we scale and translate it in a way that its support and the reference support perfectly overlap. This will be done using above expression to derive $f$ into $f'$. Also, we our model to satisfy additional constraints, without having to use regularization or (in-)equality constraints. These constraints are:
 
@@ -209,13 +209,13 @@ In practice, we want to re-define $f$, such that we scale and translate it in a 
 
 During unconstrained optimization, there is no way to enforce these constraints, but we can build these into our model! To satisfy the first constraint, we will replace using any $l_q$ directly by $\max{(\lambda_q,l_q)}$ (where $\lambda$ is the lower bound for interval $q$ and $>0$). This could however lead to the sum of all such lengths being greater than the extent of the support. The solution to the second constraint will satisfy this, by normalizing all lengths using the sum of all lengths. This way, lengths are converted to ratios.
 
-First we define the new model _without_ the built-in constraints:
+First we define the new model _without_ the built-in constraints ($m_q$) and then with them ($m_q^c$):
 
 $$
 \begin{aligned}
-  b\dots&\;\text{the offset of the first interval (usually}\;0\text{),}
+  b\dots&\;\text{the target-begin of the first interval (usually}\;0\text{),}
   \\[1ex]
-  e\dots&\;\text{the end of the last interval (usually}\;1\text{), also}\;e>b\text{,}
+  e\dots&\;\text{the target-end of the last interval (usually}\;1\text{), also}\;e>b\text{,}
   \\[1ex]
   \theta_b,\theta_e,\theta_d\dots&\;\text{absolute min/max for}\;b,e\;\text{and min-distance between them,}
   \\[1ex]
@@ -235,7 +235,9 @@ $$
   \\[1ex]
   &\;\text{(the sum of the lengths of all preceding intervals),}
   \\[1ex]
-  \phi=&\;(\beta_u-\beta_l)\times\max{\Bigg(\theta_d,\Bigg[\sum_{j=1}^{\max{(Q)}}\,\max{(\bm{\lambda}_j,l_j)}\Bigg]\Bigg)}\;\text{, the scaled total interval-extent,}
+  \phi=&\;(\beta_u-\beta_l)\times\max{\Bigg(\theta_d,\Bigg[\sum_{j=1}^{\max{(Q)}}\,\max{(\bm{\lambda}_j,l_j)}\Bigg]\Bigg)}\;\text{,}
+  \\[1ex]
+  &\;\text{(the scaled total interval-extent),}
   \\[1ex]
   t_e=&\;\phi_q+l_q\;\text{, the end-offset of the }q\text{-th interval,}
   \\[1ex]
@@ -243,24 +245,30 @@ $$
   \\[1ex]
   m_q\Big(f,x,\beta_l,\phi_q,\delta_s,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\delta_s}{l_q}+s_b\Bigg)\;\text{, with constraints}
   \\[1ex]
-  m_q^c\Big(f,x,\beta_l,\phi_q,\phi,\delta_s,\bm{\lambda}_q,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\phi\times\delta_s}{\max{\big(\bm{\lambda}_q,l_q\big)}}+s_b\Bigg)\;\text{, where}\;\lambda_q\geq 0\text{.}
+  m_q^c\Big(f,x,\beta_l,\phi_q,\phi,\delta_s,\bm{\lambda}_q,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\phi\times\delta_s}{\max{\big(\bm{\lambda}_q,l_q\big)}}+s_b\Bigg)\;\text{, where}\;\lambda_q> 0\text{.}
 \end{aligned}
 $$
 
 The model $m_q^c$ now satisfies these properties:
 
-* Each interval has length greater than or equal to $\lambda_q$.
-* The first interval begins at $b$, the last interval ends at $e$.
-* Each interval begins exactly after its predecessor, such there are now overlaps. Intervals are seamlessly strung together.
+* Each interval has length greater than or equal to $\lambda_q$ (which must be strictly positive in all cases to avoid division by zero).
+* The first interval begins at $b$, the last interval ends at $e$ (these parameters are the absolute begin/end of the target-intervals, and hence apply to where onto the reference the query will be mapped to). These parameters can either be constant or learned during optimization, effective allowing open/closed begin- and/or -end time warping.
+* Each interval begins exactly after its predecessor, such there are no overlaps. Intervals are seamlessly strung together.
 * The sum of the lengths of all intervals is equal to $e-b$, due to the normalization with $\phi$.
 
-Note that we define $\max$ in terms of the ramp-function and its derivative, the Heaviside step function:
+Note that we define $\max$ in terms of the ramp-function and its derivative, the Heaviside step function. While the order of $x,\mu$ does not matter for $\max$, it does for the ramp function. In our case, we will assume that $\mu$ represents a constant, and $x$ can be derived for:
 
 $$
 \begin{aligned}
-  max(x,y)\equiv&\;\mathcal{R}(x-y)+y\;\text{, with derivative for}\;x
+  \max{(\mu,x)}\equiv&\;\mathcal{R}(x-\mu)+\mu\;\text{, with derivative for}\;x
   \\[1ex]
-  \frac{\partial\,\mathcal{R}}{\partial\,x}=&\;\mathcal{H}(x-y)
+  \frac{\partial\,\mathcal{R}}{\partial\,x}=&\;\mathcal{H}(x-\mu)\;\text{,}
+  \\[1ex]
+  &\;\text{also, we define}\;\min\;\text{as:}
+  \\[1ex]
+  \min{(\mu,x)}\equiv&\;x-\mathcal{R}(x-\mu)\;\text{, with derivative for}\;x
+  \\[1ex]
+  \frac{\partial\,\mathcal{R}}{\partial\,x}=&\;\mathcal{H}(\mu-x)\;\text{.}
 \end{aligned}
 $$
 
