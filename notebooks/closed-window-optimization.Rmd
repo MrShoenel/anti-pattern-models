@@ -110,7 +110,7 @@ $$
 \begin{aligned}
   f(x)\dots&\;\text{function to be translated,}
   \\[1ex]
-  f'(x)=&\;f\Bigg(\frac{(x - t_b) * (s_e - s_b)}{t_e - t_b} + e_b\Bigg)\;\text{, where}
+  f'(x)=&\;f\Bigg(\frac{(x - t_b) \times (s_e - s_b)}{t_e - t_b} + s_b\Bigg)\;\text{, where}
   \\[1ex]
   s_b,s_e,t_b,t_e\dots&\;\text{begin (b) and end (e) of the source- (s) and target-intervals/supports (t).}
 \end{aligned}
@@ -153,7 +153,7 @@ ggplot() +
 And now we re-define $f$ such that it has the same support as `r_q3`:
 
 ```{r}
-f_prime_proto <- function(x, target_b, target_e, source_b, source_e) {
+f_prime_proto <- function(x, source_b, source_e, target_b, target_e) {
   f((((x - target_b) * (source_e - source_b)) / (target_e - target_b)) + source_b)
 }
 
@@ -177,30 +177,111 @@ curve(f_q3_prime, 0, 1)
 
 ggplot() +
   stat_function(fun = r_q3, aes(color = "r_q3")) +
-  stat_function(fun = f_test, aes(color = "f_q3_prime")) +
+  stat_function(fun = f_q3_prime, aes(color = "f_q3_prime")) +
   geom_vline(xintercept = bounds[2]) +
   geom_vline(xintercept = bounds[3]) +
   xlim(bounds[2:3])
 ```
 
+Another test, squeezing $f$ into the interval $[0.5,1]$:
 
-In practice, we want to re-define $f$, such that we scale and translate it in a way that its support and the reference support perfectly overlap.:
+```{r}
+f_q3_test <- function(x) {
+  f_prime_proto(x, source_b = 0, source_e = 1, target_b = .5, target_e = 1)
+}
+
+f_q3_test2 <- function(x) {
+  f_prime_proto(x, source_b = .55, source_e = .7, target_b = 0, target_e = 1)
+}
+
+curve(f, 0, 1)
+curve(f_q3_test, 0, 1)
+curve(f_q3_test2, 0, 1)
+```
+
+
+## Model formulation
+
+In practice, we want to re-define $f$, such that we scale and translate it in a way that its support and the reference support perfectly overlap. This will be done using above expression to derive $f$ into $f'$. Also, we our model to satisfy additional constraints, without having to use regularization or (in-)equality constraints. These constraints are:
+
+* All intervals must have a length greater than $0$ (or any arbitrary positive number).
+* The lengths of all intervals must sum up to $1$.
+
+During unconstrained optimization, there is no way to enforce these constraints, but we can build these into our model! To satisfy the first constraint, we will replace using any $l_q$ directly by $\max{(\lambda_q,l_q)}$ (where $\lambda$ is the lower bound for interval $q$ and $>0$). This could however lead to the sum of all such lengths being greater than the extent of the support. The solution to the second constraint will satisfy this, by normalizing all lengths using the sum of all lengths. This way, lengths are converted to ratios.
+
+First we define the new model _without_ the built-in constraints:
 
 $$
 \begin{aligned}
-  f'_q=&\;f\Big(\bm{\theta}_q\times(x-\phi_q)\times\bm{\vartheta}_q^{-1}+\bm{\sigma}_q\Big)\;\text{, where}
+  b\dots&\;\text{the offset of the first interval (usually}\;0\text{),}
   \\[1ex]
-  \bm{\theta}_q=&\;\dots\text{, the length of the reference-interval,}
+  e\dots&\;\text{the end of the last interval (usually}\;1\text{), also}\;e>b\text{,}
   \\[1ex]
-  \bm{\sigma}_q=&\;\dots\text{, the offset of the reference-interval,}
+  \theta_b,\theta_e,\theta_d\dots&\;\text{absolute min/max for}\;b,e\;\text{and min-distance between them,}
   \\[1ex]
-  \phi_q=&\;\begin{cases}
+  &\;\text{where}\;\theta_d\geq 0\;\land\;\theta_b<\theta_e\;\text{,}
+  \\[1ex]
+  \beta_l=&\;\min{\bigg(\max{\Big(\theta_b, \min{(b,e)}\Big)}, \beta_u-\frac{\theta_d}{2}\bigg)}\;\text{, lower boundary of}\;b,e\text{,}
+  \\[1ex]
+  \beta_u=&\;\max{\bigg(\min{\Big(\theta_e,\max{(b,e)}\Big)}, \beta_l+\frac{\theta_d}{2}\bigg)}\;\text{, upper boundary of}\;b,e\text{,}
+  \\[1em]
+  l_q\dots&\;\text{the length of the }q\text{-th interval,}
+  \\[1ex]
+  t_b=\phi_q\equiv&\;\beta_l+\begin{cases}
     0,&\text{if}\;q=1,
     \\
-    \sum_{j=1}^{q-1}\bm{\vartheta}_j,&\text{otherwise.}
-  \end{cases}\text{(the sum of lengths of preceding intervals)}
+    \sum_{i=1}^{q-1}\,\max{(\bm{\lambda}_i,l_i)},&\text{otherwise}
+  \end{cases}\;,
+  \\[1ex]
+  &\;\text{(the sum of the lengths of all preceding intervals),}
+  \\[1ex]
+  \phi=&\;(\beta_u-\beta_l)\times\max{\Bigg(\theta_d,\Bigg[\sum_{j=1}^{\max{(Q)}}\,\max{(\bm{\lambda}_j,l_j)}\Bigg]\Bigg)}\;\text{, the scaled total interval-extent,}
+  \\[1ex]
+  t_e=&\;\phi_q+l_q\;\text{, the end-offset of the }q\text{-th interval,}
+  \\[1ex]
+  \delta_s=&\;s_e-s_b\;\text{, the extent of the source-interval,}
+  \\[1ex]
+  m_q\Big(f,x,\beta_l,\phi_q,\delta_s,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\delta_s}{l_q}+s_b\Bigg)\;\text{, with constraints}
+  \\[1ex]
+  m_q^c\Big(f,x,\beta_l,\phi_q,\phi,\delta_s,\bm{\lambda}_q,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\phi\times\delta_s}{\max{\big(\bm{\lambda}_q,l_q\big)}}+s_b\Bigg)\;\text{, where}\;\lambda_q\geq 0\text{.}
 \end{aligned}
 $$
+
+The model $m_q^c$ now satisfies these properties:
+
+* Each interval has length greater than or equal to $\lambda_q$.
+* The first interval begins at $b$, the last interval ends at $e$.
+* Each interval begins exactly after its predecessor, such there are now overlaps. Intervals are seamlessly strung together.
+* The sum of the lengths of all intervals is equal to $e-b$, due to the normalization with $\phi$.
+
+Note that we define $\max$ in terms of the ramp-function and its derivative, the Heaviside step function:
+
+$$
+\begin{aligned}
+  max(x,y)\equiv&\;\mathcal{R}(x-y)+y\;\text{, with derivative for}\;x
+  \\[1ex]
+  \frac{\partial\,\mathcal{R}}{\partial\,x}=&\;\mathcal{H}(x-y)
+\end{aligned}
+$$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
