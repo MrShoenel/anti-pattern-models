@@ -231,7 +231,7 @@ $$
   \\[1em]
   l_q\dots&\;\text{the length of the }q\text{-th interval,}
   \\[1ex]
-  t_b=\phi_q\equiv&\;\beta_l+\begin{cases}
+  t_b=\phi_q\equiv&\;\begin{cases}
     0,&\text{if}\;q=1,
     \\
     \sum_{i=1}^{q-1}\,\max{(\bm{\lambda}_i,l_i)},&\text{otherwise}
@@ -253,12 +253,36 @@ $$
 \end{aligned}
 $$
 
+It is important to create a fully-expanded version of the model $m_q^c$, to better understand its gradient later. Fully expanded, the model $m_q^c$ is given as:
+
+$$
+\begin{aligned}
+  m_q^c(\dots)=f\Bigg(s_b\;+\;&\bigg(\delta_s
+  \\[1ex]
+  &\times\bigg(x-\beta_l-\overbrace{\Big(\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{q-1},l_{q-1})}\Big)}^{\phi_q\;\text{(sum of all preceding intervals' lengths;}\;0\;\text{if}\;q=1\text{)}}\bigg)
+  \\[1ex]
+  &\times\overbrace{(\beta_u-\beta_l)\times\max{\Big(\theta_d,\;\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{\max{(Q)}},l_{\max{(Q)}})}\Big)}}^{\phi\;\text{(sum of all intervals' minimum lengths)}}
+  \\[1ex]
+  &\times\max{\big(\bm{\lambda}_q,l_q\big)}^{-1}\bigg)\Bigg)
+\end{aligned}
+$$
+
 The model $m_q^c$ now satisfies these properties:
 
 * Each interval has a length greater than or equal to $\bm{\lambda}_q$ (which must be strictly positive in all cases to avoid division by zero).
-* The first interval begins at $\beta_l$, the last interval ends at $\beta_u$ (these parameters are the absolute begin/end of the target-intervals, and hence apply to where onto the reference the query will be mapped to). These parameters can either be constant or learned during optimization, effective allowing open/closed begin- and/or -end time warping.
+* The first interval begins at $\beta_l$, the last interval ends at $\beta_u$ (these parameters are the absolute begin/end of the target-intervals, and hence apply to where onto the reference the query will be mapped to). These parameters can either be constant or learned during optimization, effectively allowing open/closed begin- and/or -end time warping.
 * Each interval begins exactly after its predecessor, such that there are no overlaps. Intervals are seamlessly strung together.
 * The sum of the lengths of all intervals is normalized and then re-scaled using $\phi$, considering the constraints of $\theta_d$ and the minimum length of each $q$-th interval (using its corresponding $\bm{\lambda}_q$).
+
+### Reference vs. Query
+
+Thus far, we have made the difference between these two notions. The implicit assumption thus far was, that the reference is constant, i.e., once given as a pattern, it is never altered, and the query is warped to it. I came across the important difference while thinking about closed- vs. open -begin and/or -end time warping: In the closed case, the __whole__ query is warped onto the __whole__ reference, i.e., both signals have to be used to their full extent. If, however, the begin or end (or both) are open, only a portion of the query is used to match still the entire reference. So, not only is the reference constant, it also has to be matched wholly, i.e., all of its reference-intervals need to be used. This raises two important points.
+
+First, regarding the differences between both signals during warping, we should propose more appropriate names. I suggest __"Warping Pattern"__ for the constant signal that has to be used in its entirety, and __"Warping Candidate"__ for the signal that is translated and scaled to be closest to the Warping Pattern.
+
+Second, in some cases it may be useful __not__ to use the entire Warping Pattern. In this case, both signals can simply be swapped with each other, and a non-closed model is fit. After fitting, the warping path is inverted. Also, this is how DTW works, one signal has to be mapped in full. This flipping case is useful to find a sub-support of the Warping Pattern within the Warping Candidate.
+
+### Min/Max as ramp function
 
 Note that we define $\max$ in terms of the ramp-function and its derivative, the Heaviside step function. While the order of $x,\mu$ does not matter for $\max$, it does for the ramp function. In our case, we will assume that $\mu$ represents a constant, and $x$ can be derived for:
 
