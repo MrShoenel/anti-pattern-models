@@ -223,11 +223,11 @@ $$
   \\[1ex]
   \theta_b,\theta_e,\theta_d\dots&\;\text{absolute min/max for}\;b,e\;\text{and min-distance between them,}
   \\[1ex]
-  &\;\text{where}\;\theta_d\geq 0\;\land\;\theta_b<\theta_e\;\text{,}
+  &\;\text{where}\;\theta_d\geq 0\;\land\;\theta_b+\theta_d\leq\theta_e\;\text{,}
   \\[1ex]
-  \beta_l=&\;\min{\bigg(\max{\Big(\theta_b, \min{(b,e)}\Big)}, \beta_u-\frac{\theta_d}{2}\bigg)}\;\text{, lower boundary of}\;b,e\text{,}
+  \beta_l=&\;\min{\Big(\theta_e-\theta_d,\max{\big(\theta_b, \min{(b,e)}\big)}\Big)}\;\text{, lower boundary as of}\;b,e\text{,}
   \\[1ex]
-  \beta_u=&\;\max{\bigg(\min{\Big(\theta_e,\max{(b,e)}\Big)}, \beta_l+\frac{\theta_d}{2}\bigg)}\;\text{, upper boundary of}\;b,e\text{,}
+  \beta_u=&\;\max{\Big(\theta_b+\theta_d,\min{\big(\theta_e, \max{(b,e)}\big)}\Big)}\;\text{, upper boundary as of}\;b,e\text{,}
   \\[1em]
   l_q\dots&\;\text{the length of the }q\text{-th interval,}
   \\[1ex]
@@ -259,9 +259,11 @@ $$
 \begin{aligned}
   m_q^c(\dots)=f\Bigg(s_b\;+\;&\bigg(\delta_s
   \\[1ex]
-  &\times\bigg(x-\beta_l-\overbrace{\Big(\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{q-1},l_{q-1})}\Big)}^{\phi_q\;\text{(sum of all preceding intervals' lengths;}\;0\;\text{if}\;q=1\text{)}}\bigg)
+  &\times\bigg(x-\overbrace{\min{\Big(\theta_e-\theta_d,\max{\big(\theta_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}-\overbrace{\Big(\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{q-1},l_{q-1})}\Big)}^{\phi_q\;\text{(sum of all preceding intervals' lengths;}\;0\;\text{if}\;q=1\text{)}}\bigg)
   \\[1ex]
-  &\times\overbrace{(\beta_u-\beta_l)\times\max{\Big(\theta_d,\;\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{\max{(Q)}},l_{\max{(Q)}})}\Big)}}^{\phi\;\text{(sum of all intervals' minimum lengths)}}
+  &\times\overbrace{\Bigg(\overbrace{\max{\Big(\theta_b+\theta_d,\min{\big(\theta_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\theta_e-\theta_d,\max{\big(\theta_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}\Bigg)}^{\phi^{(e)}\;\text{(extent of}\;\phi\text{)}}
+  \\[1ex]
+  &\times\overbrace{\max{\Big(\theta_d,\;\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{\max{(Q)}},l_{\max{(Q)}})}\Big)}}^{\phi^{(s)}\;\text{(scale of}\;\phi\text{; sum of all intervals' minimum lengths)}}
   \\[1ex]
   &\times\max{\big(\bm{\lambda}_q,l_q\big)}^{-1}\bigg)\Bigg)
 \end{aligned}
@@ -284,21 +286,20 @@ Second, in some cases it may be useful __not__ to use the entire Warping Pattern
 
 ### Min/Max as ramp function
 
-Note that we define $\max$ in terms of the ramp-function and its derivative, the Heaviside step function. While the order of $x,\mu$ does not matter for $\max$, it does for the ramp function. In our case, we will assume that $\mu$ represents a constant, and $x$ can be derived for:
+Note that we define $\min,\max$ in terms of the ramp-function and its derivative, the Heaviside step function.
 
 $$
 \begin{aligned}
-  \max{(\mu,x)}\equiv&\;\mathcal{R}(x-\mu)+\mu\;\text{, with derivative for}\;x
+  \max{(x,y)}\equiv&\;\mathcal{R}(y-x)+x\;\text{, with gradient}
   \\[1ex]
-  \frac{\partial\,\mathcal{R}}{\partial\,x}=&\;\mathcal{H}(x-\mu)\;\text{,}
+  \nabla\,\mathcal{R}(y-x)+x=\Bigg[\frac{\partial\,\mathcal{R}(\cdot)}{\partial\,x},\frac{\partial\,\mathcal{R}(\cdot)}{\partial\,y}\Bigg]=&\;\Bigg[\mathcal{H}(x-y)\;,\;\mathcal{H}(y-x)\Bigg]\;\text{, also, we define}\;\min\;\text{as:}
   \\[1ex]
-  &\;\text{also, we define}\;\min\;\text{as:}
+  \min{(x,y)}=&\;\,y-\mathcal{R}(y-x)\;\text{, with gradient}
   \\[1ex]
-  \min{(\mu,x)}\equiv&\;x-\mathcal{R}(x-\mu)\;\text{, with derivative for}\;x
-  \\[1ex]
-  \frac{\partial\,\mathcal{R}}{\partial\,x}=&\;\mathcal{H}(\mu-x)\;\text{.}
+  \nabla\,y-\mathcal{R}(y-x)=\Bigg[\frac{\partial\,\mathcal{R}(\cdot)}{\partial\,x},\frac{\partial\,\mathcal{R}(\cdot)}{\partial\,y}\Bigg]=&\;\Bigg[\mathcal{H}(y-x)\;,\;\mathcal{H}(x-y)\Bigg]\;\text{.}
 \end{aligned}
 $$
+
 
 ## Overall model formulation
 
