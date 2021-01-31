@@ -9,6 +9,7 @@ output:
     toc: true
     toc_depth: 6
     df_print: kable
+    keep_tex: true
   html_document:
     number_sections: true
     toc: true
@@ -21,6 +22,8 @@ output:
     df_print: kable
   word_document: default
 ---
+
+\newcommand{\norm}[1]{\left\lvert#1\right\rvert}
 
 ```{r echo=FALSE, warning=FALSE}
 source(file = "../helpers.R")
@@ -37,6 +40,7 @@ In this notebook, we will go back to our initial Fire Drill (FD) problem, and de
 Initially I thought the answer would be using dynamic time Warping, but it is not suitable for an analytical solution (actually, closed-form expression). What makes our problem a bit special are the following:
 
 * __Reference__ and __Query__ signal have the same support: The FD is an AP that spans the entire project, start to finish. Matching must be attempted at the very beginning of the data, and is concluded at the very end. The query signal is scaled such that the extent of its support is the same as the reference's.
+  * As we will see later, this constraint is optionally relaxed by allowing to the query-signal to cover a proper sub-support of the reference using open begin-/ and/or -end time warping.
 * All data has to be used: We can apply local time warping to the query signal, but nothing can be left out. The warping may even result in a length of zero of some intervals, but they must not be negative.
 
 
@@ -74,10 +78,10 @@ The first plot is the reference pattern, the second is a random project. All dat
 
 In order to understand this problem, we need to make some statements:
 
-* The reference pattern is subdivided into intervals by some boundaries (blue in the above plot). The data in each such interval is considered __constant__. That means, if we were to sample from that interval, these samples would always be identical. If we were to look at each interval as a function, then it always show the same behavior. Each interval has its own __support__.
+* The reference pattern is subdivided into intervals by some boundaries (blue in the above plot). The data in each such interval is considered __constant__. That means, if we were to sample from that interval, these samples would always be identical. If we were to look at each interval as a function, then it will always show the same behavior. Each interval has its own __support__.
 * The first interval starts at $0$ and the last interval ends at $1$ (we always expect that all data has been scaled and translated to $[0,1]$ prior to this, to keep things simple).
 * Any and all variables are strictly __positive__, with a co-domain of $[0,1]$ as well. We require this for reasons of simplification, although negative values would be no problem (but require extra effort at this point).
-* An interval's __length__ is never negative. In practice, one may even want to define a minimum length for all or each interval.
+* An interval's __length__ is never negative. In practice, one may even want to define a minimum length for all or for each individual interval.
 * An interval's __offset__ is the sum of the lengths of its preceding intervals. All intervals' lengths sum up to $1$.
 
 To find the sub-support of the query that best matches a variable (or many) in an interval, the query signal is translated and scaled. Another way to think about this is that the query signal is translated and only valid in the support that starts with the translate, and ends there plus the length of the current interval. I mention this because this is how we will begin.
@@ -92,17 +96,17 @@ $$
 \end{aligned}
 $$
 
-During optimization, the goal is to find the best length for each interval. Assuming a given vector that contains these four lengths, $\bm{\vartheta}$, we get:
+During optimization, the goal is to find the best length for each interval. Assuming a given vector that contains these four lengths, $\bm{\vartheta}^{(l)}$, we get:
 
 $$
 \begin{aligned}
   f_q=&\;f(\cdot)\;\text{, query-signal for interval}\;q,
   \\[1ex]
-  \text{supp}(f_q)=&\;\big\{\;x\in\mathbb{R}\;\rvert\;x\geq0\;\land\;x<\bm{\vartheta}_q\;\big\}\;\text{, the support of}\;f_q.
+  \text{supp}(f_q)=&\;\big\{\;x\in\mathbb{R}\;\rvert\;x\geq0\;\land\;x<\bm{\vartheta}^{(l)}_q\;\big\}\;\text{, the support of}\;f_q.
 \end{aligned}
 $$
 
-The supports will always almost differ (especially for $q>1$). For the discrete case this may not be important, because the model may choose to always take the same amount of equidistantly-spaced samples from the reference- and query-intervals, regardless of the support. This is essentially the same as scaling and translating the query-support to be the same as the reference support. This is what would be required for the continuous case.
+The supports will almost always differ (especially for $q>1$). For the discrete case this may not be important, because the model may choose to always take the same amount of equidistantly-spaced samples from the reference- and query-intervals, regardless of the support. This is essentially the same as scaling and translating the query-support to be the same as the reference support. This is what would be required for the continuous case.
 
 The result of the previous definition is an __unchanged__ query-signal; however, we specify its support that _corresponds_ to the support of the current reference interval. In general, to translate (and scale) an interval from one offset and length to another offset and length, the expression is:
 
@@ -134,7 +138,7 @@ ggarrange(
 
 We will do a test with $f_q$ and $f'_q$, and set $q$ to $1$ and then to $3$. In the first case, no re-definition of $f$ is required. We only need to define where to query-intervals should be (thus their length).
 
-```{r}
+```{r warning=FALSE}
 # Use these lengths for q=3:
 vt_q3 <- c(0.15, 0.45, 0.1, 0.3)
 
@@ -152,7 +156,7 @@ ggplot() +
 
 And now we re-define $f$ such that it has the same support as `r_q3`:
 
-```{r}
+```{r warning=FALSE}
 f_prime_proto <- function(x, source_b, source_e, target_b, target_e) {
   f((((x - target_b) * (source_e - source_b)) / (target_e - target_b)) + source_b)
 }
@@ -202,12 +206,12 @@ curve(f_q3_test2, 0, 1)
 
 ## Sub-Model formulation
 
-In practice, we want to re-define $f$, such that we scale and translate it in a way that its support and the reference support perfectly overlap. This will be done using above expression to derive $f$ into $f'$. Also, we our model to satisfy additional constraints, without having to use regularization or (in-)equality constraints. These constraints are:
+In practice, we want to re-define $f$, such that we scale and translate it in a way that its support and the reference support perfectly overlap. This will be done using above expression to derive $f$ into $f'$. Also, we want our model to satisfy additional constraints, without having to use regularization or (in-)equality constraints. These constraints are:
 
 * All intervals must have a length greater than $0$ (or any arbitrary positive number).
 * The lengths of all intervals must sum up to $1$.
 
-During unconstrained optimization, there is no way to enforce these constraints, but we can build these into our model! To satisfy the first constraint, we will replace using any $l_q$ directly by $\max{(\lambda_q,l_q)}$ (where $\lambda$ is the lower bound for interval $q$ and $>0$). This could however lead to the sum of all such lengths being greater than the extent of the support. The solution to the second constraint will satisfy this, by normalizing all lengths using the sum of all lengths. This way, lengths are converted to ratios.
+During unconstrained optimization, there is no way to enforce these constraints, but we can build these into our model! To satisfy the first constraint, we will replace using any $l_q$ directly by $\max{(\bm{\lambda}_q,l_q)}$ (where $\bm{\lambda}_q$ is the lower bound for interval $q$ and $>0$). This could however lead to the sum of all such lengths being greater than the extent of the support. The solution to the second constraint will satisfy this, by normalizing all lengths using the sum of all lengths. This way, lengths are converted to ratios.
 
 First we define the new model _without_ the built-in constraints ($m_q$) and then with them ($m_q^c$):
 
@@ -245,16 +249,16 @@ $$
   \\[1ex]
   m_q\Big(f,x,\beta_l,\phi_q,\delta_s,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\delta_s}{l_q}+s_b\Bigg)\;\text{, with constraints}
   \\[1ex]
-  m_q^c\Big(f,x,\beta_l,\phi_q,\phi,\delta_s,\bm{\lambda}_q,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\phi\times\delta_s}{\max{\big(\bm{\lambda}_q,l_q\big)}}+s_b\Bigg)\;\text{, where}\;\lambda_q> 0\text{.}
+  m_q^c\Big(f,x,\beta_l,\phi_q,\phi,\delta_s,\bm{\lambda}_q,l_q,s_b\Big)=&\;f\Bigg(\frac{\big(x-\beta_l-\phi_q\big)\times\phi\times\delta_s}{\max{\big(\bm{\lambda}_q,l_q\big)}}+s_b\Bigg)\;\text{, where}\;\bm{\lambda}_q> 0\text{.}
 \end{aligned}
 $$
 
 The model $m_q^c$ now satisfies these properties:
 
-* Each interval has length greater than or equal to $\lambda_q$ (which must be strictly positive in all cases to avoid division by zero).
-* The first interval begins at $b$, the last interval ends at $e$ (these parameters are the absolute begin/end of the target-intervals, and hence apply to where onto the reference the query will be mapped to). These parameters can either be constant or learned during optimization, effective allowing open/closed begin- and/or -end time warping.
-* Each interval begins exactly after its predecessor, such there are no overlaps. Intervals are seamlessly strung together.
-* The sum of the lengths of all intervals is equal to $e-b$, due to the normalization with $\phi$.
+* Each interval has a length greater than or equal to $\bm{\lambda}_q$ (which must be strictly positive in all cases to avoid division by zero).
+* The first interval begins at $\beta_l$, the last interval ends at $\beta_u$ (these parameters are the absolute begin/end of the target-intervals, and hence apply to where onto the reference the query will be mapped to). These parameters can either be constant or learned during optimization, effective allowing open/closed begin- and/or -end time warping.
+* Each interval begins exactly after its predecessor, such that there are no overlaps. Intervals are seamlessly strung together.
+* The sum of the lengths of all intervals is normalized and then re-scaled using $\phi$, considering the constraints of $\theta_d$ and the minimum length of each $q$-th interval (using its corresponding $\bm{\lambda}_q$).
 
 Note that we define $\max$ in terms of the ramp-function and its derivative, the Heaviside step function. While the order of $x,\mu$ does not matter for $\max$, it does for the ramp function. In our case, we will assume that $\mu$ represents a constant, and $x$ can be derived for:
 
@@ -272,7 +276,66 @@ $$
 \end{aligned}
 $$
 
+## Overall model formulation
 
+Now that we have sub-models that are able to transform a section of the query-signal for a given a section of the reference-signal, the logical next step is to define the entire (or overall) model in terms of all intervals. The following is in large parts identical to how we defined it in the notebook _"Boundary Time Warping (final, update)"_.
+
+It is important to once more recall the mechanics of this suggested model:
+
+* The reference signal is segmented into two or more intervals, each with a length $>0$. This segmentation is done using a given vector of _reference-boundaries_.
+  * These intervals are constant, and never changed afterwards. For each variable in each reference-interval, we have a constant segment of the corresponding reference-signal (continuous case), or a constant vector of data.
+* Each $q$-th reference-interval is associated with a $q$-th sub-model. Each such sub-model has access to the whole query-signal and its gradient, and the goal is to translate and scale the query-signal to __best-fit__ the current reference interval (this requires a loss).
+  * The sub-models are designed in a way that the intervals they cover cannot overlap and connect seamlessly, among other criteria (see above).
+
+The input to the overall model is, among the signals, a set of reference- and query-boundaries, which are transformed into vectors of interval lengths. Albeit defined above with the sub-models, the parameters $b,e,\theta_b,\theta_e,\theta_d$ are parameters of the overall model. In practice, it may be more or less convenient to work with boundaries, and internally the overall model uses lengths/ratios, and an absolute offset for the first interval. Both of these concepts are convertible to each other. In the following, we start with a definition that uses boundaries, and then transform them to lengths and an offset.
+
+$$
+\begin{aligned}
+  \mathsf{T}^{(l)}\Big(\bm{\tau}^{(b)}\Big)=&\;\Big\{\;l_1=\bm{\tau}^{(b)}_2-\bm{\tau}^{(b)}_1,\;\dots,\;l_{\norm{\bm{\tau}}-1}=\bm{\tau}^{(b)}_{\norm{\bm{\tau}}}-\bm{\tau}^{(b)}_{\norm{\bm{\tau}}-1}\;\Big\}\;\text{,}
+  \\[0ex]
+  &\;\text{(boundaries-to-lengths transform operator),}
+  \\[1ex]
+  \bm{\theta}^{(b)}\;\dots&\;\text{ordered vector of boundaries, where the first and last boundary together}
+  \\[0ex]
+  &\;\text{represent the support of the signal they subdivide, i.e.,}
+  \\[1ex]
+  \mathcal{X}^r=&\;\Big[\min{\bm{\theta}^{(b)}}\,,\,\max{\bm{\theta}^{(b)}}\Big]\;\text{, the support of the reference-signal,}
+  \\[1ex]
+  \bm{\vartheta}^{(l)}=\mathsf{T}^{(l)}\Big(\bm{\vartheta}^{(b)}\Big)\;\dots&\;\text{the query-intervals as lengths and boundaries,}
+  \\[1ex]
+  \mathcal{X}^q=&\;\Big[\beta_l\,,\,\beta_u\Big]\;\text{, the support of the query-signal,}
+  \\[1ex]
+  q\in Q;\;Q=&\;\Big\{1,\;\dots\;,\norm{\bm{\theta}^{(b)}}-1\Big\}\;\text{, where}\;Q\;\text{is ordered low to high, i.e.,}\;q_i\prec q_{i+1}\text{,}
+  \\[0ex]
+  &\;\text{(boundaries converted to intervals),}
+  \\[1ex]
+  \mathcal{I}\;\dots&\;\text{the set of intervals with length}\;[\max{Q}]\text{, with each interval delimited by}
+  \\[0ex]
+  \mathbf{x}_q\subset\mathcal{X}^q=&\;\Big[\bm{\vartheta}^{(b)}_q\,,\,\bm{\vartheta}^{(b)}_{q+1}\Big)\;\text{, for the first}\;Q-1\;\text{intervals,}
+  \\[0ex]
+  =&\;\Big[\bm{\vartheta}^{(b)}_q\,,\,\bm{\vartheta}^{(b)}_{q+1}\Big]\;\text{, for the last interval; }
+  \\[0ex]
+  &\;\text{proper sub-supports for model}\;m_q\;\text{and its interval}\;\mathbf{x}_q\text{, such that}
+  \\[0ex]
+  &\;\mathbf{x}_q\prec\mathbf{x}_{q+1}\;\text{, i.e., sub-supports are ordered,}
+  \\[1ex]
+  \mathbf{y}_q=&\;r(I_q)\;\text{, the reference data for the}\;q\text{-th interval,}
+  \\[1ex]
+  \mathbf{y}=&\;\Big\{\;\mathbf{y}_1\,\frown\,\dots\,\frown\,\mathbf{y}_q\;\Big\},\;\forall\,q\in Q\;\text{.}
+\end{aligned}
+$$
+
+
+Likewise, we can obtain $\hat{\mathbf{y}}_q$ and concatenate those by calling each sub-model. During optimization, The vector of query-interval-lengths, $\bm{\vartheta}^{(l)}$, is altered. If the model allows either or both, open begin or end, then these parameters are altered, too.
+
+
+$$
+\begin{aligned}
+  \mathbf{\hat{y}}=\mathsf{M}\Big(r,f,\bm{\theta}^{(b)},\bm{\vartheta}^{(l)},&b,e,\theta_b,\theta_e,\theta_d,\bm{\lambda}\Big)=
+  \\[1ex]
+  \Big\{\;&m^c_1(\cdot)\,\frown\,\dots\,\frown\,m^c_q\Big(f,\mathbf{x}_q,\beta_l,\phi_q,\phi,\delta_s,\bm{\lambda}_q,l_q,s_b\Big)\;\Big\},\;\forall\,q\in Q
+\end{aligned}
+$$
 
 
 
