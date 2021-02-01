@@ -253,22 +253,6 @@ $$
 \end{aligned}
 $$
 
-It is important to create a fully-expanded version of the model $m_q^c$, to better understand its gradient later. Fully expanded, the model $m_q^c$ is given as:
-
-$$
-\begin{aligned}
-  m_q^c(\dots)=f\Bigg(s_b\;+\;&\bigg(\delta_s
-  \\[1ex]
-  &\times\bigg(x-\overbrace{\min{\Big(\theta_e-\theta_d,\max{\big(\theta_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}-\overbrace{\Big(\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{q-1},l_{q-1})}\Big)}^{\phi_q\;\text{(sum of all preceding intervals' lengths;}\;0\;\text{if}\;q=1\text{)}}\bigg)
-  \\[1ex]
-  &\times\overbrace{\Bigg(\overbrace{\max{\Big(\theta_b+\theta_d,\min{\big(\theta_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\theta_e-\theta_d,\max{\big(\theta_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}\Bigg)}^{\phi^{(e)}\;\text{(extent of}\;\phi\text{)}}
-  \\[1ex]
-  &\times\overbrace{\max{\Big(\theta_d,\;\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{\max{(Q)}},l_{\max{(Q)}})}\Big)}}^{\phi^{(s)}\;\text{(scale of}\;\phi\text{; sum of all intervals' minimum lengths)}}
-  \\[1ex]
-  &\times\max{\big(\bm{\lambda}_q,l_q\big)}^{-1}\bigg)\Bigg)
-\end{aligned}
-$$
-
 The model $m_q^c$ now satisfies these properties:
 
 * Each interval has a length greater than or equal to $\bm{\lambda}_q$ (which must be strictly positive in all cases to avoid division by zero).
@@ -362,10 +346,121 @@ $$
 \end{aligned}
 $$
 
+Instead of returning a discrete vector for each sub-model, $\mathbf{\hat{y}}_q$, in practice we probably want to return a tuple with the sub-model function, the support of it, as well as the relative length of its interval, i.e., $\langle m_q^c,\text{supp}(q),l_q^{\text{rel}} \rangle$. The advantage is, that any loss function can decide how to sample from this function, or even do numerical integration.
+
+## Gradient of the model
+
+We have previously shown the sub-model with built-in constraints, $m_q^c$. We have quite many $\min,\max$-expressions and dynamically-long sums in our model, and for a symbolic solution, we suggest to expand all terms to create a sum, where each term can be derived for separately. Before we get there, however, it makes sense to derive some of the recurring expressions, so that we can later just plug them in.
+
+It is important to create a fully-expanded version of the model $m_q^c$, to better understand its gradient. Fully expanded, the model $m_q^c$ is given as:
+
+$$
+\begin{aligned}
+  m_q^c(\dots)=f\Bigg(s_b\;+\;&\bigg(\delta_s
+  \\[1ex]
+  &\times\bigg(x-\overbrace{\min{\Big(\theta_e-\theta_d,\max{\big(\theta_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}-\overbrace{\Big(\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{q-1},l_{q-1})}\Big)}^{\phi_q\;\text{(sum of all preceding intervals' lengths;}\;0\;\text{if}\;q=1\text{)}}\bigg)
+  \\[1ex]
+  &\times\overbrace{\Bigg(\overbrace{\max{\Big(\theta_b+\theta_d,\min{\big(\theta_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\theta_e-\theta_d,\max{\big(\theta_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}\Bigg)}^{\phi^{(e)}\;\text{(extent of}\;\phi\text{)}}
+  \\[1ex]
+  &\times\overbrace{\max{\Big(\theta_d,\;\max{(\bm{\lambda}_1,l_1)}+\;\dots\;+\max{(\bm{\lambda}_{\max{(Q)}},l_{\max{(Q)}})}\Big)}}^{\phi^{(s)}\;\text{(scale of}\;\phi\text{; sum of all intervals' minimum lengths)}}
+  \\[1ex]
+  &\times\max{\big(\bm{\lambda}_q,l_q\big)}^{-1}\bigg)\Bigg)
+\end{aligned}
+$$
+
+In the remainder of this section, we will step-wise produce a gradient of the open begin- and -end model $m_{q=4}^c$ (meaning that there is a gradient for $b,e$, too). The reason to use $q=4$ is simple: This guarantees that $\phi_q$ is not zero (and that we can effortlessly see what would happen if $q=1$), and the $\phi$ is not zero, either. Recall the overall model, and how it is composed of these sub-models. If we have four intervals, we get for sub-models. The difference in these sub-models lies in $\phi_q$, which is different for every $q$-th sub-model ($\phi$ is the same).
+
+The gradient of the overall model has "categories", meaning that partial derivation for some of the parameters is very similar:
+
+* Derivation for $b$ or $e$: This is category 1, and affects all terms that use $\beta_l,\beta_u$.
+* Derivation for any $l_r,r<q$: Category 2, this mainly affects $\phi$ and $\phi_q$.
+* Derivation for the current $l_q$: Category 3, affects the denominator and $\phi$.
+
+
+### Expanding the denominator
+
+The denominator for the product/fraction given to $f$ is $\max{(\bm{\lambda_q},l_q)^{-1}}$ (the last factor in the above expansion). It can only be differentiated for $l_q$, as all $\bm{\lambda}$ are constant:
+
+$$
+\begin{aligned}
+  \frac{\partial\,\max{(\bm{\lambda_q},l_q)^{-1}}}{\partial\,l_q}=\frac{\mathcal{H}(l_q-\bm{\lambda}_q)}{(\mathcal{R}(l_q-\bm{\lambda}_q)+\bm{\lambda}_q)^2}
+\end{aligned}
+$$
 
 
 
+### Expanding $\beta_l,\beta_u$
 
+We also should expand $\beta_l,\beta_u$ and do the substitutions for our $\min,\max$ definitions, so that we can derive our model without having to check conditions later:
+
+$$
+\begin{aligned}
+  \beta_l=&\;\overbrace{\min{\Big(\theta_e-\theta_d,\overbrace{\max{\big(\theta_b, \overbrace{\min{(b,e)}}^{s_2=e-\mathcal{R}(e-b)}\big)}\Big)}^{s_1=\mathcal{R}(s_2-\theta_b)+\theta_b}}}^{\beta_l=s_1-\mathcal{R}(s_1-(\theta_e-\theta_d))}\;\text{, rearranged as}
+  \\[1ex]
+  =&\;\overbrace{\mathcal{R}(\overbrace{e-\mathcal{R}(e-b)}^{s_2}-\theta_b)+\theta_b}^{s_1}-\mathcal{R}(\overbrace{\mathcal{R}(\overbrace{e-\mathcal{R}(e-b)}^{s_2}-\theta_b)+\theta_b}^{s_1}-(\theta_e-\theta_d))\;\text{, with gradient}
+  \\[1ex]
+  \bigg[\frac{\partial\,\beta_l}{\partial\,b},\frac{\partial\,\beta_l}{\partial\,e}\bigg]=&\bigg[\;-\mathcal{H}(e-b)\times\mathcal{H}\big(-\mathcal{R}(e-b)-\theta_b+e\big)\times\Big(\mathcal{H}\big(\mathcal{R}(-\mathcal{R}(e-b)-\theta_b+e)+\theta_b-\theta_e-\theta_d\big)-1\Big),
+  \\[0ex]
+  &\;\;\;\;\Big(\mathcal{H}\big(-\mathcal{R}(e-b)-\theta_b+e\big)-1\Big)\times\Big(e\times\mathcal{H}\Big(\mathcal{R}\big(-\mathcal{R}(e-b)-\theta_b+e\big)+\theta_b-\theta_e+\theta_d\Big)-1\Big)\;\bigg]\;\text{.}
+\end{aligned}
+$$
+
+Since we get a lot of Heaviside step functions in these products, evaluation can be stopped early if the result of any is $0$. Here we do the same for $\beta_u$:
+
+$$
+\begin{aligned}
+  \beta_u=&\;\overbrace{\max{\Big(\theta_b+\theta_d,\overbrace{\min{\big(\theta_e,\overbrace{\max{(b,e)}\big)}^{s_2=\mathcal{R}(e-b)+b}}\Big)}^{s_1=s_2-\mathcal{R}(s_2-\theta_e)}}}^{\beta_u=\mathcal{R}(s_1-(\theta_b+\theta_d))+(\theta_b+\theta_d)}\;\text{, rearranged as}
+  \\[1ex]
+  =&\;\mathcal{R}(\overbrace{\overbrace{\mathcal{R}(e-b)+b}^{s_2}-\mathcal{R}(\overbrace{\mathcal{R}(e-b)+b}^{s_2}-\theta_e)}^{s_1}-(\theta_b+\theta_d))+(\theta_b+\theta_d)\;\text{, with gradient}
+  \\[1ex]
+  \bigg[\frac{\partial\,\beta_u}{\partial\,b},\frac{\partial\,\beta_u}{\partial\,e}\bigg]=&\bigg[\;\big(\mathcal{H}(e-b)-1\big)\times\Big(\mathcal{H}\big(\mathcal{R}(e-b)+b-\theta_e\big)-1\Big)
+  \\[0ex]
+  &\;\;\;\;\;\;\;\;\times\mathcal{H}\Big(-\mathcal{R}\big(\mathcal{R}(e-b)+b-\theta_e\big)+\mathcal{R}(e-b)+b-\theta_b-\theta_d\Big),
+  \\[0ex]
+  &\;\;\;\;e-\mathcal{H}(-\mathcal{R}(\mathcal{R}(e-b)+b-\theta_e)+\mathcal{R}(e-b)+b-\theta_b-\theta_d)\;\bigg]\;\text{.}
+\end{aligned}
+$$
+
+
+### Expanding $\phi$
+
+Recall the definition of $\phi=(\beta_u-\beta_l)\times\max{\Bigg(\theta_d,\Bigg[\sum_{j=1}^{\max{(Q)}}\,\max{(\bm{\lambda}_j,l_j)}\Bigg]\Bigg)}$.
+
+As for the final expansion, we want to expand the denominator and $\phi$ together, i.e., $\phi\times\max{(\bm{\lambda_q},l_q)^{-1}}$. All these expansions will lead to very large expressions, and we are starting here to add substitution letters. The expansion with parts $j,k$ is:
+
+$$
+\begin{aligned}
+  f\Big(s_b+\Big[\;\dots\;\times&\overbrace{\phi\times\max{(\bm{\lambda_q},l_q)}^{-1}}^{\text{(will become}\;[j-k]\text{ after expansion)}}\;\Big]\Big)
+  \\[1ex]
+  f\Big(s_b+\Big[\;\dots\;\times&\Big(\beta_u\times\max{(\bm{\lambda_q},l_q)}^{-1}-\beta_l\times\max{(\bm{\lambda_q},l_q)}^{-1}\Big)\times\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}
+  \\[1ex]
+  f\Big(s_b+\Big[\;\dots\;\times&\Bigg(\overbrace{\bigg(\beta_u\times\max{(\bm{\lambda_q},l_q)}^{-1}\times\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}\bigg)}^{j}
+  \\[0ex]
+  &\;\;\;\;-\overbrace{\bigg(\beta_l\times\max{(\bm{\lambda_q},l_q)}^{-1}\times\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}\bigg)}^{k}\Bigg)
+\end{aligned}
+$$
+
+
+
+### Expanding $m_{q=4}^c$
+
+The goal is to fully expand the current sub-model into a big sum, where we can effortlessly derive each term separately. We also have now all of the sub-expressions and their partial gradient. Here we continue to assign substitution letters so that we can derive the model more easily.
+
+$$
+\begin{aligned}
+  m_{q=4}^c=&\;f\bigg(s_b+\frac{(x-\beta_l-\phi_q)\times\delta_s\times\phi}{\max{(\bm{\lambda_q},l_q)}}\bigg)
+  \\[1ex]
+  =&\;f\bigg(s_b+\frac{(\delta_sx-\delta_s\beta_l-\delta_s\phi_q)\times\phi}{\max{(\bm{\lambda_q},l_q)}}\bigg)
+  \\[1ex]
+  =&\;f\Big(s_b+\Big[\;\overbrace{\delta_sx-\delta_s\beta_l-\overbrace{\delta_s\max{(\bm{\lambda_1},l_1)}-\delta_s\max{(\bm{\lambda_2},l_2)}-\delta_s\max{(\bm{\lambda_3},l_3)}}^{\phi_{q=4}}}^{(a-b-c-d-e)}\;\times\overbrace{\phi\times\max{(\bm{\lambda_q},l_q)}^{-1}}^{(j-k)}\;\Big]\Big)
+  \\
+  \vdots
+  \\
+  =&\;f\Big(s_b+aj-ak-bj+bk-cj+ck-dj+dk-ej+ek\Big)\;\text{.}
+\end{aligned}
+$$
+
+The final expression for our model is now much more convenient to work with.
 
 
 
