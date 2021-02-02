@@ -408,6 +408,13 @@
       "Repository": "CRAN",
       "Hash": "e9a2bbaed801170abc3c6c8f1c1377e2"
     },
+    "dotCall64": {
+      "Package": "dotCall64",
+      "Version": "1.0-0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "ff2d17af3ab74328428e9eb7ada7255d"
+    },
     "dplyr": {
       "Package": "dplyr",
       "Version": "1.0.2",
@@ -456,6 +463,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "dad6793a5a1f73c8e91f1a1e3e834b05"
+    },
+    "fields": {
+      "Package": "fields",
+      "Version": "11.6",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "5776b45f328a01ed636407bc0fb78613"
     },
     "filehash": {
       "Package": "filehash",
@@ -709,6 +723,13 @@
       "Repository": "CRAN",
       "Hash": "1bb58822a20301cee84a41678e25d9b7"
     },
+    "maps": {
+      "Package": "maps",
+      "Version": "3.3.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "392212982257ea03c37b63547dc871b4"
+    },
     "maptools": {
       "Package": "maptools",
       "Version": "1.0-2",
@@ -813,6 +834,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "406db947a3721d059635aaa04e6d051a"
+    },
+    "optimParallel": {
+      "Package": "optimParallel",
+      "Version": "1.0-1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "064828f6e24f51a221b4772284962f12"
     },
     "pROC": {
       "Package": "pROC",
@@ -1114,6 +1142,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "3290eebc34ba4df5e213878d54c1e623"
+    },
+    "spam": {
+      "Package": "spam",
+      "Version": "2.6-0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "ded42bddce644a27e9a0c65045f29874"
     },
     "statmod": {
       "Package": "statmod",
