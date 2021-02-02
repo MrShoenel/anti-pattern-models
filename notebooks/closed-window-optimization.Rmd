@@ -383,7 +383,9 @@ The denominator for the product/fraction given to $f$ is $\max{(\bm{\lambda_q},l
 
 $$
 \begin{aligned}
-  \frac{\partial\,\max{(\bm{\lambda_q},l_q)^{-1}}}{\partial\,l_q}=\frac{\mathcal{H}(l_q-\bm{\lambda}_q)}{(\mathcal{R}(l_q-\bm{\lambda}_q)+\bm{\lambda}_q)^2}
+  \max{(\bm{\lambda}_q,l_q)}^{-1}=&\;\Big(\mathcal{R}(l_q-\bm{\lambda}_q)+\bm{\lambda}_q\Big)^{-1}\;\text{, with derivative for}\;l_q
+  \\[1ex]
+  \frac{\partial\,\max{(\bm{\lambda}_q,l_q)}^{-1}}{\partial\,l_q}=&\;\frac{\mathcal{H}(l_q-\bm{\lambda}_q)}{\Big(\mathcal{R}(l_q-\bm{\lambda}_q)+\bm{\lambda}_q\Big)^2}
 \end{aligned}
 $$
 
@@ -434,12 +436,33 @@ $$
   \\[1ex]
   f\Big(s_b+\Big[\;\dots\;\times&\Big(\beta_u\times\max{(\bm{\lambda_q},l_q)}^{-1}-\beta_l\times\max{(\bm{\lambda_q},l_q)}^{-1}\Big)\times\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}
   \\[1ex]
-  f\Big(s_b+\Big[\;\dots\;\times&\Bigg(\overbrace{\bigg(\beta_u\times\max{(\bm{\lambda_q},l_q)}^{-1}\times\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}\bigg)}^{j}
+  f\Big(s_b+\Big[\;\dots\;\times&\Bigg(\overbrace{\bigg(\beta_u\times\max{(\bm{\lambda_q},l_q)}^{-1}\times\overbrace{\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}\bigg)}^{\phi^{(s)}}}^{j}
   \\[0ex]
-  &\;\;\;\;-\overbrace{\bigg(\beta_l\times\max{(\bm{\lambda_q},l_q)}^{-1}\times\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}\bigg)}^{k}\Bigg)
+  &\;\;\;\;-\overbrace{\bigg(\beta_l\times\max{(\bm{\lambda_q},l_q)}^{-1}\times\overbrace{\max{(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)})}\bigg)}^{\phi^{(s)}}}^{k}\Bigg)
 \end{aligned}
 $$
 
+Previously, we split $\phi$ into $\phi^{(e)}$ and $\phi^{(s)}$, which represent the portions _extent_ and _scale_ of it. The extent only consists of $(\beta_u-\beta_l)$, and we have already derived them. The scale expression is a nested $\max$ with a summation inside, that affects $\forall\,l$, regardless of what $q$ equals.
+
+$$
+\begin{aligned}
+  \phi^{(s)}=&\;\max{\Bigg(\theta_d,\Bigg[\sum_{i=1}^{\max{(Q)}}\,\max{(\bm{\lambda}_i,l_i)}\Bigg]\Bigg)}
+  \\[1ex]
+  =&\;\max{\Big(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)}\Big)}\;\text{, (for}\;q=4\text{),}
+  \\[1ex]
+  =&\;\overbrace{\mathcal{R}\Big(\Big[\;\overbrace{\mathcal{R}(l_1-\bm{\lambda}_1)+\bm{\lambda}_1}^{\text{(first }\max\text{ of summation)}}+\;\dots\;+\overbrace{\mathcal{R}(l_4-\bm{\lambda}_4)+\bm{\lambda}_4}^{\text{(}n\text{-th }\max\text{ of summation)}}\;\Big]-\theta_d\Big)+\theta_d}^{\text{(outer }\max\text{; recall that }\max{(x,y)=\mathcal{R}(y-x)+x}\text{)}}\;\text{.}
+\end{aligned}
+$$
+
+In the above expansion, $\theta_d$ is a constant defined at initialization time, and the same is true for $\bm{\lambda}$. However, $\phi^{(s)}$ will appear in each part of the model as we see later, and its gradient is sensitive $\forall\,l$, i.e., not just for, e.g., $l_q$ or $\forall\,l_r,r<q$. However, since it is the summation that will be affected, and since it does the same $\forall\,l$, the gradient, conveniently, will be the same for each.
+
+$$
+\begin{aligned}
+  \nabla\,\phi^{(s)}=&\;\frac{\partial\,\phi^{(s)}}{\partial\,l_q,\forall\,q\in Q}\;\text{,}
+  \\[1ex]
+  =&\;\mathcal{H}\Big(l_q-\bm{\lambda}_q\Big)\times \mathcal{H}\Big(\Big[\;\overbrace{\mathcal{R}(l_1-\bm{\lambda}_1)+\bm{\lambda}_1+\;\dots\;+R(l_4-\bm{\lambda}_4)+\bm{\lambda}_4}^{\sum_{i=1}^{\max{(Q)}}\,\max{(\bm{\lambda}_i,l_i)}}\;\Big]-\theta_d\Big)\;\text{.}
+\end{aligned}
+$$
 
 
 ### Expanding $m_{q=4}^c$
@@ -460,7 +483,41 @@ $$
 \end{aligned}
 $$
 
-The final expression for our model is now much more convenient to work with.
+The final expression for our model is now much more convenient to work with. It is worth noting that summands with $c$ exist if $q>1$, those with $d$ exist if $q>2$ and so on. Those are essentially what distinguishes each $q$-th sub-model from each other sub-model. For example, sub-model $m_{q=1}^c$ has none of these summands, whereas sub-model $m_{q=2}^c$ has those with $c$, and sub-model $m_{q=3}^c$ additionally has those with $d$ and so on. That is why we chose an example with $q$ up to $4$, to better illustrate the differences.
+
+$$
+\begin{aligned}
+  f\Bigg(&s_b
+  \\[0ex]
+  &+aj=\Big[\;\delta_s\times x\times \overbrace{\beta_u\times\max{(\bm{\lambda}_q,l_q)}^{-1}\times\max{\Big(\theta_d,\max{(\bm{\lambda}_1,l_1)}+\dots+\max{(\bm{\lambda}_4,l_4)}\Big)}}^{j}\;\Big]
+  \\[1ex]
+  &-ak=\Big[\;\delta_s\times x\times\overbrace{\beta_l\times\max{(\bm{\lambda}_q,l_q)}^{-1}\times\max{\Big(\theta_d,\;\dots\;\Big)}}^{k}\;\Big]
+  \\[1ex]
+  &-bj=\Big[\;\delta_s\times\beta_l\times \beta_u\times\max{(\dots)}^{-1}\times\max{(\dots)}\;\Big]
+  \\[1ex]
+  &+bk=\Big[\;\delta_s\times{\beta_l}^2\times{\dots}\times{\dots}\;\Big]
+  \\[1ex]
+  &-cj=\Big[\;\delta_s\times\max{(\bm{\lambda}_1,l_1)}\times\overbrace{\beta_u\times{\dots}\times{\dots}}^{j}\;\Big]
+  \\[1ex]
+  &+ck=\Big[\;\delta_s\times\max{(\bm{\lambda}_1,l_1)}\times\overbrace{\beta_l\times{\dots}\times{\dots}}^{k}\;\Big]
+  \\[1em]
+  &\overbrace{-dj=[\dots]+dk=[\dots]}^{\text{(if }q>1\text{)}}
+  \\[1ex]
+  &\overbrace{-ej=[\dots]+ek=[\dots]}^{\text{(if }q>2\text{)}}
+  \\
+  &\;\;\;\;\vdots
+  \\
+  &\;\text{(}\pm\;\text{additional terms for larger}\;q\text{)}\Bigg)\text{.}
+  \\[1ex]
+\end{aligned}
+$$
+
+The derivation of this model is now straightforward, as we can tackle each summand separately. Also, we have already created the partial derivatives of all sub-expressions earlier. Before we assemble the actual analytical gradient, we will test our model.
+
+
+## Testing the model
+
+
 
 
 
