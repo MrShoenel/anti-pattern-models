@@ -211,7 +211,7 @@ In practice, we want to re-define $f$, such that we scale and translate it in a 
 * All intervals must have a length greater than $0$ (or any arbitrary positive number).
 * The lengths of all intervals must sum up to $1$.
 
-During unconstrained optimization, there is no way to enforce these constraints, but we can build these into our model! To satisfy the first constraint, we will replace using any $l_q$ directly by $\max{(\bm{\lambda}_q,l_q)}$ (where $\bm{\lambda}_q$ is the lower bound for interval $q$ and $>0$). This could however lead to the sum of all such lengths being greater than the extent of the support. The solution to the second constraint will satisfy this, by normalizing all lengths using the sum of all lengths. This way, lengths are converted to ratios.
+During unconstrained optimization, there is no way to enforce these constraints, but we can build these into our model! To satisfy the first constraint, we will replace using any $l_q$ directly by $\max{(\bm{\lambda}_q,l_q)}$ (where $\bm{\lambda}_q$ is the lower bound for interval $q$ and $>0$). This could however lead to the sum of all such lengths being greater than the extent of the support. The solution to the second constraint will satisfy this, by normalizing all lengths using the sum of all lengths. This way, lengths are converted to ratios. Later, using the _target-extent_, these ratios are scaled back to actual lengths.
 
 First we define the new model _without_ the built-in constraints ($m_q$) and then with them ($m_q^c$):
 
@@ -517,7 +517,13 @@ The derivation of this model is now straightforward, as we can tackle each summa
 
 ## Testing the model
 
+The main features of the proposed model are, that it is __self-regularizing__ and optionally allows for half- or full-open window time warping. In code, we will call the model just `SRBTW`, and have the optional openness as setters and getters.
 
+```{r echo=FALSE, message=FALSE}
+source(file = "../models/SRBTW-R6.R")
+```
+
+Before we go any further, we should test the model. When this notebook was started, it was called _Closed-window Optimization_. However, we made some additions to the proposed model that allow partially- or fully-open window optimization. In this section, we will do some testing with the pattern and data we have, focusing on the __adaptive__ (__A__) variable. We will be using the four intervals as defined earlier
 
 
 
