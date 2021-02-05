@@ -556,8 +556,10 @@ Before we go any further, we should test the model. When this notebook was start
 ```{r echo=FALSE, message=FALSE}
 source(file = "../models/SRBTW-R6.R")
 
-vartheta_l <- c(.01,.3,.25,.2)
+# vartheta_l <- c(.25,.275,.25,.225)
 # vartheta_l <- 4:1
+# These are from a JSD-only based fit and quite good!
+vartheta_l <- c(0.4119631, 0.1651927, 0.0737804, 0.3831419)
 
 
 srbtw <- SRBTW$new(
@@ -599,7 +601,7 @@ tempf <- Vectorize(function(x) {
 
 ggplot() +
   stat_function(fun = tempf, xlim = c(0,1), mapping = aes(color="red")) +
-  stat_function(fun = f, xlim = c(0,1))
+  stat_function(fun = r, xlim = c(0,1))
 ```
 
 ```{r}
@@ -622,12 +624,12 @@ objF <- function(x, isGrad = FALSE) {
   })
   
   loss <- 0
-  X <- seq(srbtw$getBeta_l(), srbtw$getBeta_u(), length.out = 1e3)
-  y <- sapply(X, r)
-  y_hat <- sapply(X, tempf)
+  # X <- seq(srbtw$getBeta_l(), srbtw$getBeta_u(), length.out = 1e3)
+  # y <- sapply(X, r)
+  # y_hat <- sapply(X, tempf)
   
   # RSS:
-  loss <- log(1 + sum((y - y_hat)^2))
+  # loss <- log(1 + sum((y - y_hat)^2))
   
   # KL:
   # y <- y - min(y) + .1
@@ -637,14 +639,14 @@ objF <- function(x, isGrad = FALSE) {
   # loss <- sum(na.omit(y * log(y / y_hat)))
   
   # Correlation:
-  eps <- .Machine$double.eps
-  loss <- loss - log(eps + max(0, stat_diff_2_functions_cor_score()(r, tempf) - eps))
+  # eps <- .Machine$double.eps
+  # loss <- loss - log(eps + max(0, stat_diff_2_functions_cor_score()(r, tempf) - eps))
   
-  # Area:
-  loss <- loss - log(area_diff_2_functions_score()(r, tempf))
+  # # Area:
+  # loss <- loss - log(area_diff_2_functions_score()(r, tempf))
   
   # JSD:
-  # loss <- -log(stat_diff_2_functions_symmetric_JSD_score()(r, tempf))
+  loss <- loss - log(stat_diff_2_functions_symmetric_JSD_score()(r, tempf))
   
   
   # R: Open begin/end:
