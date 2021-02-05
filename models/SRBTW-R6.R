@@ -11,7 +11,9 @@ SRBTW <- R6Class(
     openBegin = NULL,
     openEnd = NULL,
     wp = NULL,
-    wr = NULL,
+    wc = NULL,
+    wc_d1 = NULL,
+    wc_d2 = NULL,
     Q = NULL,
     subModels = NULL,
     gamma_bed = NULL,
@@ -27,8 +29,10 @@ SRBTW <- R6Class(
   ),
   
   public = list(
-    initialize = function(wp, wc, theta_b, gamma_bed, lambda, begin, end, openBegin = FALSE, openEnd = FALSE) {
+    initialize = function(wp, wc, theta_b, gamma_bed, lambda, begin, end, openBegin = FALSE, openEnd = FALSE, wc_d1 = NULL, wc_d2 = NULL) {
       stopifnot(is.function(wp) && is.function(wc))
+      stopifnot(missing(wc_d1) || is.null(wc_d1) || is.function(wc_d1))
+      stopifnot(missing(wc_d2) || is.null(wc_d2) || is.function(wc_d2))
       
       # Check theta_b:
       stopifnot(is.vector(theta_b) && is.numeric(theta_b) && !any(is.na(theta_b)) && length(theta_b) >= 2)
@@ -54,6 +58,8 @@ SRBTW <- R6Class(
       
       private$wp <- wp
       private$wc <- wc
+      private$wc_d1 <- wc_d1
+      private$wc_d2 <- wc_d2
       
       private$Q <- seq_len(length.out = length(lambda))
       private$subModels <- list()
@@ -83,18 +89,36 @@ SRBTW <- R6Class(
       private$wc
     },
     
+    getWC_d1 = function() {
+      private$wc_d1
+    },
+    
+    getWC_d2 = function() {
+      private$wc_d2
+    },
+    
+    setAllParams = function(params) {
+      stopifnot(is.vector(params) && is.numeric(params) && !any(is.na(params)) && length(params) == (length(private$thetaB) - 1 + (if (self$isOpenBegin()) 1 else 0) + if (self$isOpenEnd()) 1 else 0))
+      
+      begin <- if (self$isOpenBegin()) params[length(private$thetaB)]
+      end <- if (self$isOpenEnd()) params[length(private$thetaB) + 1]
+      self$setParams(
+        vartheta_l = params[seq_len(length.out = length(private$thetaB) - 1)],
+        begin = begin, end = end)
+    },
+    
     setParams = function(vartheta_l = NULL, begin = NULL, end = NULL) {
-      if (!missing(vartheta_l)) {
+      if (!missing(vartheta_l) && !is.null(vartheta_l)) {
         stopifnot(is.vector(vartheta_l) && is.numeric(vartheta_l) && !any(is.na(vartheta_l)) && length(vartheta_l) == (length(private$thetaB) - 1))
         private$varthetaL <- vartheta_l
       }
       
-      if (!missing(begin)) {
+      if (!missing(begin) && !is.null(begin)) {
         stopifnot(is.numeric(begin) && !is.na(begin))
         private$begin <- begin
       }
       
-      if (!missing(end)) {
+      if (!missing(end) && !is.null(end)) {
         stopifnot(is.numeric(end) && !is.na(end))
         private$end <- end
       }
@@ -268,7 +292,10 @@ SRBTW_SubModel <- R6Class(
       tb_q <- s$getTb_q(q)
       te_q <- s$getTe_q(q)
       delta_t_q <- te_q - tb_q
-      f <- s$getWC()
+      wp <- s$getWP()
+      wc <- s$getWC()
+      wc_d1 <- s$getWC_d1()
+      wc_d2 <- s$getWC_d2()
       
       list(
         q = q,
@@ -285,10 +312,24 @@ SRBTW_SubModel <- R6Class(
         se_q = se_q,
         tb_q = tb_q,
         te_q = te_q,
+        wp = wp,
+        wc = wp,
+        wc_d1 = wc_d1,
+        wc_d2 = wc_d2,
         mqc = function(x) {
           x <- (x - tb_q) * l_q_c / delta_t_q + sb_q
+          # For numeric stability, rounding sometimes makes
+          # x slightly larger or smaller than the boundaries.
           x <- max(beta_l, min(beta_u, x))
-          f(x)
+          wc(x)
+        },
+        mqc_d1 = function(x) {
+          # Gradient of mqc, needs wc, wc_d1
+          stop("TODO")
+        },
+        mqc_d2 = function(x) {
+          # 2nd-order Gradient of mqc, needs wc, wc_d1, wc_d2
+          stop("TODO")
         }
       )
     }
