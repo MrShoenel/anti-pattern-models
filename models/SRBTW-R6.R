@@ -337,6 +337,185 @@ SRBTW_SubModel <- R6Class(
 )
 
 
+SRBTW_Loss <- R6Class(
+  "SRBTW_Loss",
+  
+  lock_objects = FALSE,
+  
+  private = list(
+    srbtw = NULL,
+    params = NULL,
+    intervals = NULL,
+    weight = NULL,
+    continuous = NULL,
+    numSamples = NULL
+  ),
+  
+  public = list(
+    initialize = function(
+      srbtw, intervals = c(), params = NULL, weight = 1, continuous = FALSE,
+      numSamples = if (continuous) NA_integer_ else length(intervals) * 1e3)
+    {
+      stopifnot(R6::is.R6(srbtw))
+      stopifnot(is.logical(continuous))
+      stopifnot(continuous == TRUE || (is.numeric(numSamples) && !is.na(numSamples) && numSamples > 0))
+      
+      private$srbtw <- srbtw
+      
+      if (!missing(intervals)) {
+        private$intervals <- intervals
+      }
+      if (!missing(params)) {
+        self$setParams(params = params)
+      }
+      
+      self$setWeight(weight = weight)
+      private$continuous <- continuous
+      private$numSamples <- numSamples
+    },
+    
+    setParams = function(params) {
+      private$params <- params
+      private$srbtw$setAllParams(params = params)
+      invisible(self)
+    },
+    
+    getParams = function() {
+      stopifnot(is.null(private$params))
+      private$params
+    },
+    
+    setWeight = function(weight) {
+      stopifnot(is.numeric(weight) && !is.na(weight) && weight > 0)
+      private$weight <- weight
+      invisible(self)
+    },
+    
+    compute = function() {
+      stopifnot(length(private$intervals) > 0)
+      
+      lapply(private$intervals, function(q) {
+        private$srbtw$getSubModel(q = q)$asTuple()
+      })
+    },
+    
+    computeGrad = function() {
+      stop("Abstract method")
+    },
+    
+    computeGradNumeric = function() {
+      pracma::grad(f = function(x) {
+        self$setParams(params = x)
+        self$compute()
+      }, x0 = self$getParams())
+    },
+    
+    computeHess = function() {
+      stop("Abstract method")
+    },
+    
+    computeHessNumeric = function() {
+      pracma::hessian(f = function(x) {
+        self$setParams(params = x)
+        self$compute()
+      }, x0 = self$getParams())
+    }
+  )
+)
+
+
+SRBTW_DataLoss <- R6Class(
+  "SRBTW_DataLoss",
+  
+  inherit = SRBTW_Loss,
+  
+  private = list(
+    lossFunc = NULL,
+    lossFuncGrad = NULL,
+    lossFuncHess = NULL
+  ),
+  
+  public = list(
+    initialize = function(
+      srbtw, intervals = c(), params = NULL, weight = 1, continuous = FALSE,
+      numSamples = if (continuous) NA_integer_ else length(intervals) * 1e3,
+      lossFunc = NULL, lossFuncGrad = NULL, lossFuncHess = NULL
+    ) {
+      super$initialize(
+        srbtw = srbtw, intervals = intervals, params = params,
+        weight = weight, continuous = continuous, numSamples = numSamples)
+      
+      self$setLossFunc(lossFunc = lossFunc)
+      self$setLossFuncGrad(lossFuncGrad = lossFuncGrad)
+      self$setLossFuncHess(lossFuncHess = lossFuncHess)
+    },
+    
+    setLossFunc = function(lossFunc = NULL) {
+      stopifnot(missing(lossFunc) || is.null(lossFunc) || is.function(lossFunc))
+      private$lossFunc <- lossFunc
+      invisible(self)
+    },
+    
+    setLossFuncGrad = function(lossFuncGrad = NULL) {
+      stopifnot(missing(lossFuncGrad) || is.null(lossFuncGrad) || is.function(lossFuncGrad))
+      private$lossFuncGrad <- lossFuncGrad
+      invisible(self)
+    },
+    
+    setLossFuncHess = function(lossFuncHess = NULL) {
+      stopifnot(missing(lossFuncHess) || is.null(lossFuncHess) || is.function(lossFuncHess))
+      private$lossFuncHess <- lossFuncHess
+      invisible(self)
+    },
+    
+    getLossFunc = function() {
+      stopifnot(is.function(private$lossFunc))
+      private$lossFunc
+    },
+    
+    compute = function() {
+      lossFn <- self$getLossFunc()
+      
+      loss <- 0
+      listOfSms <- super$compute()
+      
+      loss <- loss + do.call(
+        what = lossFn, args = list(loss = self, listOfSms = listOfSms))
+      
+      loss
+    },
+    
+    computeGrad = function() {
+      res <- NULL
+      if (is.function(private$lossFuncGrad)) {
+        # Each sm has ::asTuple(), which includes m_q^c and its derivative m_q^c_d1
+        listOfSms <- super$compute()
+        res <- do.call(
+          what = private$lossFuncGrad, args = list(loss = self, listOfSms = listOfSms))
+      } else {
+        res <- self$computeGradNumeric()
+      }
+      
+      res
+    },
+    
+    computeHess = function() {
+      res <- NULL
+      if (is.function(private$lossFuncHess)) {
+        # Each sm has ::asTuple(), which includes m_q^c and its derivatives m_q^c_d1, m_q^c_d2
+        listOfSms <- super$compute()
+        res <- do.call(
+          what = private$lossFuncHess, args = list(loss = self, listOfSms = listOfSms))
+      } else {
+        res <- self$computeHessNumeric()
+      }
+      
+      res
+    }
+  )
+)
+
+
 
 # SRBTW_SubModel$debug("asTuple")
 # SRBTW$debug("initialize")
