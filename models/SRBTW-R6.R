@@ -1,10 +1,11 @@
 library(R6)
 
 
+
 SRBTW <- R6Class(
   "SRBTW",
   
-  lock_objects = TRUE,
+  lock_objects = FALSE,
   
   private = list(
     openBegin = NULL,
@@ -18,7 +19,11 @@ SRBTW <- R6Class(
     begin = NULL,
     end = NULL,
     thetaB = NULL,
-    varthetaL = NULL
+    varthetaL = NULL,
+    
+    checkQ = function(q) {
+      stopifnot(is.numeric(q) && !is.na(q) && q >= min(private$Q) && q <= max(private$Q))
+    }
   ),
   
   public = list(
@@ -37,7 +42,7 @@ SRBTW <- R6Class(
       private$gamma_bed <- gamma_bed
       
       # Check lambda:
-      stopifnot(is.vector(lambda) && is.numeric(lambda) && !any(is.na(lambda)) && length(lambda) == (length(theta_b) - 2))
+      stopifnot(is.vector(lambda) && is.numeric(lambda) && !any(is.na(lambda)) && all(lambda >= 0) && length(lambda) == (length(theta_b) - 1))
       private$lambda <- lambda
       
       # Check b,e: During construction, these need to be valid.
@@ -66,9 +71,7 @@ SRBTW <- R6Class(
     },
     
     getLambda_q = function(q) {
-      stopifnot(is.numeric(q) && !is.na(q))
-      Q <- self$getQ()
-      stopifnot(q >= 1 && q <= Q)
+      private$checkQ(q)
       private$lambda[q]
     },
     
@@ -80,16 +83,9 @@ SRBTW <- R6Class(
       private$wc
     },
     
-    getDelta_q = function(q) {
-      stopifnot(is.numeric(q) && !is.na(q))
-      Q <- self$getQ()
-      stopifnot(q >= 1 && q <= Q)
-      private$thetaB[q + 1] - private$thetaB[q]
-    },
-    
     setParams = function(vartheta_l = NULL, begin = NULL, end = NULL) {
       if (!missing(vartheta_l)) {
-        stopifnot(is.vector(vartheta_l) && is.numeric(vartheta_l) && !any(is.na(vartheta_l)) && length(vartheta_l) == self$getQ())
+        stopifnot(is.vector(vartheta_l) && is.numeric(vartheta_l) && !any(is.na(vartheta_l)) && length(vartheta_l) == (length(private$thetaB) - 1))
         private$varthetaL <- vartheta_l
       }
       
@@ -116,22 +112,23 @@ SRBTW <- R6Class(
       private$end
     },
     
-    getSb_q = function(q) {
-      stopifnot(!is.null(private$varthetaL))
-      stopifnot(is.numeric(q) && !is.na(q))
-      Q <- self$getQ()
-      stopifnot(q >= 1 && q <= Q)
-      
+    getTb_q = function(q) {
+      private$checkQ(q)
       private$thetaB[q]
     },
     
+    getTe_q = function(q) {
+      private$checkQ(q)
+      private$thetaB[q + 1]
+    },
+    
     getLength_q = function(q) {
-      stopifnot(!is.null(private$varthetaL))
-      stopifnot(is.numeric(q) && !is.na(q))
-      Q <- self$getQ()
-      stopifnot(q >= 1 && q <= Q)
-      
+      private$checkQ(q)
       private$varthetaL[q]
+    },
+    
+    getVarthetaL = function() {
+      c(private$varthetaL)
     },
     
     setOpenBegin = function(ob = TRUE) {
@@ -161,13 +158,28 @@ SRBTW <- R6Class(
     getBeta_l = function() {
       gamma_bed <- self$getgamma_bed()
       min(gamma_bed[2] - gamma_bed[3],
-          max(gamma_bed[1], min(begin, end)))
+          max(gamma_bed[1], min(private$begin, private$end)))
     },
     
     getBeta_u = function() {
       gamma_bed <- self$getgamma_bed()
       max(gamma_bed[1] + gamma_bed[3],
-          min(gamma_bed[2], max(begin, end)))
+          min(gamma_bed[2], max(private$begin, private$end)))
+    },
+    
+    getQForX = function(x) {
+      b_l <- self$getBeta_l()
+      b_u <- self$getBeta_u()
+      stopifnot(x >= b_l && x <= b_u)
+      
+      for (q in self$getQ()) {
+        if (x >= private$thetaB[q] && x < private$thetaB[q + 1]) {
+          return(q)
+        }
+      }
+      
+      # x must be == b_u:
+      return(max(self$getQ()))
     },
     
     getPhi = function() {
@@ -176,17 +188,13 @@ SRBTW <- R6Class(
       theta_d <- gamma_bed[3]
       
       lambda <- self$getLambda()
-      X <- seq_len(length.out = self$getQ())
-      fac2 <- max(theta_d, sum(sapply(X = X, FUN = function(q) {
+      fac2 <- max(theta_d, sum(sapply(X = self$getQ(), FUN = function(q) {
         max(lambda[q], self$getLength_q(q))
       })))
     },
     
     getPhi_q = function(q) {
-      stopifnot(!is.null(private$varthetaL))
-      stopifnot(is.numeric(q) && !is.na(q))
-      Q <- self$getQ()
-      stopifnot(q >= 1 && q <= Q)
+      private$checkQ(q)
       
       if (q == 1) {
         return(0)
@@ -197,14 +205,12 @@ SRBTW <- R6Class(
       X <- seq_len(length.out = q - 1)
       sum(sapply(X = X, FUN = function(q) {
         max(lambda[q], self$getLength_q(q))
-      }))
+      })) / (self$getBeta_u() - self$getBeta_l())
     },
     
     
     getSubModel = function(q) {
-      stopifnot(is.numeric(q) && !is.na(q))
-      Q <- self$getQ()
-      stopifnot(q >= 1 && q <= Q)
+      private$checkQ(q)
       
       qs <- paste0(q)
       if (!(qs %in% names(private$subModels))) {
@@ -242,32 +248,56 @@ SRBTW_SubModel <- R6Class(
     asTuple = function() {
       q <- private$q
       s <- private$srbtw
+      vtl <- s$getVarthetaL()
       
       beta_l <- s$getBeta_l()
-      phi_q <- s$getPhi_q(q)
-      phi <- s$getPhi()
-      delta_q <- s$getDelta_q(q)
+      beta_u <- s$getBeta_u()
+      lambda <- s$getLambda()
       l_q <- s$getLength_q(q)
-      lambda_q <- s$getLambda_q(q)
-      sb_q <- s$getSb_q(q)
+      l_prime_q <- max(lambda[q], max(-l_q, l_q))
+      psi <- sum(sapply(s$getQ(), function(i) {
+        max(lambda[i], max(-vtl[i], vtl[i]))
+      }))
+      l_q_c <- l_prime_q / psi * (beta_u - beta_l)
+      
+      phi_q <- if (q == 1) 0 else sum(sapply(seq_len(length.out = q - 1), function(i) {
+        max(lambda[i], max(-vtl[i], vtl[i])) / psi * (beta_u - beta_l)
+      }))
+      sb_q <- beta_l + phi_q
+      se_q <- sb_q + l_q_c
+      tb_q <- s$getTb_q(q)
+      te_q <- s$getTe_q(q)
+      delta_t_q <- te_q - tb_q
       f <- s$getWC()
       
       list(
         q = q,
         beta_l = beta_l,
-        phi_q = phi_q,
-        phi = phi,
-        delta_q = delta_q,
+        beta_u = beta_u,
+        lambda_q = lambda[q],
         l_q = l_q,
+        l_prime_q = l_prime_q,
+        l_q_c = l_q_c,
+        psi = psi,
+        phi_q = phi_q,
+        delta_t_q = delta_t_q,
         sb_q = sb_q,
-        se_q = sb_q + delta_q,
+        se_q = se_q,
+        tb_q = tb_q,
+        te_q = te_q,
         mqc = function(x) {
-          f((x - beta_l - phi_q) * phi * delta_q / max(lambda_q, l_q) + sb_q)
+          x <- (x - tb_q) * l_q_c / delta_t_q + sb_q
+          x <- max(beta_l, min(beta_u, x))
+          f(x)
         }
       )
     }
   )
 )
 
+
+
+# SRBTW_SubModel$debug("asTuple")
+# SRBTW$debug("initialize")
 
 
