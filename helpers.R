@@ -52,6 +52,22 @@ doWithParallelCluster <- function(expr, errorValue = NULL, numCores = parallel::
   return(result)
 }
 
+doWithParallelClusterExplicit <- function(cl, expr, errorValue, stopCl = TRUE) {
+  doSNOW::registerDoSNOW(cl = cl)
+  mev <- missing(errorValue)
+  
+  tryCatch(expr, error = function(cond) {
+    if (mev) cond else errorValue
+  }, finally = {
+    if (stopCl) {
+      parallel::stopCluster(cl)
+      foreach::registerDoSEQ()
+      gc()
+    }
+  })
+}
+
+
 #' Returns a list of seeds used in parallel training with caret. For
 #' repeatability, we need deterministic seeds. The amount depends on
 #' the amounts of hyperparamenters, and number of folds/repeats.

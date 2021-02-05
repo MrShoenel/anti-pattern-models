@@ -252,7 +252,7 @@ $$
   \\[0ex]
   &\;\text{(the corrected (positive) interval-length that is strictly}\;\geq\bm{\lambda}_q\text{),}
   \\[1ex]
-  \psi=&\;\sum_{i=1}^{\max{(Q)}}\,l'_i\;\text{, the sum used to normalize each and every}\;q\text{-th}\;l\text{,}
+  \psi=&\;\sum_{i=1}^{\max{(Q)}}\,l'_i\equiv \bm{l'}^\top\hat{\bm{u}}\;\text{, the sum used to normalize each and every}\;q\text{-th}\;l\text{,}
   \\[1ex]
   l_q^{(c)}=&\;\frac{l'_q}{\psi}\times(\beta_u-\beta_l)\;\text{, corrected, normalized and re-scaled version of}\;l_q\text{,}
   \\[1ex]
@@ -262,8 +262,14 @@ $$
     \sum_{i=1}^{q-1}\,l_i^{(c)},&\text{otherwise}
   \end{cases}\;,
   \\[1ex]
-  &\;\text{(the sum of the lengths of all corrected preceding intervals),}
-  \\[1ex]
+  &\;\text{(the sum of the lengths of all corrected preceding intervals).}
+\end{aligned}
+$$
+
+With all these, we can now formulate the sub-model using the previously used parameters $s_b,s_e,t_b,t_e$ for translation and scaling of one interval (the source) to another interval (the target):
+
+$$
+\begin{aligned}
   s_b^{(q)}=&\;\beta_l+\phi_q\;\text{, and}
   \\[1ex]
   s_e^{(q)}=&\;s_b^{(q)}+l_q^{(c)}\;\text{, begin- and end-offset of the }q\text{-th source-interval,}
@@ -282,11 +288,12 @@ $$
     \sum_{i=1}^{q-1}\,l_i^{(c)},&\text{otherwise}
   \end{cases}}^{\phi_q}\Bigg]}^{s_b^{(q)}}
   \\[0ex]
-  &\;\;\;\;\;\;+\Big(x-t_b^{(q)}\Big)\times{\delta_q^{(t)}}^{-1}\times \overbrace{\max{\Big(\bm{\lambda}_q,\mathcal{R}(2\times l_q)-l_q\Big)}\times\Bigg[\sum_{i=1}^{\max{(Q)}}\,l'_i\Bigg]^{-1}}^{l_q^{(c)}}
+  &\;\;\;\;\;\;+\Big(x-t_b^{(q)}\Big)\times{\delta_q^{(t)}}^{-1}\times \overbrace{\max{\Big(\bm{\lambda}_q,\mathcal{R}(2\times l_q)-l_q\Big)}\times\Bigg[\sum_{i=1}^{\max{(Q)}}\,l'_i\Bigg]^{-1}}^{\text{(recall}\;l_q^{(c)}=\frac{l'_q}{\psi}\times(\beta_u-\beta_l)\text{, here we got}\;l'_q\times\psi^{-1}\text{)}}
   \\[0ex]
   &\;\;\;\;\;\;\times\bigg(\overbrace{\max{\Big(\gamma_b+\gamma_d,\min{\big(\gamma_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\gamma_e-\gamma_d,\max{\big(\gamma_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}\bigg)\Bigg)\;\text{.}
 \end{aligned}
 $$
+
 
 The model $m_q^c$ now satisfies these properties:
 
@@ -339,47 +346,51 @@ $$
   \\[0ex]
   &\;\text{(boundaries-to-lengths transform operator),}
   \\[1ex]
-  \mathcal{X}^r=&\;\Big[\min{\bm{\theta}^{(b)}}\,,\,\max{\bm{\theta}^{(b)}}\Big]\;\text{, the support of the reference-signal,}
+  \mathcal{X}^{(\text{WP})}=&\;\Big[\min{\bm{\theta}^{(b)}}\,,\,\max{\bm{\theta}^{(b)}}\Big]\;\text{, the support of the Warping Pattern's signal,}
   \\[1ex]
   \bm{\vartheta}^{(l)}=\mathsf{T}^{(l)}\Big(\bm{\vartheta}^{(b)}\Big)\;\dots&\;\text{the query-intervals as lengths and boundaries,}
   \\[1ex]
-  \mathcal{X}^q=&\;\Big[\beta_l\,,\,\beta_u\Big]\;\text{, the support of the query-signal,}
+  \mathcal{X}^{(\text{WC})}=&\;\Big[\beta_l\,,\,\beta_u\Big]\;\text{, the support of the Warping Candidate's signal,}
   \\[1ex]
   q\in Q;\;Q=&\;\Big\{1,\;\dots\;,\norm{\bm{\theta}^{(b)}}-1\Big\}\;\text{, where}\;Q\;\text{is ordered low to high, i.e.,}\;q_i\prec q_{i+1}\text{,}
   \\[0ex]
   &\;\text{(boundaries converted to intervals),}
   \\[1ex]
-  \mathcal{I}\;\dots&\;\text{the set of intervals with length}\;[\max{Q}]\text{, with each interval delimited by}
+  \mathcal{I}^{(\text{WP})},\mathcal{I}^{(\text{WC})}\;\dots&\;\text{the set of Warping Pattern- and Candidate-intervals with length}\;[\max{Q}]\text{,}
   \\[0ex]
-  \mathbf{x}_q\subset\mathcal{X}^q=&\;\Big[\bm{\vartheta}^{(b)}_q\,,\,\bm{\vartheta}^{(b)}_{q+1}\Big)\;\text{, for the first}\;Q-1\;\text{intervals,}
+  &\;\text{with each Warping Candidate-interval delimited by}
+  \\[0ex]
+  \mathbf{x}_q^{(\text{WC})}\subset\mathcal{X}^{(\text{WC})}=&\;\Big[\bm{\vartheta}^{(b)}_q\,,\,\bm{\vartheta}^{(b)}_{q+1}\Big)\;\text{, for the first}\;Q-1\;\text{intervals,}
   \\[0ex]
   =&\;\Big[\bm{\vartheta}^{(b)}_q\,,\,\bm{\vartheta}^{(b)}_{q+1}\Big]\;\text{, for the last interval; }
   \\[0ex]
-  &\;\text{proper sub-supports for model}\;m_q\;\text{and its interval}\;\mathbf{x}_q\text{, such that}
+  &\;\text{proper sub-supports for model}\;m_q\;\text{and its interval}\;\mathbf{x}_q^{(\text{WC})}\text{, such that}
   \\[0ex]
-  &\;\mathbf{x}_q\prec\mathbf{x}_{q+1}\;\text{, i.e., sub-supports are ordered,}
+  &\;\mathbf{x}_q^{(\text{WC})}\prec\mathbf{x}_{q+1}^{(\text{WC})}\;\text{, i.e., sub-supports are ordered,}
   \\[1ex]
-  \mathbf{y}_q=&\;r(I_q)\;\text{, the reference data for the}\;q\text{-th interval,}
+  \mathbf{y}_q^{(\text{WP})}=&\;r\Big(I_q^{(\text{WP})}\Big)\;\text{, the reference data for the}\;q\text{-th interval,}
   \\[1ex]
-  \mathbf{y}=&\;\Big\{\;\mathbf{y}_1\,\frown\,\dots\,\frown\,\mathbf{y}_q\;\Big\},\;\forall\,q\in Q\;\text{.}
+  \mathbf{y}=&\;\Big\{\;\mathbf{y}_1^{(\text{WP})}\,\frown\,\dots\,\frown\,\mathbf{y}_q^{(\text{WP})}\;\Big\},\;\forall\,q\in Q\;\text{.}
 \end{aligned}
 $$
 
 
-Likewise, we can obtain $\hat{\mathbf{y}}_q$ and concatenate those by calling each sub-model. During optimization, The vector of query-interval-lengths, $\bm{\vartheta}^{(l)}$, is altered. If the model allows either or both, open begin or end, then these parameters are altered, too.
+Likewise, we can obtain $\hat{\mathbf{y}}_q^{(\text{WC})}$ and concatenate those by calling each sub-model. During optimization, The vector of query-interval-lengths, $\bm{\vartheta}^{(l)}$, is altered. If the model allows either or both, open begin or end, then these parameters are altered, too.
 
 
 $$
 \begin{aligned}
   \mathbf{\hat{y}}=\mathsf{M}\Big(r,f,\bm{\theta}^{(b)},\bm{\vartheta}^{(l)},&b,e,\gamma_b,\gamma_e,\gamma_d,\bm{\lambda}\Big)=
   \\[1ex]
-  \Big\{\;&m^c_1(\cdot)\,\frown\,\dots\,\frown\,m^c_q\Big(f,\mathbf{x}_q,\beta_l,\phi_q,\phi,\delta_q,\bm{\lambda}_q,l_q,s_b^{(q)}\Big)\;\Big\},\;\forall\,q\in Q
+  \Big\{\;&m^c_1(\cdot)\,\frown\,\dots\,\frown\,m^c_q\Big(f,\mathbf{x}^{(\text{WP})}_q,t_b^{q},l_q^{(c)},\delta_q^{(t)},s_b^{(q)}\Big)\;\Big\},\;\forall\,q\in Q
 \end{aligned}
 $$
 
 Instead of returning a discrete vector for each sub-model, $\mathbf{\hat{y}}_q$, in practice we probably want to return a tuple with the sub-model function, the support of it, as well as the relative length of its interval, i.e., $\langle m_q^c,\text{supp}(q),l_q^{\text{rel}} \rangle$. The advantage is, that any loss function can decide how to sample from this function, or even do numerical integration.
 
 ## Gradient of the model
+
+__ATTENTION__: I had previously fixed an error in the model formulation, so that this entire section needs to be reworked. While some parts are still correct, some are not!
 
 We have previously shown the sub-model with built-in constraints, $m_q^c$. We have quite many $\min,\max$-expressions and dynamically-long sums in our model, and for a symbolic solution, we suggest to expand all terms to create a sum, where each term can be derived for separately. Before we get there, however, it makes sense to derive some of the recurring expressions, so that we can later just plug them in.
 
@@ -560,6 +571,8 @@ source(file = "../models/SRBTW-R6.R")
 # vartheta_l <- 4:1
 # These are from a JSD-only based fit and quite good!
 vartheta_l <- c(0.4119631, 0.1651927, 0.0737804, 0.3831419)
+# .. slightly worse:
+# vartheta_l <- c(0.35320284, 0.21300932, 0.07073679, 0.37062611)
 
 
 srbtw <- SRBTW$new(
@@ -604,7 +617,7 @@ ggplot() +
   stat_function(fun = r, xlim = c(0,1))
 ```
 
-```{r}
+```{r echo=FALSE}
 objF <- function(x, isGrad = FALSE) {
   # 'x' is our vartheta_l [, +b[, +e]]
   b <- if (srbtw$isOpenBegin()) tail(x, 2)[1] else NULL
@@ -665,40 +678,35 @@ objF <- function(x, isGrad = FALSE) {
 }
 ```
 
-```{r eval=FALSE}
-optR <- stats::optim(
-  par = rep(1/4, 4),
-  fn = objF,
-  lower = rep(0, 6),
-  upper = rep(1, 6),
-  method = "L-BFGS-B"
-)
-```
+Let's try some optimization using box-bounds and closed open and begin:
 
-
-```{r eval=FALSE}
+```{r}
 library(optimParallel)
 
 cl <- parallel::makePSOCKcluster(12)
-parallel::clusterExport(cl, varlist = c("srbtw", "r", "f", "stat_diff_2_functions", "stat_diff_2_functions_cor", "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score", "stat_diff_2_functions_symmetric_JSD_score", "stat_diff_2_functions_symmetric_JSD_sampled", "stat_diff_2_functions_philentropy_sampled"))
+parallel::clusterExport(cl, varlist = c(
+  "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
+  "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
+  "stat_diff_2_functions_symmetric_JSD_score", "stat_diff_2_functions_symmetric_JSD_sampled",
+  "stat_diff_2_functions_philentropy_sampled"))
 
-# srbtw$setOpenBegin(ob = TRUE)
-# srbtw$setOpenEnd(oe = TRUE)
+cow_og1_test1p <- loadResultsOrCompute(file = "../results/cow_og1_test1p.rds", computeExpr = {
+  doWithParallelClusterExplicit(cl = parallel::makePSOCKcluster(12), expr = {
+    set.seed(1337)
+    optRp <- optimParallel::optimParallel(
+      par = rep(1/length(vartheta_l), length(vartheta_l)),
+      fn = objF,
+      lower = rep(0, length(vartheta_l)),
+      upper = rep(1, length(vartheta_l)),
+      parallel = list(
+        cl = cl,
+        forward = FALSE
+      )
+    )
+  })
+})
 
-set.seed(1337)
-optRp <- optimParallel::optimParallel(
-  par = rep(1/4, 4),
-  fn = objF,
-  lower = rep(0, 4),
-  upper = rep(1, 4),
-  parallel = list(
-    cl = cl,
-    forward = FALSE
-  )
-)
-
-stopCluster(cl)
-optRp
+cow_og1_test1p
 ```
 
 
