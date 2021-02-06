@@ -854,6 +854,56 @@ srbtw$plot_warp()
 These are the exact same results as in `cow_og1_test1p`!
 
 
+### Half- and full-open tests
+
+Let's do some tests where we leave either the begin or end open (or both) and see what happens.
+
+```{r}
+srbtw$setOpenBegin(ob = TRUE)
+srbtw$setOpenEnd(oe = TRUE)
+```
+
+```{r}
+cow_og1_test4p <- loadResultsOrCompute(file = "../results/cow_og1_test4p.rds", computeExpr = {
+  library(optimParallel)
+    
+  cl <- parallel::makePSOCKcluster(parallel::detectCores())
+  parallel::clusterExport(cl, varlist = c(
+    "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
+    "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
+    "stat_diff_2_functions_symmetric_JSD_score",
+    "stat_diff_2_functions_symmetric_JSD_sampled",
+    "stat_diff_2_functions_philentropy_sampled", "SRBTW_Loss", "SRBTW_DataLoss",
+    "SRBTW_SingleObjectiveOptimization", "soo"))
+  
+  doWithParallelClusterExplicit(cl = cl, expr = {
+    set.seed(1337)
+    optRp <- optimParallel::optimParallel(
+      par = c(rep(1/length(vartheta_l), length(vartheta_l)), 0, 1),
+      fn = function(x) {
+        soo$setParams(params = x)
+        soo$compute()
+      },
+      lower = rep(0, 2 + length(vartheta_l)),
+      upper = rep(1, 2 + length(vartheta_l)),
+      parallel = list(
+        cl = cl,
+        forward = FALSE
+      )
+    )
+  })
+})
+
+cow_og1_test4p
+srbtw$setAllParams(cow_og1_test4p$par)
+srbtw$plot_warp() +
+  ggplot2::geom_vline(xintercept = cow_og1_test4p$par[5]) +
+  ggplot2::geom_vline(xintercept = cow_og1_test4p$par[6])
+```
+
+This is still using the Jenson-Shannon divergence, and apparently it is a better fit. The black vertical lines indicate the used begin and end of the Warping Candidate, and `M` was sliced and layed over `WP`. The begin and end were `r range(tail(cow_og1_test4p$par, 2))`.
+
+
 # Optimization goal II
 
 

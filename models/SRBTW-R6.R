@@ -98,7 +98,7 @@ SRBTW <- R6Class(
     },
     
     setAllParams = function(params) {
-      stopifnot(is.vector(params) && is.numeric(params) && !any(is.na(params)) && length(params) == (length(private$thetaB) - 1 + (if (self$isOpenBegin()) 1 else 0) + if (self$isOpenEnd()) 1 else 0))
+      stopifnot(is.vector(params) && is.numeric(params) && !any(is.na(params)) && length(params) == (length(private$thetaB) - 1 + (if (self$isOpenBegin()) 1 else 0) + (if (self$isOpenEnd()) 1 else 0)))
       
       begin <- if (self$isOpenBegin()) params[length(private$thetaB)]
       end <- if (self$isOpenEnd()) params[length(private$thetaB) + 1]
@@ -192,9 +192,8 @@ SRBTW <- R6Class(
     },
     
     getQForX = function(x) {
-      b_l <- self$getBeta_l()
-      b_u <- self$getBeta_u()
-      stopifnot(x >= b_l && x <= b_u)
+      r <- range(private$thetaB)
+      stopifnot(x >= r[1] && x <= r[2])
       
       for (q in self$getQ()) {
         if (x >= private$thetaB[q] && x < private$thetaB[q + 1]) {
@@ -277,7 +276,9 @@ SRBTW <- R6Class(
       p + ggplot2::scale_color_manual(
         paste(funcs, collapse = " / "),
         values = head(x =funcsColors, n = length(funcs))) +
-        ggplot2::xlim(self$getBeta_l(), self$getBeta_u()) +
+        ggplot2::xlim(range(
+          c(range(private$thetaB), self$getBeta_l(), self$getBeta_u())
+        )) +
         ggplot2::theme(
           axis.title.x = ggplot2::element_blank(),
           axis.title.y = ggplot2::element_blank())
