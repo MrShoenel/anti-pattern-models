@@ -243,6 +243,44 @@ SRBTW <- R6Class(
       }
       
       private$subModels[[qs]]
+    },
+    
+    M = function(x) {
+      q <- self$getQForX(x)
+      sm <- self$getSubModel(q = q)
+      t <- sm$asTuple()
+      t$mqc(x)
+    },
+    
+    plot_warp = function(WP = TRUE, WC = TRUE, M = TRUE) {
+      funcsColors <- c("red", "black", "blue")
+      funcs <- c()
+      p <- ggplot2::ggplot()
+      if (WP) {
+        funcs <- c(funcs, "WP")
+        p <- p + ggplot2::stat_function(
+          fun = private$wp, mapping = ggplot2::aes(color = "WP"))
+      }
+      if (WC) {
+        funcs <- c(funcs, "WC")
+        p <- p + ggplot2::stat_function(
+          fun = private$wc, mapping = ggplot2::aes(color = "WC"))
+      }
+      if (M) {
+        funcs <- c(funcs, "M")
+        p <- p + ggplot2::stat_function(
+          fun = Vectorize(function(x) {
+            self$M(x = x)
+          }), mapping = ggplot2::aes(color = "M"))
+      }
+      
+      p + ggplot2::scale_color_manual(
+        paste(funcs, collapse = " / "),
+        values = head(x =funcsColors, n = length(funcs))) +
+        ggplot2::xlim(self$getBeta_l(), self$getBeta_u()) +
+        ggplot2::theme(
+          axis.title.x = ggplot2::element_blank(),
+          axis.title.y = ggplot2::element_blank())
     }
   )
 )
@@ -593,7 +631,7 @@ SRBTW_SingleObjectiveOptimization <- R6Class(
 )
 
 
-
+# SRBTW$debug("M")
 # SRBTW_SubModel$debug("asTuple")
 # SRBTW$debug("initialize")
 # SRBTW_Loss$debug("compute")
