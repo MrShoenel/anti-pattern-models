@@ -847,6 +847,13 @@ As for now, I want to note down two approaches that come to my mind:
 
 A third approach: Start with an empty Warping Pattern: A straight horizontal line located at $0.5$ for each variable and variably many equidistantly-spaced intervals (use information criterion to find best number). This is the approach where we throw away our definition of the Fire Drill AP and create one that is solely based on data.
 
+# Other thoughts
+
+Short unsorted list of things to consider.
+
+* Check progress of pattern: SRBTW allows for open-end matching, so that it can be used to detect by how much (time wise into the project) Fire Drill matches. Or, we can inverse the process and match the AP to the project, to see which phases exist and score them.
+* In optimization goal III, we should also try to adapt the reference AP without actually defining a loss for the Long Stretch. With such an adapted pattern, we will find out what goes actually on in that phase in the projects we have, as the other intervals will match, leaving a gap for the LS.
+
 
 
 
