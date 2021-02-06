@@ -567,10 +567,10 @@ Before we go any further, we should test the model. When this notebook was start
 ```{r echo=FALSE, message=FALSE}
 source(file = "../models/SRBTW-R6.R")
 
-# vartheta_l <- c(.25,.275,.25,.225)
+vartheta_l <- c(.25,.275,.25,.225)
 # vartheta_l <- 4:1
 # These are from a JSD-only based fit and quite good!
-#vartheta_l <- c(0.4119631, 0.1651927, 0.0737804, 0.3831419)
+# vartheta_l <- c(0.4119631, 0.1651927, 0.0737804, 0.3831419)
 # .. slightly worse:
 # vartheta_l <- c(0.35320284, 0.21300932, 0.07073679, 0.37062611)
 
@@ -610,11 +610,8 @@ tempf <- Vectorize(function(x) {
   t$mqc(x)
 })
 
-# curve(tempf, 0, 1)
-
-ggplot() +
-  stat_function(fun = tempf, xlim = c(0,1), mapping = aes(color="red")) +
-  stat_function(fun = r, xlim = c(0,1))
+# We have a new plot-function!
+srbtw$plot_warp()
 ```
 
 ```{r echo=FALSE}
@@ -628,12 +625,7 @@ objF <- function(x, isGrad = FALSE) {
   if (!is.null(e)) srbtw$setParams(end = e)
   
   tempf <- Vectorize(function(x_) {
-    stopifnot(length(x_) == 1 && !is.na(x_))
-    
-    q <- srbtw$getQForX(x_)
-    sm <- srbtw$getSubModel(q = q)
-    t <- sm$asTuple()
-    t$mqc(x_)
+    srbtw$M(x = x_)
   })
   
   loss <- 0
@@ -681,16 +673,18 @@ objF <- function(x, isGrad = FALSE) {
 Let's try some optimization using box-bounds and closed open and begin:
 
 ```{r}
-library(optimParallel)
-
-cl <- parallel::makePSOCKcluster(12)
-parallel::clusterExport(cl, varlist = c(
-  "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
-  "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
-  "stat_diff_2_functions_symmetric_JSD_score", "stat_diff_2_functions_symmetric_JSD_sampled",
-  "stat_diff_2_functions_philentropy_sampled"))
-
+# Optimization Goal 1, test 1, parallel:
 cow_og1_test1p <- loadResultsOrCompute(file = "../results/cow_og1_test1p.rds", computeExpr = {
+  library(optimParallel)
+  
+  cl <- parallel::makePSOCKcluster(parallel::detectCores())
+  parallel::clusterExport(cl, varlist = c(
+    "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
+    "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
+    "stat_diff_2_functions_symmetric_JSD_score",
+    "stat_diff_2_functions_symmetric_JSD_sampled",
+    "stat_diff_2_functions_philentropy_sampled"))
+
   doWithParallelClusterExplicit(cl = parallel::makePSOCKcluster(12), expr = {
     set.seed(1337)
     optRp <- optimParallel::optimParallel(
@@ -707,6 +701,8 @@ cow_og1_test1p <- loadResultsOrCompute(file = "../results/cow_og1_test1p.rds", c
 })
 
 cow_og1_test1p
+srbtw$setAllParams(cow_og1_test1p$par)
+srbtw$plot_warp()
 ```
 
 In the meantime, I have implemented some new models as R6-classes. We should test that we can reach the same optimization result with these new structures. Some rationale for the architecture's design are the following:
@@ -730,7 +726,9 @@ Back to our example that captures only the __A__-variable, let's set up this sce
 ```{r}
 dataLoss <- SRBTW_DataLoss$new(
   srbtw = srbtw, intervals = 1:4, # note how we cover 4 intervals
-  weight = 4, continuous = TRUE, params = rep(1/4, length(vartheta_l)))
+  weight = 1, # should be 4 but we need to check that our results
+  # of cow_og1_test1p are identical to cow_og1_test3p later.
+  continuous = TRUE, params = rep(1/4, length(vartheta_l)))
 
 dataLoss_RSS <- function(loss, listOfSms) {
   # 'loss' is a reference to the data-loss itself.
@@ -764,34 +762,45 @@ soo$compute()
 
 Let's attempt to optimize this:
 
-```{r echo=FALSE, eval=FALSE}
-cl <- parallel::makePSOCKcluster(12)
-parallel::clusterExport(cl, varlist = c(
-  "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
-  "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
-  "stat_diff_2_functions_symmetric_JSD_score", "stat_diff_2_functions_symmetric_JSD_sampled",
-  "stat_diff_2_functions_philentropy_sampled", "SRBTW_Loss", "SRBTW_DataLoss",
-  "SRBTW_SingleObjectiveOptimization", "soo"))
+```{r}
+cow_og1_test2p <- loadResultsOrCompute(file = "../results/cow_og1_test2p.rds", computeExpr = {
+  library(optimParallel)
+  
+  cl <- parallel::makePSOCKcluster(parallel::detectCores())
+  parallel::clusterExport(cl, varlist = c(
+    "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
+    "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
+    "stat_diff_2_functions_symmetric_JSD_score",
+    "stat_diff_2_functions_symmetric_JSD_sampled",
+    "stat_diff_2_functions_philentropy_sampled", "SRBTW_Loss", "SRBTW_DataLoss",
+    "SRBTW_SingleObjectiveOptimization", "soo"))
 
-temp <- doWithParallelClusterExplicit(cl = cl, expr = {
-  set.seed(1337)
-  optRp <- optimParallel::optimParallel(
-    par = rep(1/length(vartheta_l), length(vartheta_l)),
-    fn = function(x) {
-      soo$setParams(params = x)
-      soo$compute()
-    },
-    lower = rep(0, length(vartheta_l)),
-    upper = rep(1, length(vartheta_l)),
-    parallel = list(
-      cl = cl,
-      forward = FALSE
+  doWithParallelClusterExplicit(cl = cl, expr = {
+    set.seed(1337)
+    optRp <- optimParallel::optimParallel(
+      par = rep(1/length(vartheta_l), length(vartheta_l)),
+      fn = function(x) {
+        soo$setParams(params = x)
+        soo$compute()
+      },
+      lower = rep(0, length(vartheta_l)),
+      upper = rep(1, length(vartheta_l)),
+      parallel = list(
+        cl = cl,
+        forward = FALSE
+      )
     )
-  )
+  })
 })
+
+cow_og1_test2p
+srbtw$setAllParams(cow_og1_test2p$par)
+srbtw$plot_warp()
 ```
 
-```{r echo=FALSE, eval=FALSE}
+And here is the test that should yield the exact same results as we got with `cow_og1_test1p`:
+
+```{r}
 dataLoss_JSD <- function(loss, listOfSms) {
   
   tempf <- Vectorize(function(x_) {
@@ -807,32 +816,42 @@ dataLoss_JSD <- function(loss, listOfSms) {
 
 dataLoss$setLossFunc(lossFunc = dataLoss_JSD)
 
-cl <- parallel::makePSOCKcluster(12)
-parallel::clusterExport(cl, varlist = c(
-  "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
-  "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
-  "stat_diff_2_functions_symmetric_JSD_score", "stat_diff_2_functions_symmetric_JSD_sampled",
-  "stat_diff_2_functions_philentropy_sampled", "SRBTW_Loss", "SRBTW_DataLoss",
-  "SRBTW_SingleObjectiveOptimization", "soo"))
-
-temp <- doWithParallelClusterExplicit(cl = cl, expr = {
-  set.seed(1337)
-  optRp <- optimParallel::optimParallel(
-    par = rep(1/length(vartheta_l), length(vartheta_l)),
-    fn = function(x) {
-      soo$setParams(params = x)
-      soo$compute()
-    },
-    lower = rep(0, length(vartheta_l)),
-    upper = rep(1, length(vartheta_l)),
-    parallel = list(
-      cl = cl,
-      forward = FALSE
+cow_og1_test3p <- loadResultsOrCompute(file = "../results/cow_og1_test3p.rds", computeExpr = {
+  library(optimParallel)
+  
+  cl <- parallel::makePSOCKcluster(parallel::detectCores())
+  parallel::clusterExport(cl, varlist = c(
+    "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
+    "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
+    "stat_diff_2_functions_symmetric_JSD_score",
+    "stat_diff_2_functions_symmetric_JSD_sampled",
+    "stat_diff_2_functions_philentropy_sampled", "SRBTW_Loss", "SRBTW_DataLoss",
+    "SRBTW_SingleObjectiveOptimization", "soo"))
+  
+  doWithParallelClusterExplicit(cl = cl, expr = {
+    set.seed(1337)
+    optRp <- optimParallel::optimParallel(
+      par = rep(1/length(vartheta_l), length(vartheta_l)),
+      fn = function(x) {
+        soo$setParams(params = x)
+        soo$compute()
+      },
+      lower = rep(0, length(vartheta_l)),
+      upper = rep(1, length(vartheta_l)),
+      parallel = list(
+        cl = cl,
+        forward = FALSE
+      )
     )
-  )
+  })
 })
+
+cow_og1_test3p
+srbtw$setAllParams(cow_og1_test3p$par)
+srbtw$plot_warp()
 ```
 
+These are the exact same results as in `cow_og1_test1p`!
 
 
 # Optimization goal II
