@@ -313,7 +313,7 @@ SRBTW_SubModel <- R6Class(
         tb_q = tb_q,
         te_q = te_q,
         wp = wp,
-        wc = wp,
+        wc = wc,
         wc_d1 = wc_d1,
         wc_d2 = wc_d2,
         mqc = function(x) {
@@ -374,6 +374,10 @@ SRBTW_Loss <- R6Class(
       private$numSamples <- numSamples
     },
     
+    isContinuous = function() {
+      private$continuous
+    },
+    
     setParams = function(params) {
       private$params <- params
       private$srbtw$setAllParams(params = params)
@@ -381,7 +385,7 @@ SRBTW_Loss <- R6Class(
     },
     
     getParams = function() {
-      stopifnot(is.null(private$params))
+      stopifnot(!is.null(private$params))
       private$params
     },
     
@@ -391,12 +395,19 @@ SRBTW_Loss <- R6Class(
       invisible(self)
     },
     
+    getWeight = function() {
+      private$weight
+    },
+    
     compute = function() {
       stopifnot(length(private$intervals) > 0)
       
-      lapply(private$intervals, function(q) {
-        private$srbtw$getSubModel(q = q)$asTuple()
-      })
+      listOfSms <- list()
+      for (q in private$intervals) {
+        listOfSms <- append(listOfSms, private$srbtw$getSubModel(q = q))
+      }
+      
+      listOfSms
     },
     
     computeGrad = function() {
@@ -516,8 +527,77 @@ SRBTW_DataLoss <- R6Class(
 )
 
 
+SRBTW_SingleObjectiveOptimization <- R6Class(
+  "SRBTW_SingleObjectiveOptimization",
+  
+  lock_objects = FALSE,
+  
+  inherit = SRBTW_Loss,
+  
+  private = list(
+    objectives = NULL
+  ),
+  
+  public = list(
+    initialize = function(srbtw) {
+      stopifnot(R6::is.R6(srbtw))
+      private$srbtw <- srbtw
+      
+      private$objectives <- list()
+    },
+    
+    setParams = function(params) {
+      private$params <- params
+      private$srbtw$setAllParams(params = params)
+      
+      for (obj in private$objectives) {
+        obj$setParams(params = params)
+      }
+      
+      invisible(self)
+    },
+    
+    addObjective = function(obj) {
+      stopifnot(R6::is.R6(obj) && inherits(obj, "SRBTW_Loss"))
+      
+      private$objectives <- append(private$objectives, obj)
+      invisible(self)
+    },
+    
+    compute = function() {
+      loss <- 0
+      
+      for (obj in private$objectives) {
+        loss <- loss + obj$getWeight() * obj$compute()
+      }
+      
+      loss
+    },
+    
+    computeGrad = function() {
+      grad <- NULL
+      
+      for (obj in private$objectives) {
+        temp <- obj$getWeight() * obj$computeGrad()
+        grad <- if (is.null(grad)) temp else grad + temp
+      }
+      
+      grad
+    },
+    
+    computeHess = function() {
+      # I need to check how to do this exactly before we can proceed.
+      stop("TODO")
+    }
+  )
+)
+
+
 
 # SRBTW_SubModel$debug("asTuple")
 # SRBTW$debug("initialize")
+# SRBTW_Loss$debug("compute")
+# SRBTW_DataLoss$debug("initialize")
+# SRBTW_SingleObjectiveOptimization$debug("compute")
 
 

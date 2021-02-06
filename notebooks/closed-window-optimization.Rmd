@@ -570,7 +570,7 @@ source(file = "../models/SRBTW-R6.R")
 # vartheta_l <- c(.25,.275,.25,.225)
 # vartheta_l <- 4:1
 # These are from a JSD-only based fit and quite good!
-vartheta_l <- c(0.4119631, 0.1651927, 0.0737804, 0.3831419)
+#vartheta_l <- c(0.4119631, 0.1651927, 0.0737804, 0.3831419)
 # .. slightly worse:
 # vartheta_l <- c(0.35320284, 0.21300932, 0.07073679, 0.37062611)
 
@@ -707,6 +707,130 @@ cow_og1_test1p <- loadResultsOrCompute(file = "../results/cow_og1_test1p.rds", c
 })
 
 cow_og1_test1p
+```
+
+In the meantime, I have implemented some new models as R6-classes. We should test that we can reach the same optimization result with these new structures. Some rationale for the architecture's design are the following:
+
+Self-Regularizing Boundary Time Warping (__SRBTW__) is implicitly multi-variate and multi-dataseries capable. When defining a loss that concerns a variable, we will refer to it as a __Data-loss__. A loss that concerns the choice of model parameters will be called __Regularizer__. Since we have potentially many variables and intervals, a fully configured model may have many of either kind, and each of these are __objectives__; SRBTW, by design, hence is a __Multilevel-Model__ and poses a __Multi-objective__ optimization problem.
+
+Consider our Fire Drill example: The Warping Pattern has four variables and four intervals. If we want to fit a single project to it, we may want to define a single model and weight per variable and interval, which would result in already 16 objectives here. I wrote that SRBTW is implicitly capable of handling multiple variables and/or dataseries. Implicit because this complexity is reduced to having one SRBTW handle exactly two signals, the Warping Pattern and -Candidate, and then defining a loss per each. It is perfectly fine to reuse an SRBTW model across intervals of the same variable, but in practice the overhead of doing so may be reduced by having each objective use its own instance. We provide a __linear scalarizer__ to handle one or more objectives, each with their own weight.
+
+$$
+\begin{aligned}
+  \mathcal{O}(\bm{\vartheta}^{(l)},b,e)=&\;w_1\mathcal{L}_1+\;\dots\;+w_n\mathcal{L}_n\;\text{, (linear scalarization)}
+  \\[1ex]
+  =&\;\mathbf{w}^\top\bm{\mathcal{L}}\;\text{, with gradient (for any parameter in}\;\mathcal{L}_i\text{)}
+  \\[1ex]
+  \nabla\,\mathcal{O}=&\;w_1\mathcal{L}'_1+\;\dots\;+w_n\mathcal{L}'_n\;\text{.}
+\end{aligned}
+$$
+
+Back to our example that captures only the __A__-variable, let's set up this scenario with the new classes:
+
+```{r}
+dataLoss <- SRBTW_DataLoss$new(
+  srbtw = srbtw, intervals = 1:4, # note how we cover 4 intervals
+  weight = 4, continuous = TRUE, params = rep(1/4, length(vartheta_l)))
+
+dataLoss_RSS <- function(loss, listOfSms) {
+  # 'loss' is a reference to the data-loss itself.
+  continuous <- loss$isContinuous()
+  err <- 0
+  
+  for (sm in listOfSms) {
+    t <- sm$asTuple()
+    if (continuous) {
+      tempf <- function(x) (t$wp(x) - t$mqc(x))^2
+      err <- err + cubature::cubintegrate(
+        f = tempf, lower = t$tb_q, upper = t$te_q)$integral
+    } else {
+      X <- seq(from = t$tb_q, to = t$te_q, length.out = 250)
+      y <- sapply(X = X, FUN = t$wp)
+      y_hat <- sapply(X = X, FUN = t$mqc)
+      err <- err + sum((y - y_hat)^2)
+    }
+  }
+  
+  log(1 + err)
+}
+
+dataLoss$setLossFunc(lossFunc = dataLoss_RSS)
+
+soo <- SRBTW_SingleObjectiveOptimization$new(srbtw = srbtw)
+soo$addObjective(obj = dataLoss)
+soo$setParams(params = rep(1/4, length(vartheta_l)))
+soo$compute()
+```
+
+Let's attempt to optimize this:
+
+```{r echo=FALSE, eval=FALSE}
+cl <- parallel::makePSOCKcluster(12)
+parallel::clusterExport(cl, varlist = c(
+  "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
+  "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
+  "stat_diff_2_functions_symmetric_JSD_score", "stat_diff_2_functions_symmetric_JSD_sampled",
+  "stat_diff_2_functions_philentropy_sampled", "SRBTW_Loss", "SRBTW_DataLoss",
+  "SRBTW_SingleObjectiveOptimization", "soo"))
+
+temp <- doWithParallelClusterExplicit(cl = cl, expr = {
+  set.seed(1337)
+  optRp <- optimParallel::optimParallel(
+    par = rep(1/length(vartheta_l), length(vartheta_l)),
+    fn = function(x) {
+      soo$setParams(params = x)
+      soo$compute()
+    },
+    lower = rep(0, length(vartheta_l)),
+    upper = rep(1, length(vartheta_l)),
+    parallel = list(
+      cl = cl,
+      forward = FALSE
+    )
+  )
+})
+```
+
+```{r echo=FALSE, eval=FALSE}
+dataLoss_JSD <- function(loss, listOfSms) {
+  
+  tempf <- Vectorize(function(x_) {
+    stopifnot(length(x_) == 1 && !is.na(x_))
+    q <- srbtw$getQForX(x_)
+    sm <- listOfSms[[q]]
+    t <- sm$asTuple()
+    t$mqc(x_)
+  })
+  
+  -log(stat_diff_2_functions_symmetric_JSD_score()(listOfSms[[1]]$asTuple()$wp, tempf))
+}
+
+dataLoss$setLossFunc(lossFunc = dataLoss_JSD)
+
+cl <- parallel::makePSOCKcluster(12)
+parallel::clusterExport(cl, varlist = c(
+  "srbtw", "r", "f", "objF", "stat_diff_2_functions", "stat_diff_2_functions_cor",
+  "stat_diff_2_functions_cor_score", "area_diff_2_functions", "area_diff_2_functions_score",
+  "stat_diff_2_functions_symmetric_JSD_score", "stat_diff_2_functions_symmetric_JSD_sampled",
+  "stat_diff_2_functions_philentropy_sampled", "SRBTW_Loss", "SRBTW_DataLoss",
+  "SRBTW_SingleObjectiveOptimization", "soo"))
+
+temp <- doWithParallelClusterExplicit(cl = cl, expr = {
+  set.seed(1337)
+  optRp <- optimParallel::optimParallel(
+    par = rep(1/length(vartheta_l), length(vartheta_l)),
+    fn = function(x) {
+      soo$setParams(params = x)
+      soo$compute()
+    },
+    lower = rep(0, length(vartheta_l)),
+    upper = rep(1, length(vartheta_l)),
+    parallel = list(
+      cl = cl,
+      forward = FALSE
+    )
+  )
+})
 ```
 
 
