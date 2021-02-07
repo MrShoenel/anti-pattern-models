@@ -721,7 +721,7 @@ $$
 \end{aligned}
 $$
 
-Back to our example that captures only the __A__-variable, let's set up this scenario with the new classes:
+In practice, each weight is some combination of multiple other weights, in our case it will most likely be the product of the weights for the current data series, variable and interval. Back to our example that captures only the __A__-variable, let's set up this scenario with the new classes:
 
 ```{r}
 dataLoss <- SRBTW_DataLoss$new(
@@ -798,7 +798,15 @@ srbtw$setAllParams(cow_og1_test2p$par)
 srbtw$plot_warp()
 ```
 
-And here is the test that should yield the exact same results as we got with `cow_og1_test1p`:
+While this fit looks subjectively worse compared to the previous fit using JSD, it is actually better w.r.t. the RSS-loss used here. The loss here is `r round(cow_og1_test2p$value, 6)`. If we use the parameters from the JSD-fit and compute the loss for the RSS, it becomes:
+
+```{r}
+srbtw$setAllParams(params = cow_og1_test1p$par)
+dataLoss$setLossFunc(lossFunc = dataLoss_RSS)
+soo$compute()
+```
+
+This is a clear demonstration of __SRBTW__'s strength, that it can use any arbitrary loss or (weighted) combinations thereof, to optimize for distinct goals simultaneously. Here is the test that should yield the exact same results as we got with `cow_og1_test1p`:
 
 ```{r}
 dataLoss_JSD <- function(loss, listOfSms) {
@@ -1001,7 +1009,7 @@ srbtw$plot_warp() +
   ggplot2::geom_vline(xintercept = cow_og1_test6p$par[5])
 ```
 
-Now we have a very late cut-in, that basically ignores `5/6` of the signal. However, subjectively and visually, it is a fine match (slightly worse than the fully open, though). Let's do this once more, open begin, closed end:
+Now we have a late cut-out, that basically ignores `1/6` of the signal at the end. This fit is better than the closed/closed one we made earlier, the loss here is `r round(cow_og1_test6p$value, 6)` and previously it was `r round(cow_og1_test1p$value, 6)`. Let's do this once more, open begin, closed end this time:
 
 ```{r}
 srbtw$setOpenBegin(ob = TRUE)
@@ -1043,7 +1051,7 @@ srbtw$plot_warp() +
   ggplot2::geom_vline(xintercept = cow_og1_test7p$par[5])
 ```
 
-Previously, I had wrongly set the begin-parameter to start with $1$, and the final result did not move this parameter, which is the first obvious problem that warrants for regularization. However, after correction, I had let the parameter start from $0$ and the result as can be seen is quite good again -- it finds a nice cut in while it has to keep the remainder of the signal.
+Previously, I had wrongly set the begin-parameter to start with $1$, and the final result did not move this parameter, which is the first obvious problem that warrants for regularization. However, after correction, I had let the parameter start from $0$ and the result as can be seen is quite good again -- it finds a nice cut in while it has to keep the remainder of the signal. The loss here is the lowest thus far using JSD (`r round(cow_og1_test7p$value, 6)`).
 
 
 ## Regularization
@@ -1061,7 +1069,7 @@ An extreme support is one that is much shorter than what would be allowed (given
 
 $$
 \begin{aligned}
-  \mathcal{R}^{\text{supp}}=&\;\frac{\beta_u-\beta_l}{\gamma_e-\gamma_b-\gamma_a}
+  \mathcal{R}^{(\text{supp})}=&\;\frac{\beta_u-\beta_l}{\gamma_e-\gamma_b-\gamma_a}
   \\[1ex]
   =&\;\frac{\overbrace{\max{\Big(\gamma_b+\gamma_d,\min{\big(\gamma_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\gamma_e-\gamma_d,\max{\big(\gamma_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}}{\gamma_e-\gamma_b-\gamma_d}\;\text{.}
 \end{aligned}
@@ -1071,11 +1079,11 @@ We had previously worked out the gradient for the sub-expression of $\beta_u-\be
 
 $$
 \begin{aligned}
-  \text{supp}\big(\mathcal{R}^{\text{supp}}\big)=&\;\big\{\;x\in\mathbb{R}\;\rvert\;0\leq x\leq 1\;\big\}\;\text{, where values closer to zero}
+  \text{supp}\big(\mathcal{R}^{(\text{supp})}\big)=&\;\big\{\;x\in\mathbb{R}\;\rvert\;0\leq x\leq 1\;\big\}\;\text{, where values closer to zero}
   \\[0ex]
   &\;\text{mean more extreme intervals, so we propose a}\;\log\text{-loss:}
   \\[1ex]
-  \mathcal{L}_{\mathcal{R}^{\text{supp}}}=&\;-\log{\big(\mathcal{R}^{\text{supp}}\big)}\mapsto[+0,\infty]\;\text{.}
+  \mathcal{L}_{\mathcal{R}^{(\text{supp})}}=&\;-\log{\Big(\mathcal{R}^{(\text{supp})}\Big)}\mapsto[+0,\infty]\;\text{.}
 \end{aligned}
 $$
 
@@ -1084,20 +1092,37 @@ Until now I had not mentioned that I usually attempt to design data- and regular
 
 ### Regularize extreme intervals
 
-This is something that I had done in some of the previous notebooks.
+This is something that I had also done in some of the previous notebooks, but it is not compatible with SRBTW. Still, we can come up with something similar. First we need to answer the question, what is an extreme interval? This is subjective, and probably different from case to case. I want to suggest a quite general notion here that probably works in many cases.
 
-
-### Regularize box-bounds
-
-This is something that is not explicitly required for SRBTW, as the box-bounds for all intervals' lengths are adhered to through the self-regularization process. The same goes for begin and end (if open). So far, we have however always used box-bounds, and the only reason for that was that this usually comes with a speedup, because of the vastly reduced feasible region. When box-constrained optimization cannot be used, it may thus be advisable to add some (mild) regularization. In the following definition, the loss for each parameter that is outside the bounds is strictly positive.
+We will assume that an extreme interval is one that deviates from its _expected length_. A priori we do not know what amount of time time warping is required, so we assume none. That means, each interval's length is expected to be equal to or close to its corresponding Warping Pattern's counterpart (not the length but the ratio). Or, one could say that the expected length of each interval is the mean, which is the allowed extent divided by the number of intervals. Or, the user can define their own preference. Then for each interval, we could sum up the difference from the expected value.
 
 $$
 \begin{aligned}
-  \mathcal{R}^{\text{bb}}=&\;\sum_{i=1}^{\norm{\bm{\theta}}}\;\mathcal{H}\Big(b_i^{(l)}-\bm{\theta}_i\Big)*\big(b_i^{(l)}-\bm{\theta}_i\big) + \mathcal{H}\Big(\bm{\theta}_i-b_i^{(u)}\Big)*\big(\bm{\theta}_i-b_i^{(u)}\big)\;\text{, where}
+  \bm{\kappa}\;\dots&\;\text{vector with expected lengths (ratios) for each interval,}
+  \\[1ex]
+  \mathcal{R}^{(\text{exint})}=&\;\sum_{q=1}^{\max{(Q)}}\;\Big(\bm{\vartheta}_q^{(l)}-\bm{\kappa}_q\Big)^2\;\text{, with gradient}
+  \\[1ex]
+  \frac{\partial\,\mathcal{R}^{(\text{exint})}}{\partial\,\bm{\vartheta}_q^{(l)}}=&\;2\Big(\bm{\vartheta}_q^{(l)}-\bm{\kappa}_q\Big)\;\text{and}\;\log\text{-loss}
+  \\[1ex]
+  \mathcal{L}_{\mathcal{R}^{(\text{exint})}}=&\;\log{\Big(1+\mathcal{R}^{(\text{exint})}\Big)}\mapsto[+0,\infty]\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,\mathcal{L}_{\mathcal{R}^{(\text{exint})}}=\frac{\partial\,\mathcal{L}_{\mathcal{R}^{(\text{exint})}}}{\partial\,\bm{\vartheta}_q^{(l)}}=&\;\frac{\nabla\,\mathcal{R}^{(\text{exint})}}{1+\mathcal{R}^{(\text{exint})}}\;\text{.}
+\end{aligned}
+$$
+
+In practice, this regularizer is never zero, and it should probably not have a large weight, as otherwise, it would actually suppress time warping. Also, one may ask why use $\bm{\vartheta}_q^{(l)}$ and not $l_q$, $l'_q$ or $l_q^{(c)}$ instead. Internally, SRBTW converts boundaries to interval-lengths, and then finally to ratios that are then scaled back using the actual extent given by $\beta_u-\beta_l$. $\bm{\vartheta}_q^{(l)}$. It is best if the regularizer directly concerns the parameters. Ideally, the lengths passed are close to ratios. If no box-bounds regularizer is used, those might be far off.
+
+### Regularize box-bounds
+
+This is something that is not explicitly required for SRBTW, as the box-bounds for all intervals' lengths are adhered to through the self-regularization process. The same goes for begin and end (if open). So far, we have however always used box-bounds, and the only reason for that was that this usually comes with a speedup, because of the vastly reduced feasible region. When box-constrained optimization cannot be used, it may thus be advisable to add some (mild) regularization. In the following definition, the loss for each parameter that is outside the bounds is strictly positive. Hint: This regularizer assumes there is a lower- and upper boundary for each parameter. Should that not be the case for some or all parameters, their specific $i$-th lower or upper bound can be replaced with $-\infty,\infty$, respectively.
+
+$$
+\begin{aligned}
+  \mathcal{R}^{(\text{bb})}=&\;\sum_{i=1}^{\norm{\bm{\theta}}}\;\mathcal{H}\Big(b_i^{(l)}-\bm{\theta}_i\Big)*\big(b_i^{(l)}-\bm{\theta}_i\big) + \mathcal{H}\Big(\bm{\theta}_i-b_i^{(u)}\Big)*\big(\bm{\theta}_i-b_i^{(u)}\big)\;\text{, where}
   \\[1ex]
   b_i^{(l)},b_i^{(u)}\dots&\;\text{are the lower and upper bound for parameter}\;\bm{\theta}_i\text{, with gradient}
   \\[1ex]
-  \frac{\partial\,\mathcal{R}^{\text{bb}}}{\partial\,\bm{\theta}_i}=&\;(\bm{\theta}_i-b_i^{(l)})\times\mathcal{D}(b_i^{(l)}-\bm{\theta}_i)+(\bm{\theta}_i-b_i^{(u)})\times\mathcal{D}(\bm{\theta}_i-b_i^{(u)})
+  \frac{\partial\,\mathcal{R}^{(\text{bb})}}{\partial\,\bm{\theta}_i}=&\;\mathcal{D}(b_i^{(l)}-\bm{\theta}_i)\times(\bm{\theta}_i-b_i^{(l)})+\mathcal{D}(\bm{\theta}_i-b_i^{(u)})\times(\bm{\theta}_i-b_i^{(u)})
   \\[0ex]
   &\;+\mathcal{H}(\bm{\theta}_i-b_i^{(u)})-\mathcal{H}(b_i^{(l)}-\bm{\theta}_i)\;\text{, where}
   \\[1ex]
@@ -1107,12 +1132,13 @@ $$
     0,&\text{otherwise,}
   \end{cases}\;\text{the Dirac-delta function, and suggested loss}
   \\[1ex]
-  \mathcal{L}_{\mathcal{R}^{\text{bb}}}=&\;\log{\Big(1+\mathcal{R}^{\text{bb}}\Big)}\;\text{, with gradient}
+  \mathcal{L}_{\mathcal{R}^{(\text{bb})}}=&\;\log{\Big(1+\mathcal{R}^{(\text{bb})}\Big)}\mapsto[+0,\infty]\;\text{, with gradient}
   \\[1ex]
-  \nabla\,\mathcal{L}_{\mathcal{R}^{\text{bb}}}=\frac{\partial\,\mathcal{L}_{\mathcal{R}^{\text{bb}}}}{\partial\,\bm{\theta}_i}=&\;\frac{\nabla\,\mathcal{R}^{\text{bb}}}{1+\mathcal{R}^{\text{bb}}}\;\text{.}
+  \nabla\,\mathcal{L}_{\mathcal{R}^{(\text{bb})}}=\frac{\partial\,\mathcal{L}_{\mathcal{R}^{(\text{bb})}}}{\partial\,\bm{\theta}_i}=&\;\frac{\nabla\,\mathcal{R}^{(\text{bb})}}{1+\mathcal{R}^{(\text{bb})}}\;\text{.}
 \end{aligned}
 $$
 
+Also, instead of or additionally to this regularizer, we can sum up the number of violations. This can then be used, e.g., as base, exponent or multiplier. At this point I would recommend to use this regularizer for all parameters, that is all lengths ($\bm{\vartheta}^{(l)}$) as well as $b,e$. Additionally, I recommend adding another instance of this regularizer for $b,e$ that uses $e-\gamma_d$ as upper boundary for $b$, and $b+\gamma_d$ as lower boundary for $e$. This regularizer should be able to help the model figure out good values more quickly, and it should speed up the process if $b>e$ (which is handled by the model but still not OK).
 
 
 # Optimization goal II
@@ -1131,8 +1157,12 @@ A third approach: Start with an empty Warping Pattern: A straight horizontal lin
 
 Short unsorted list of things to consider.
 
-* Check progress of pattern: SRBTW allows for open-end matching, so that it can be used to detect by how much (time wise into the project) Fire Drill matches. Or, we can inverse the process and match the AP to the project, to see which phases exist and score them.
-* In optimization goal III, we should also try to adapt the reference AP without actually defining a loss for the Long Stretch. With such an adapted pattern, we will find out what goes actually on in that phase in the projects we have, as the other intervals will match, leaving a gap for the LS.
+
+Check progress of pattern: SRBTW allows for open-end matching, so that it can be used to detect by how much (time wise into the project) Fire Drill matches. Or, we can inverse the process and match the AP to the project, to see which phases exist and score them.
+
+In optimization goal III, we should also try to adapt the reference AP without actually defining a loss for the Long Stretch. With such an adapted pattern, we will find out what goes actually on in that phase in the projects we have, as the other intervals will match, leaving a gap for the LS.
+
+Choosing a good number of boundaries _a priori_: This depends on the problem, e.g., classification, and on whether a search can be performed for it. A search can be done using some information criterion (IC). Using some IC, then computing a best fit using $1\dots n$ boundaries, we should get a somewhat convex function, and can choose the number of boundaries using the minimum of that function. Sometimes, however, we cannot do this and need to make a decision a priori. I have done some tests using the __entropy__ of the signals, by treating them as probability density functions (which we showed works quite well for fitting a model). I have tried to compute it continuously (differential entropy) and discretely, by sampling from the signal. The latter case gives more usable values, yet it is much more volatile w.r.t. the number of samples. For example, a typical entropy (Shannon-bits) for $1e3$ samples is $\approx10$, and for $1e5$ it is already $\approx16$. Given the entropies of two signals, we could calculate the starting-number $n$ of boundaries like $n=(H^{(\text{WP})}\times H^{(\text{WC})})^{1-\frac{1}{e}}$. This gives OK-values for entropies in the range of approx. $\approx[5,20]$ and is just one idea. Eventually, we probably would need to do an empirical evaluation with many examples, where we employ a full search using some IC. Then, we could attempt to come up with some rule that best approximates this value.
 
 
 

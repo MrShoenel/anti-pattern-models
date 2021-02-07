@@ -100,8 +100,10 @@ SRBTW <- R6Class(
     setAllParams = function(params) {
       stopifnot(is.vector(params) && is.numeric(params) && !any(is.na(params)) && length(params) == (length(private$thetaB) - 1 + (if (self$isOpenBegin()) 1 else 0) + (if (self$isOpenEnd()) 1 else 0)))
       
-      begin <- if (self$isOpenBegin()) params[length(private$thetaB)]
-      end <- if (self$isOpenEnd()) params[length(private$thetaB) + 1]
+      ob <- self$isOpenBegin()
+      oe <- self$isOpenEnd()
+      begin <- if (ob) params[length(private$thetaB)]
+      end <- if (oe) params[length(private$thetaB) + (if (ob) 1 else 0)]
       self$setParams(
         vartheta_l = params[seq_len(length.out = length(private$thetaB) - 1)],
         begin = begin, end = end)
@@ -632,7 +634,7 @@ SRBTW_SingleObjectiveOptimization <- R6Class(
 )
 
 
-# SRBTW$debug("M")
+# SRBTW$debug("setAllParams")
 # SRBTW_SubModel$debug("asTuple")
 # SRBTW$debug("initialize")
 # SRBTW_Loss$debug("compute")
