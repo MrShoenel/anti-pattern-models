@@ -1046,6 +1046,74 @@ srbtw$plot_warp() +
 Previously, I had wrongly set the begin-parameter to start with $1$, and the final result did not move this parameter, which is the first obvious problem that warrants for regularization. However, after correction, I had let the parameter start from $0$ and the result as can be seen is quite good again -- it finds a nice cut in while it has to keep the remainder of the signal.
 
 
+## Regularization
+
+Regularization-losses are those that impose penalties on extreme parameters. SRBTW is self-regularizing w.r.t. interval-lengths and begin- and end-offsets. No interval can be of negative length (or smaller than a user-defined, yet positive, parameter). Begin and end are always ordered and always keep a minimum distance to each other ($\gamma_d$), while guaranteed not to extend beyond some user-defined lower and upper boundary. The tests up until now for the first optimization goal have shown these built-in regularizations alone are suitable for achieving very good fits. We also chose to build in these, so that no logarithmic barriers or (in-)equality constraints need to be used, as these require exponentially many additional iterations, especially when using a non-analytic gradient, leading to infeasibly large problems with already few ($<\approx200$) boundaries.
+
+However, it may still be desirable to _guide_ the optimization process using some user-preferences. For example, one may want to avoid extreme interval-lengths. Or it may not be desirable to have the begin or end cut in too far, decimating the Warping Candidate too much. We formulate these two regularizers below but any other user-defined regularization is possible, too. Also, a regularizer is not strictly limited to compute a loss based on the parameters only, but it is more common, so we have made the distinction of _data-loss_ and _regularizer_ thus far, and we are going to continue to do so.
+
+The nice thing about the architecture so far is, that SRBTW is already a _multi-objective_ optimization problem (using the linear scalarizer). We can just go ahead and add any regularizer as an additional objective to the overall loss. Each of these specifies its own weight, too.
+
+
+### Regularize extreme supports
+
+An extreme support is one that is much shorter than what would be allowed (given by $\gamma_e-\gamma_b-\gamma_d$). We can keep the regularizer and its gradient very simple.
+
+$$
+\begin{aligned}
+  \mathcal{R}^{\text{supp}}=&\;\frac{\beta_u-\beta_l}{\gamma_e-\gamma_b-\gamma_a}
+  \\[1ex]
+  =&\;\frac{\overbrace{\max{\Big(\gamma_b+\gamma_d,\min{\big(\gamma_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\gamma_e-\gamma_d,\max{\big(\gamma_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}}{\gamma_e-\gamma_b-\gamma_d}\;\text{.}
+\end{aligned}
+$$
+
+We had previously worked out the gradient for the sub-expression of $\beta_u-\beta_l$, and can reuse it in this regularizer. Here, we showed the complete regularizer for both, open begin and -end BTW. If either of these is not open, $\beta_l$ or $\beta_u$ can be replaced with a constant. In that case, it is recommended to already account for the difference of that constant and its maximum allowed value ($\gamma_b$ or $\gamma_e$). Note that its fraction is always between zero and one:
+
+$$
+\begin{aligned}
+  \text{supp}\big(\mathcal{R}^{\text{supp}}\big)=&\;\big\{\;x\in\mathbb{R}\;\rvert\;0\leq x\leq 1\;\big\}\;\text{, where values closer to zero}
+  \\[0ex]
+  &\;\text{mean more extreme intervals, so we propose a}\;\log\text{-loss:}
+  \\[1ex]
+  \mathcal{L}_{\mathcal{R}^{\text{supp}}}=&\;-\log{\big(\mathcal{R}^{\text{supp}}\big)}\mapsto[+0,\infty]\;\text{.}
+\end{aligned}
+$$
+
+Until now I had not mentioned that I usually attempt to design data- and regularization-losses using logarithms, and, if possible, such that the result of a loss is __always positive__, usually with an upper bound of $\infty$, that approaches $+0$ as lower bound. Furthermore, and that depends on the objective, we most often deal with two kinds of losses. Either, the loss is some kind of ratio (or we can formulate it as such) or has a lower and upper bound. In this case, I usually scale the raw loss into the interval $[0,1]$ and use it in a negative logarithm (like the above regularizer). In the other case, the raw loss has only one bound (usually the lower bound, which is $0$). In that case, we can use the absolute raw loss as $\log{(1+[\text{raw loss}])}$.
+
+
+### Regularize extreme intervals
+
+This is something that I had done in some of the previous notebooks.
+
+
+### Regularize box-bounds
+
+This is something that is not explicitly required for SRBTW, as the box-bounds for all intervals' lengths are adhered to through the self-regularization process. The same goes for begin and end (if open). So far, we have however always used box-bounds, and the only reason for that was that this usually comes with a speedup, because of the vastly reduced feasible region. When box-constrained optimization cannot be used, it may thus be advisable to add some (mild) regularization. In the following definition, the loss for each parameter that is outside the bounds is strictly positive.
+
+$$
+\begin{aligned}
+  \mathcal{R}^{\text{bb}}=&\;\sum_{i=1}^{\norm{\bm{\theta}}}\;\mathcal{H}\Big(b_i^{(l)}-\bm{\theta}_i\Big)*\big(b_i^{(l)}-\bm{\theta}_i\big) + \mathcal{H}\Big(\bm{\theta}_i-b_i^{(u)}\Big)*\big(\bm{\theta}_i-b_i^{(u)}\big)\;\text{, where}
+  \\[1ex]
+  b_i^{(l)},b_i^{(u)}\dots&\;\text{are the lower and upper bound for parameter}\;\bm{\theta}_i\text{, with gradient}
+  \\[1ex]
+  \frac{\partial\,\mathcal{R}^{\text{bb}}}{\partial\,\bm{\theta}_i}=&\;(\bm{\theta}_i-b_i^{(l)})\times\mathcal{D}(b_i^{(l)}-\bm{\theta}_i)+(\bm{\theta}_i-b_i^{(u)})\times\mathcal{D}(\bm{\theta}_i-b_i^{(u)})
+  \\[0ex]
+  &\;+\mathcal{H}(\bm{\theta}_i-b_i^{(u)})-\mathcal{H}(b_i^{(l)}-\bm{\theta}_i)\;\text{, where}
+  \\[1ex]
+  \mathcal{D}(x)=&\;\begin{cases}
+    1,&\text{if}\;x=0\text{,}
+    \\
+    0,&\text{otherwise,}
+  \end{cases}\;\text{the Dirac-delta function, and suggested loss}
+  \\[1ex]
+  \mathcal{L}_{\mathcal{R}^{\text{bb}}}=&\;\log{\Big(1+\mathcal{R}^{\text{bb}}\Big)}\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,\mathcal{L}_{\mathcal{R}^{\text{bb}}}=\frac{\partial\,\mathcal{L}_{\mathcal{R}^{\text{bb}}}}{\partial\,\bm{\theta}_i}=&\;\frac{\nabla\,\mathcal{R}^{\text{bb}}}{1+\mathcal{R}^{\text{bb}}}\;\text{.}
+\end{aligned}
+$$
+
+
 
 # Optimization goal II
 
