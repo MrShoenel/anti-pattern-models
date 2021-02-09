@@ -371,77 +371,11 @@ SRBTW <- R6Class(
           data = dfGamma, alpha = .25, show.legend = TRUE)
       }
       
-      #ggplot2::scale_color_manual(paste(c("WP", "WC"), collapse = " / "),values = head(x = funcsColors, n = 2))
-      
       p +
         scale_color_brewer(palette = "Set1")  +
         scale_fill_brewer(palette = "Set2") +
         ggplot2::labs(color = "Variable", fill = "Unused") +
         ggplot2::xlim(range(c(extWp, extWc))) +
-        ggplot2::theme(
-          axis.title.x = ggplot2::element_blank(),
-          axis.title.y = ggplot2::element_blank())
-    },
-    
-    plot_dual = function(vOffset = 1) {
-      funcsColors <- c("red", "black")
-      p <- ggplot2::ggplot()
-      
-      wpOff <- Vectorize(function(x) {
-        private$wp(x) + vOffset
-      })
-      M <- Vectorize(function(x) {
-        self$M(x = x)
-      })
-      
-      p <- p + ggplot2::stat_function(
-        fun = wpOff, mapping = ggplot2::aes(color = "WP"))
-      p <- p + ggplot2::stat_function(
-        fun = M, mapping = ggplot2::aes(color = "WC"))
-      
-      # Next we are adding vertical lines between the signals.
-      tb <- private$thetaB
-      vtl <- self$getVarthetaL()
-      beta_l <- self$getBeta_l()
-      beta_u <- self$getBeta_u()
-      lambda <- self$getLambda()
-      psi <- sum(sapply(self$getQ(), function(i) {
-        max(lambda[i], max(-vtl[i], vtl[i]))
-      }))
-      
-      x1 <- range(tb)
-      #x2 <- c(self$getBeta_l(), self$getBeta_u())
-      x2 <- range(tb)
-      
-      if (length(vtl) > 1) {
-        
-        for (q in tail(self$getQ(), -1)) {
-          # We'll always only plot the line at the begin.
-          phi_q <- sum(sapply(seq_len(length.out = q - 1), function(i) {
-            max(lambda[i], max(-vtl[i], vtl[i])) / psi #* (beta_u - beta_l)
-          }))
-          
-          x1 <- c(x1, tb[q])
-          x2 <- c(x2, phi_q)
-        }
-      }
-      
-      y1 <- wpOff(x = x1)
-      y2 <- M(x = x2)
-      
-      # Now we can add the lines:
-      for (i in seq_len(length.out = length(x1))) {
-        p <- p + geom_path(
-          data = data.frame(x = c(x1[i], x2[i]), y = c(y1[i], y2[i])),
-          mapping = aes(x=x, y=y), color = "blue", linetype = "dashed")
-      }
-      
-      p + ggplot2::scale_color_manual(
-        paste(c("WP", "WC"), collapse = " / "),
-        values = head(x = funcsColors, n = 2)) +
-        ggplot2::xlim(range(
-          c(range(private$thetaB), self$getBeta_l(), self$getBeta_u())
-        )) +
         ggplot2::theme(
           axis.title.x = ggplot2::element_blank(),
           axis.title.y = ggplot2::element_blank())
