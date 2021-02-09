@@ -721,7 +721,9 @@ $$
 \end{aligned}
 $$
 
-In practice, each weight is some combination of multiple other weights, in our case it will most likely be the product of the weights for the current data series, variable and interval. Back to our example that captures only the __A__-variable, let's set up this scenario with the new classes:
+In practice, each weight is some combination of multiple other weights, in our case it will most likely be the product of the weights for the current data series, variable and interval. The linear scalarizer also makes it apparent that each single objective (as well as its gradient) can be computed __independently__ and simultaneously, meaning that we can arbitrarily parallelize the computation.
+
+Back to our example that captures only the __A__-variable, let's set up this scenario with the new classes:
 
 ```{r}
 dataLoss <- SRBTW_DataLoss$new(

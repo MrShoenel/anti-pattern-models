@@ -207,32 +207,27 @@ SRBTW <- R6Class(
       return(max(self$getQ()))
     },
     
-    getPhi = function() {
-      fac1 <- self$getBeta_u() - self$getBeta_l()
-      gamma_bed <- self$getgamma_bed()
-      theta_d <- gamma_bed[3]
-      
+    getPsi = function() {
       lambda <- self$getLambda()
-      fac2 <- max(theta_d, sum(sapply(X = self$getQ(), FUN = function(q) {
-        max(lambda[q], self$getLength_q(q))
-      })))
+      vtl <- self$getVarthetaL()
+      
+      sum(sapply(self$getQ(), function(i) {
+        max(lambda[i], max(-vtl[i], vtl[i]))
+      }))
     },
     
     getPhi_q = function(q) {
       private$checkQ(q)
-      
-      if (q == 1) {
-        return(0)
-      }
-      
-      # Else: q > 1
       lambda <- self$getLambda()
-      X <- seq_len(length.out = q - 1)
-      sum(sapply(X = X, FUN = function(q) {
-        max(lambda[q], self$getLength_q(q))
-      })) / (self$getBeta_u() - self$getBeta_l())
+      vtl <- self$getVarthetaL()
+      psi <- self$getPsi()
+      beta_l <- self$getBeta_l()
+      beta_u <- self$getBeta_u()
+      
+      if (q == 1) 0 else sum(sapply(seq_len(length.out = q - 1), function(i) {
+        max(lambda[i], max(-vtl[i], vtl[i])) / psi * (beta_u - beta_l)
+      }))
     },
-    
     
     getSubModel = function(q) {
       private$checkQ(q)
@@ -277,7 +272,173 @@ SRBTW <- R6Class(
       
       p + ggplot2::scale_color_manual(
         paste(funcs, collapse = " / "),
-        values = head(x =funcsColors, n = length(funcs))) +
+        values = head(x = funcsColors, n = length(funcs))) +
+        ggplot2::xlim(range(
+          c(range(private$thetaB), self$getBeta_l(), self$getBeta_u())
+        )) +
+        ggplot2::theme(
+          axis.title.x = ggplot2::element_blank(),
+          axis.title.y = ggplot2::element_blank())
+    },
+    
+    #' TODO: Make pretty following the example at
+    #' https://stackoverflow.com/questions/17148679/construct-a-manual-legend-for-a-complicated-plot
+    plot_dual_original = function(vOffset = 1, showGammaB = TRUE, showGammaE = TRUE, showBetaL = TRUE, showBetaU = TRUE) {
+      plotFac <- factor(levels = c("WP", "WC", "M", "Beta_L", "Beta_U", "Gamma_B", "Gamma_E"), ordered = TRUE)
+      getFac <- function(f) factor(x = f, levels = levels(plotFac), ordered = TRUE)
+      
+      p <- ggplot2::ggplot()
+      
+      wp <- Vectorize(function(x) {
+        private$wp(x) + vOffset
+      })
+      
+      wc <- Vectorize(function(x) {
+        private$wc(x)
+      })
+      
+      tb <- private$thetaB
+      beta_l <- self$getBeta_l()
+      beta_u <- self$getBeta_u()
+      gamma_bed <- self$getgamma_bed()
+      
+      extWp <- range(tb)
+      extWc <- range(
+        c(beta_l, beta_u,
+          (if (showGammaB) gamma_bed[1] else c()),
+          (if (showGammaE) gamma_bed[2] else c())))
+      
+      # Add the two signals:
+      p <- p + ggplot2::stat_function(
+        fun = wp, mapping = ggplot2::aes(color = getFac("WP")), xlim = extWp)
+      p <- p + ggplot2::stat_function(
+        fun = wc, mapping = ggplot2::aes(color = getFac("WC")), xlim = extWc)
+      
+      
+      tb_wc <- sapply(self$getQ(), function(q) beta_l + self$getPhi_q(q = q))
+      tb_wc <- c(tb_wc, beta_u)
+      
+      y_wp <- wp(tb)
+      y_wc <- wc(tb_wc)
+      
+      
+      # Now we can add the lines:
+      for (i in seq_len(length.out = length(tb))) {
+        p <- p + geom_path(
+          data = data.frame(x = c(tb[i], tb_wc[i]), y = c(y_wp[i], y_wc[i])),
+          mapping = aes(x = x, y = y), color = "blue", linetype = "dashed", size = .25)
+      }
+      
+      ob <- self$isOpenBegin()
+      oe <- self$isOpenEnd()
+      
+      # Conditionally add lines for open begin and/or end:
+      dfBeta <- NULL
+      if (showBetaL && ob) {
+        dfBeta <- rbind(dfBeta, data.frame(x = beta_l, type = getFac("Beta_L")))
+      }
+      if (showBetaU && oe) {
+        dfBeta <- rbind(dfBeta, data.frame(x = beta_u, type = getFac("Beta_U")))
+      }
+      if (is.data.frame(dfBeta)) {
+        p <- p + ggplot2::geom_vline(
+          mapping = ggplot2::aes(xintercept = x, color = type),
+          data = dfBeta, show.legend = TRUE)
+      }
+      
+      # Conditionally add the polygons for when gamma_b < b or gamma_e > e:
+      dfGamma <- NULL
+      gammaNumX <- 200
+      if (showGammaB && ob) {
+        gammaB_x <- seq(gamma_bed[1], beta_l, length.out = gammaNumX)
+        dfGamma <- rbind(dfGamma, data.frame(
+          x = c(min(tb), gammaB_x),
+          y = c(wp(min(tb)), sapply(X = gammaB_x, FUN = wc)),
+          type = rep(getFac("Gamma_B"), 1 + gammaNumX)
+        ))
+      }
+      if (showGammaE && oe) {
+        gammaE_x <- seq(gamma_bed[2], beta_u, length.out = gammaNumX)
+        dfGamma <- rbind(dfGamma, data.frame(
+          x = c(max(tb), gammaE_x),
+          y = c(wp(max(tb)), sapply(X = gammaE_x, FUN = wc)),
+          type = rep(getFac("Gamma_E"), 1 + gammaNumX)
+        ))
+      }
+      if (is.data.frame(dfGamma)) {
+        p <- p + ggplot2::geom_polygon(
+          mapping = ggplot2::aes(x = x, y = y, fill = type),
+          data = dfGamma, alpha = .25, show.legend = TRUE)
+      }
+      
+      #ggplot2::scale_color_manual(paste(c("WP", "WC"), collapse = " / "),values = head(x = funcsColors, n = 2))
+      
+      p +
+        scale_color_brewer(palette = "Set1")  +
+        scale_fill_brewer(palette = "Set2") +
+        ggplot2::labs(color = "Variable", fill = "Unused") +
+        ggplot2::xlim(range(c(extWp, extWc))) +
+        ggplot2::theme(
+          axis.title.x = ggplot2::element_blank(),
+          axis.title.y = ggplot2::element_blank())
+    },
+    
+    plot_dual = function(vOffset = 1) {
+      funcsColors <- c("red", "black")
+      p <- ggplot2::ggplot()
+      
+      wpOff <- Vectorize(function(x) {
+        private$wp(x) + vOffset
+      })
+      M <- Vectorize(function(x) {
+        self$M(x = x)
+      })
+      
+      p <- p + ggplot2::stat_function(
+        fun = wpOff, mapping = ggplot2::aes(color = "WP"))
+      p <- p + ggplot2::stat_function(
+        fun = M, mapping = ggplot2::aes(color = "WC"))
+      
+      # Next we are adding vertical lines between the signals.
+      tb <- private$thetaB
+      vtl <- self$getVarthetaL()
+      beta_l <- self$getBeta_l()
+      beta_u <- self$getBeta_u()
+      lambda <- self$getLambda()
+      psi <- sum(sapply(self$getQ(), function(i) {
+        max(lambda[i], max(-vtl[i], vtl[i]))
+      }))
+      
+      x1 <- range(tb)
+      #x2 <- c(self$getBeta_l(), self$getBeta_u())
+      x2 <- range(tb)
+      
+      if (length(vtl) > 1) {
+        
+        for (q in tail(self$getQ(), -1)) {
+          # We'll always only plot the line at the begin.
+          phi_q <- sum(sapply(seq_len(length.out = q - 1), function(i) {
+            max(lambda[i], max(-vtl[i], vtl[i])) / psi #* (beta_u - beta_l)
+          }))
+          
+          x1 <- c(x1, tb[q])
+          x2 <- c(x2, phi_q)
+        }
+      }
+      
+      y1 <- wpOff(x = x1)
+      y2 <- M(x = x2)
+      
+      # Now we can add the lines:
+      for (i in seq_len(length.out = length(x1))) {
+        p <- p + geom_path(
+          data = data.frame(x = c(x1[i], x2[i]), y = c(y1[i], y2[i])),
+          mapping = aes(x=x, y=y), color = "blue", linetype = "dashed")
+      }
+      
+      p + ggplot2::scale_color_manual(
+        paste(c("WP", "WC"), collapse = " / "),
+        values = head(x = funcsColors, n = 2)) +
         ggplot2::xlim(range(
           c(range(private$thetaB), self$getBeta_l(), self$getBeta_u())
         )) +
@@ -320,14 +481,9 @@ SRBTW_SubModel <- R6Class(
       lambda <- s$getLambda()
       l_q <- s$getLength_q(q)
       l_prime_q <- max(lambda[q], max(-l_q, l_q))
-      psi <- sum(sapply(s$getQ(), function(i) {
-        max(lambda[i], max(-vtl[i], vtl[i]))
-      }))
+      psi <- s$getPsi()
       l_q_c <- l_prime_q / psi * (beta_u - beta_l)
-      
-      phi_q <- if (q == 1) 0 else sum(sapply(seq_len(length.out = q - 1), function(i) {
-        max(lambda[i], max(-vtl[i], vtl[i])) / psi * (beta_u - beta_l)
-      }))
+      phi_q <- s$getPhi_q(q)
       sb_q <- beta_l + phi_q
       se_q <- sb_q + l_q_c
       tb_q <- s$getTb_q(q)
@@ -576,6 +732,7 @@ SRBTW_SingleObjectiveOptimization <- R6Class(
   inherit = SRBTW_Loss,
   
   private = list(
+    srbtw = NULL,
     objectives = NULL
   ),
   
