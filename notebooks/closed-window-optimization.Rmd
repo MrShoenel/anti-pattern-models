@@ -1237,7 +1237,259 @@ Also, instead of or additionally to this regularizer, we can sum up the number o
 
 This goal is actually specific to the current case, but in general the purpose is to a) verify, that the choice of data- and regularization-loss is apt for matching data that is expected to be somewhat similar to a given pattern, and b) to find upper- and/or lower-bounds (best/worst possible match) such that we can use the model for __scoring__ when fitting to real-world data.
 
+
 An important step is to validate whether the selected sub-models and scores are suitable to detect and score the reference pattern. This can be verified by setting the query signal equal to the reference signal, i.e., $\text{WC} = \text{WP}$, and then having the multilevel model use starting intervals that are different from the reference intervals. Everything else is identical to the first optimization problem. If the selected data- and regularization-losses were chosen appropriately, the MLM converges to the reference intervals, i.e., each sub-model matches best what it should match. Ideally, this test is repeated a number of times, with randomly initialized query intervals.
+
+## Scoring a loss
+
+If we have the upper and lower bound for some loss $\mathcal{L}(\cdot)$, we can define a __score-operator__, $\mathsf{S}^{\oplus}$, as:
+
+$$
+\begin{aligned}
+  \mathcal{L}(\cdot)\;\dots&\;\text{data- or regularization-loss, and also its gradient}\;\nabla\,\mathcal{L}(\cdot)\text{,}
+  \\[1ex]
+  \omega,\beta^{(l)},\beta^{(u)}\;\dots&\;\text{weight, lower- and upper bound for loss}\;\mathcal{L}(\cdot)\text{,}
+  \\[1ex]
+  \mathsf{S}^{\oplus}(\cdot)=&\;\omega\Bigg(1-\frac{\mathcal{L}(\cdot)-\beta^{(l)}}{\beta^{(u)}-\beta^{(l)}}\Bigg)\;\text{, score-operator, where larger scores are better (}\oplus\text{),}
+  \\[1ex]
+  \nabla\,\mathsf{S}^{\oplus}\big(\mathcal{L}_q(\cdot)\big)=&\;\frac{\omega\nabla\,\mathcal{L}_q(\cdot)}{\beta^{(l)}-\beta^{(u)}}\;\text{, gradient of this operator.}
+\end{aligned}
+$$
+
+The score of some loss really just is a scaling of it into the range $[0,1]$, where, depending on the definition, zero or one is the best (in the previous definition $1$ would be the best, hence we wrote $\mathsf{S}^{\oplus}$ -- otherwise, we would use the notion $\mathsf{S}^{\ominus}$ for an operator where lower scores are better). If we choose not to negate the score by leaving out the $1-$, the gradient is almost the same, except for that we subtract the lower bound from the upper bound, i.e., $\beta^{(u)}-\beta^{(l)}$.
+
+
+__Scoring?__ --- The goal is to align (to time-warp) some data to a given pattern. If we attempt to align the pattern to itself, using some unfavorable starting values, we would expect it to perfectly match when the optimization is done. But a match depends on how the loss is defined, and what is its weight. If a single variable in a single interval is captured by a singular loss, and that loss is appropriate for matching the variable, then it should ideally be $0$ (or whatever is the lowest possible value). Recall that __SRBTW__ is just a model for aligning two data series, it is up to the user chose an appropriate loss that is _adequate to pursue the user's objectives_. Such an adequate loss is one that reaches its global minimum in case of fitting the pattern to itself.
+
+If two or more losses are combined by, e.g., a linear scalarizer, and if these losses pursue objectives that are somewhat conflicting with each other (not necessarily orthogonal), then the lower bound for that aggregation is larger than or equal to the sum of the singular minimal possible losses. It may not be trivial to determine the new lower bound for an aggregated loss. We can find this lower bound through optimization, and this is described in subsection \ref{ssec:match_wp}. In practice, the lowest possible aggregated loss lies on a __Pareto__-boundary and there may be many optimal losses on that boundary.
+
+As for the upper bound of an aggregated loss, we too will have a Pareto-boundary. However, we cannot determine it computationally. The compromise is to sum up the worst possible losses of all singular losses. There are some losses that have a finite upper bound, and some that only have $\infty$ as upper bound. However, our goal is to come up with losses that have a well-defined upper bound for our problem, and these are presented in the next sub-section.
+
+## Losses with finite upper bounds
+
+Early on I had defined losses (back then called metrics) that all had one thing in common: their finite upper bound was either global, or we could pose our problem in a way such that a local finite upper bound could be specified. For many such metrics, this was done by scaling the data within an interval into the __unit-square__. In the following, we present some of these metrics, redefined as losses, together with their upper and lower local bounds. In general, we exploit the fact that each interval of the Warping Pattern is delimited by some rectangular area, and within that area, which not necessarily needs to be a (unit-)square, many definable losses have a clear upper bound.
+
+Some of the scores will exploit the fact that in time-warping, the degrees of freedom are on the time- or x-axis only. When we define an optimization problem using SRBTW, we usually know the lower- and upper bounds of the y-axis. Even later for optimization goal III, when we allow the y-values to adjust, this will happen within __previously specified box-bounds__. Some of the losses described below will exploit these facts.
+
+### Area between curves
+
+This was one of the very first metrics I had implemented. The area between curves (ABC) within an interval has been proven to be quite useful. It is easy to compute, both for the continuous and discrete case. The discrete case is equivalent to the mean absolute error and approaches the continuous loss with sufficiently large number of samples. The ABC exploits the lower and upper bound for the y-axis (known a priori), and scales the rectangle of an interval using the current Warping Pattern's interval's extent ($\delta_q$ below), such that the loss is always computed in a rectangle that always has the same size.
+
+$$
+\begin{aligned}
+  y_q^{\min},y_q^{\max}\;\dots&\;\text{lower and upper bounds for the }y\text{-axis in the }q\text{-th WP-interval,}
+  \\[1ex]
+  \mathbf{x}_q^{(\text{WP})}\;\dots&\;\text{its support (going from}\;\bm{\theta}_{q+1}\;\text{to}\;\bm{\theta}_{q}\text{),}
+  \\[1ex]
+  \delta_q=&\;\bm{\theta}_{q+1}-\bm{\theta}_{q}\equiv\max{\Big(\mathbf{x}_q^{(\text{WP})}\Big)}-\min{\Big(\mathbf{x}_q^{(\text{WP})}\Big)}\;\text{, the extent of the support,}
+  \\[1ex]
+  \rho_q=&\;\delta_q\times\big(y_q^{\max}-y_q^{\min}\big)\;\text{, the total area of that interval,}
+  \\[1ex]
+  \rho_q^{(\text{WP})}=&\;\int\displaylimits_{\mathbf{x}_q^{(\text{WP})}}\,r(x)\;\text{, note that}\;\forall\,x\to y_q^{\min}\leq r(x)\leq y_q^{\max}\text{, or}
+  \\[1ex]
+  \rho_q^{(\text{WP}_d)}=&\;\frac{1}{N}\sum_{i=1}^{N}\,r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)\;\text{,}
+  \\[0ex]
+  &\;\text{the (discrete) area between the reference signal (WP) and the x-/time-axis (at}\;y_q^{\min}\text{),}
+  \\[1ex]
+  \beta_l=&\;0\;\text{, the metric's lower bound, which is always}\;0\text{,}
+  \\[1ex]
+  \beta_u=&\;\max{\bigg(\rho_q^{\big(\text{WP}_{(d)}\big)},\rho_q-\rho_q^{\big(\text{WP}_{(d)}\big)}\bigg)}\;\text{, the metric's upper bound,}
+  \\[1em]
+  \mathcal{L}_q^{(\text{ABC}_c)}=&\;\beta_u^{-1}\times\int\displaylimits_{\mathbf{x}_q^{(\text{WP})}}\,\norm{r(x_q)-m_q^{(c)}\Big(x_q\Big)}\;\text{, the continous ABC-loss,}
+  \\[1ex]
+  \mathcal{L}_q^{(\text{ABC}_d)}=&\;\frac{1}{N\times\beta_u}\sum_{i=1}^{N}\,\norm{r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)-m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)}\;\text{, (discrete case), with gradient}
+  \\[1ex]
+  \nabla\,\mathcal{L}_q^{(\text{ABC}_d)}=&\;\frac{1}{N\times\beta_u}\sum_{i=1}^{N}\,\frac{\nabla\,m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)\times\bigg(m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)-r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)\bigg)}{\norm{m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)-r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)}}\;\text{.}
+\end{aligned}
+$$
+
+Note that no scaling back of the intervals is required, because the discrete version samples equidistantly with equally many samples ($N$) from both, the WP and the WC, within their current intervals. In the continuous case, the supports of WP and WC are identical, as that is what SRBTW does (move a candidate-interval to the pattern-interval). The discrete ABC loss is also known as Sum of absolute differences (SAD), $L_1$-norm, _Manhattan_- or Taxicab-norm.
+
+
+### Residual sum of squares
+
+RSS, also known as sum of squared distance (SSD) and probably as many more synonyms, is usually always the first loss I use, as it is computationally cheap, easy to compute, fast and robust (delivers good results in many cases). Until now I had not been thinking about upper boundaries for it. However, with regard to that, it should be very similar to the ABC-loss, as the RSS' behavior is asymptotic. When, as in our case, we know the maximum y-extent, together with the (constant) support.
+
+$$
+\begin{aligned}
+  \rho_q=&\;\delta_q\times\big(y_q^{\max}-y_q^{\min}\big)^2\;\text{, the maximum possible loss in the WP-interval's area,}
+  \\[1ex]
+  \rho_q^{(\text{WP})}=&\;\int\displaylimits_{\mathbf{x}_q^{(\text{WP})}}\,\Big(r(x)-y_q^{\min}\Big)^2\;\text{, note that}\;\forall\,x\to y_q^{\min}\leq r(x)\leq y_q^{\max}\text{, or}
+  \\[1ex]
+  \rho_q^{(\text{WP}_d)}=&\;\frac{1}{N}\sum_{i=1}^{N}\,\bigg(r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)-y_q^{\min}\bigg)^2\;\text{,}
+  \\[0ex]
+  &\;\text{the (discrete) squared loss between the reference signal (WP) and the x-/time-axis (at}\;y_q^{\min}\text{),}
+  \\[1ex]
+  \beta_l,\beta_u\;\dots&\;\text{(no change),}
+  \\[1em]
+  \mathcal{L}_q^{(\text{RSS}_c)}=&\;\beta_u^{-1}\times\int\displaylimits_{\mathbf{x}_q^{(\text{WP})}}\,\bigg(r(x_q)-m_q^{(c)}\Big(x_q\Big)\bigg)^2\;\text{, the continous RSS-loss,}
+  \\[1ex]
+  \mathcal{L}_q^{(\text{RSS}_d)}=&\;\frac{1}{N\times\beta_u}\sum_{i=1}^{N}\,\bigg(r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)-m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)\bigg)^2\;\text{, (discrete case), with gradient}
+  \\[1ex]
+  \nabla\,\mathcal{L}_q^{(\text{RSS}_d)}=&\;-\frac{2}{N\times\beta_u}\sum_{i=1}^{N}\,\nabla\,m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)\times\bigg(r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)-m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)\bigg)\;\text{.}
+\end{aligned}
+$$
+
+The difference really just is to replace the norm with a square, and the then-simplified gradient.
+
+### More simple metrics
+
+For more simple metrics see [^1]. However, we will focus on metrics that we have upper bounds for.
+
+[^1]: https://web.archive.org/web/20200701202102/https://numerics.mathdotnet.com/distance.html
+
+$$
+\begin{aligned}
+  {\text{SSD/RSS}} &: (x, y) \mapsto \|x-y\|_2^2 = \langle x-y, x-y\rangle = \sum_{i=1}^{n} (x_i-y_i)^2
+  \\[0ex]
+  {\text{MAE}} &: (x, y) \mapsto \frac{d_{\mathbf{SAD}}}{n} = \frac{\|x-y\|_1}{n} = \frac{1}{n}\sum_{i=1}^{n} \norm{x_i-y_i}
+  \\[0ex]
+  {\text{MSE}} &: (x, y) \mapsto \frac{d_{\mathbf{SSD}}}{n} = \frac{\|x-y\|_2^2}{n} = \frac{1}{n}\sum_{i=1}^{n} (x_i-y_i)^2
+  \\[0ex]
+  {\text{Euclidean}} &: (x, y) \mapsto \|x-y\|_2 = \sqrt{d_{\mathbf{SSD}}} = \sqrt{\sum_{i=1}^{n} (x_i-y_i)^2}
+  \\[0ex]
+  {\infty\text{/Chebyshev}} &: (x, y) \mapsto \|x-y\|_\infty = \lim_{p \rightarrow \infty}\bigg(\sum_{i=1}^{n} |x_i-y_i|^p\bigg)^\frac{1}{p} = \max_{i} \norm{x_i-y_i}
+  \\[0ex]
+  {\text{p/Minkowski}} &: (x, y) \mapsto \|x-y\|_p = \bigg(\sum_{i=1}^{n} \norm{x_i-y_i}^p\bigg)^\frac{1}{p}
+  \\[0ex]
+  {\text{Canberra}} &: (x, y) \mapsto \sum_{i=1}^{n} \frac{\norm{x_i-y_i}}{\norm{x_i}+\norm{y_i}}
+  \\[0ex]
+  {\text{cosine}} &: (x, y) \mapsto 1-\frac{\langle x, y\rangle}{\|x\|_2\|y\|_2} = 1-\frac{\sum_{i=1}^{n} x_i y_i}{\sqrt{\sum_{i=1}^{n} x_i^2}\sqrt{\sum_{i=1}^{n} y_i^2}}
+  \\[0ex]
+  {\text{Pearson}} &: (x, y) \mapsto 1 - \text{Corr}(x, y)
+\end{aligned}
+$$
+
+I have copy-pasted these here, and we should check later for which of these there may be an upper bound.
+
+
+### Correlation between curves
+
+This is also one I have used early on, and also as a score. The correlation is an intuitively elegant loss for estimating whether two curves have a similar shape. If one curve was to follow the shape of the other, the correlation would be high, a strongly negative correlation would mean one curve exhibits the opposite behavior. The correlation is between $[1,-1]$. While in some cases we would not be interested in negative correlation (and hence treat any correlation $\leq 0$ as no correlation), I think that in many cases it is better for the _training_ of our model to not do that. The correlation is a good candidate for combination with other losses that, for example, measure the difference in magnitude (like ABC or RSS), as it itself does not care for that. The correlation is a __ratio-loss__, and does not depend on local finite upper bounds, it thus has __global__ bounds.
+
+When I say correlation, I mean _Pearson_'s __sample__-correlation, just to be clear. In the following, we define the discrete version only, and we do it in a way that this loss is strictly positive, like the others presented so far.
+
+$$
+\begin{aligned}
+  \operatorname{cor}(\mathbf{a},\mathbf{b})=&\;\frac{\sum_{i=1}^N\,(\mathbf{a}_i-\mean{\mathbf{a}})\times(\mathbf{b}_i-\mean{\mathbf{b}})}{\sqrt{\sum_{i=1}^{N}\,(\mathbf{a}_i-\mean{\mathbf{a}})^2}\times\sqrt{\sum_{i=1}^{N}\,(\mathbf{b}_i-\mean{\mathbf{b}})^2}}
+  \\[1ex]
+  =&\;\operatorname{cor}\bigg(r\Big(\mathbf{x}_{q}^{(\text{WP})}\Big)\;,\;m_q^{(c)}\Big(\mathbf{x}_{q}^{(\text{WC})}\Big)\bigg)
+  \\[1ex]
+  =&\;\operatorname{cor}\Bigg(\frac{\sum_{i=1}^N\,\bigg(r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)-\mean{r\Big(\mathbf{x}_{q}^{(\text{WP})}\Big)}\bigg)\times\bigg(m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)-\mean{m_q^{(c)}\Big(\mathbf{x}_{q}^{(\text{WC})}\Big)}\bigg)}{\sqrt{\sum_{i=1}^{N}\,\bigg(r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)-\mean{r\Big(\mathbf{x}_{q}^{(\text{WP})}\Big)}\bigg)^2}\times\sqrt{\sum_{i=1}^{N}\,\bigg(m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)-\mean{m_q^{(c)}\Big(\mathbf{x}_{q}^{(\text{WC})}\Big)}\bigg)^2}}\Bigg)\;\text{.}
+\end{aligned}
+$$
+
+The gradient of this, using some substitutions for the _constant_ Warping Pattern, is:
+
+$$
+\begin{aligned}
+  \bm{\tau}=&\;\sum_{i=1}^N\,\bigg(r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)-\mean{r\Big(\mathbf{x}_{q}^{(\text{WP})}\Big)}\bigg)\;\text{, and}
+  \\[1ex]
+  \bm{\gamma}_i=&\;m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)\;\text{,}
+  \\[1ex]
+  \bm{\hat{\gamma}}_i=&\;\nabla\,m_q^{(c)}\Big(\mathbf{x}_{q,i}^{(\text{WC})}\Big)\;\text{,}
+  \\[1ex]
+  \rho=&\;\mean{m_q^{(c)}\Big(\mathbf{x}_{q}^{(\text{WC})}\Big)}
+  \\[1ex]
+  \hat{\rho}=&\;\mean{\nabla\,m_q^{(c)}\Big(\mathbf{x}_{q}^{(\text{WC})}\Big)}
+  \\[1ex]
+  \nabla\,\operatorname{cor}(\cdot)=&\;\Bigg(\frac{\Big[\sum_{i=1}^N\,\bm{\tau}\times\big(\bm{\hat{\gamma}}_i-\hat{\rho}\big)\Big]\times\sqrt{\sum_{i=1}^N(\bm{\gamma}_i-\rho)^2}}{\sqrt{(\bm{\tau}^\top\bm{\tau})}\times\Big[\sum_{i=1}^N\,\big(\bm{\gamma}_i-\rho\big)\times\big(\bm{\hat{\gamma}}_i-\bm{\hat{\gamma}}_i\times\hat{\rho}\big)\Big]}\Bigg)\;\text{.}
+\end{aligned}
+$$
+
+The actual loss shall map to $\mathcal{L}^{(\text{Corr})}\to[0+,2]$, so we define it as:
+
+$$
+\begin{aligned}
+  \mathcal{L}_q^{(\text{RSS})}=&\;1-\operatorname{cor}(\cdot)\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,\mathcal{L}_q^{(\text{RSS})}=&\;-\nabla\operatorname{cor}(\cdot)\;\text{.}
+\end{aligned}
+$$
+
+### Ratio between curves' arc-lengths
+
+Comparing the arc-lengths of two curves is the next loss that we can define such that it has a global upper bound. This is true for any loss that is a __ratio__. First, we obtain two measurements, one from the WP and one from the WC (here: the arc-length). We then set both measurements into a relation that we subtract from $1$. We make sure that each ratio ideally is $1$, and goes to $0$ the worse it gets. This is guaranteed by always dividing the minimum of both measurements by the maximum.
+
+The arc-length can be obtained continuously and discretely.
+
+$$
+\begin{aligned}
+  \operatorname{arclen}_{(c)} f(x)=&\;\int\displaylimits_{\mathbf{x}_q^{(\text{WP})}}\,\sqrt{1+\bigg[\frac{\partial}{\partial\,x}f(x)\bigg]^2}dx\;\text{,}
+  \\[0ex]
+  &\;\text{continuous arc-length of some function}\;f\;\text{with support}\;\mathbf{x}_q^{(\text{WP})}\text{,}
+  \\[1ex]
+  \operatorname{arclen}_{(d)} f(x)=&\;\lim_{N\to\infty}\,\sum_{i=1}^N\,\norm{f(\delta_i)-f(\delta_{i-1})}\;\text{, where}
+  \\[0ex]
+  \delta_i=&\;\min{\big(\operatorname{supp}(f)\big)}+i\times\Big(\max{\big(\operatorname{supp}(f)\big)}-\min{\big(\operatorname{supp}(f)\big)}\Big)\times N^{-1}\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,\operatorname{arclen}_{(d)}f(x)=&\;\lim_{N\to\infty}\,\sum_{i=1}^N\,\frac{\Big(f(\delta_i)-f(\delta_{i-1})\Big)\times\Big(f'(\delta_i)-f'(\delta_{i-1})\Big)}{\norm{f(\delta_i)-f(\delta_{i-1})}}\;\text{.}
+\end{aligned}
+$$
+
+The arc-length is the first __ratio__-loss, so we will define a generic ratio-loss where we can plug in any other loss that measures the same property of two signals and puts them into relation. The actual loss is then defined as:
+
+$$
+\begin{aligned}
+  \mathcal{L}^{(\text{ratio})}=&\;1-\frac{\min{\Big(\mathcal{L}^{(\text{WP})}(\cdot)}\;,\;\mathcal{L}^{(\text{WC})}(\cdot)\Big)}{\max{\Big(\mathcal{L}^{(\text{WP})}(\cdot)}\;,\;\mathcal{L}^{(\text{WC})}(\cdot)\Big)}\;\mapsto[+0,1]\;\text{,}
+  \\[0ex]
+  &\;\text{where}\;\mathcal{L}^{(\text{WP})}(\cdot)>0\;,\;\mathcal{L}^{(\text{WC})}(\cdot)>0\;\text{measure some property/loss of the}
+  \\[0ex]
+  &\;\text{Warping Pattern and -Candidate, with gradient}
+  \\[1ex]
+  \nabla\,\mathcal{L}_q^{(\text{ratio})}=&\;\mathcal{H}\Big(\mathcal{L}^{(\text{WP})}(\cdot)-\mathcal{L}^{(\text{WC})}(\cdot)\Big)\times\frac{\mathcal{L}^{(\text{WC})}(\cdot)\times \nabla\,\mathcal{L}^{(\text{WP})}(\cdot)-\mathcal{L}^{(\text{WP})}(\cdot)\times \nabla\,\mathcal{L}^{(\text{WC})}(\cdot)}{\Big[\mathcal{L}^{(\text{WP})}(\cdot)\Big]^2}
+  \\[1ex]
+  &\;+\mathcal{H}\Big(\mathcal{L}^{(\text{WC})}(\cdot)-\mathcal{L}^{(\text{WP})}(\cdot)\Big)\times\frac{\mathcal{L}^{(\text{WP})}(\cdot)\times\nabla\,\mathcal{L}^{(\text{WC})}(\cdot)-\mathcal{L}^{(\text{WC})}(\cdot)\times \nabla\,\mathcal{L}^{(\text{WP})}(\cdot)}{\Big[\mathcal{L}^{(\text{WC})}(\cdot)\Big]^2}\;\text{.}
+\end{aligned}
+$$
+
+We used the Heaviside step function to check the condition $\mathcal{L}^{(\text{WP})}(\cdot)>\mathcal{L}^{(\text{WC})}(\cdot)$ (and vice versa). It is now straightforward to see that we can effortlessly plug in the arc-length operator defined previously. We have defined the ratio-loss such that a perfect ratio of $\frac{1}{1}$ results in a loss of $0$. As the denominator approaches $\infty$, the loss approaches $1$, i.e., $\lim_{\text{denom}\to\infty}\mathcal{L}^{(\text{ratio})}=1$. The ratio-loss is __only defined for strictly positive__ losses.
+
+Here is a short list with more properties that may be useful for a ratio comparison:
+
+* Standard deviation, Variance
+* Signal measures: RMS, Kurtosis, Impulse-factor, Peak (Peak for for strictly positive signals)
+* Any other unary aggregation that is positive (or an absolute value can be obtained), for example $\min,\max$, mean, median etc.
+* discrete/differential Entropy (but we can define binary entropy-based losses, such as KL- and JSD-divergence, joint-/cross-entropy, mutual information etc.)
+
+### Jensen--Shannon divergence
+
+Most scores so far were _low-level_ or mid-level, meaning that they capture usually just a single simple property of a signal. Especially losses that discard many properties are low-level, such as $\min,\max$ for example. The area between curves, correlation and arc-length ratio already are somewhat mid-level, as they aggregate more than one (or a few) properties into a loss. Early on I had tried to use entropy-based losses and -divergences. Coming across the Kullback-Leibler divergence I early saw the need for such losses that have an upper bound. The (symmetric) KL-divergence only has application specific bounds, and I cannot see how to develop one in our case. However, the Jenson--Shannon divergence will compare two probability distributions, and does so with a __global upper bound__ of $\ln{(2)}$ (or $1$ when using the base-2 logarithm). Since it is a divergence, the global lower bound is $0$ in any case, i.e., no divergence.
+
+Using entropy-based measures technically requires the variables compared to be probability distributions (or functions thereof). This means that the sum/integral of these must be $1$. As of our examples, we have some modeled some variables using probability densities, and some are just metrics (univariate events). Strictly speaking, such measurements are not applicable at all for the latter type. Also, for the former type, we would strictly speaking still need to consider any variable in question as a partial probability distribution, as we are looking at a specific interval of it. In practice so far, however, it turns out that for both kind of variables we can obtain excellent results by ignoring the nature of the variable and simply treating it as discrete or continuous probability distribution, as long as we ascertain that for any realization it is strictly positive and that it sums up/integrates to $1$. That means that even if we look at a sub-support (interval) of a variable, we treat that current interval as the entire probability distribution of the variable in question. This approach is probably further justified by how SRBTW works: Given a Warping Pattern, we sub-divide it using come __constant__ boundaries into __independent__ intervals. For the scope of any single loss, the other intervals do not exist, so that we can view the captured variable as the entire probability distribution of it.
+
+I had previously also used entropy-based measures with success, esp. the mutual information (MI). It may be worth looking more into such available measures. However, those can be quite similar, and with the JSD we already have a well-working measure. The JSD has been used previously in Generative Adversarial Nets to minimize the divergence between probability distributions [@goodfellow2014generative].
+
+In the following, we will first define how to normalize two continuous or discrete signals (note that mixed mode is not supported) such that they sum up/integrate to $1$. Then we will define the Jensen--Shannon divergence for either type.
+
+$$
+\begin{aligned}
+  \mathsf{N}^{(\text{c})}(f,\mathbf{x}^{(\text{supp})},a)=&\;f(a)\times\bigg[\int\displaylimits_{\mathbf{x}^{(\text{supp})}}\,f(x)\bigg]^{-1}\;\text{, where}\;\min{\big(\mathbf{x}^{(\text{supp})}\big)}\leq a\leq\max{\big(\mathbf{x}^{(\text{supp})}\big)}\;\land\;\forall\,f(a)\geq 0\;\text{,}
+  \\[1ex]
+  &\;\text{(continuous to-probability transform operator),}
+  \\[1ex]
+  \mathsf{N}^{(\text{d})}(\mathbf{y})=&\;\frac{\mathbf{y}-\min{(\mathbf{y})}+1}{\sum_{i=1}^{\norm{\mathbf{y}}}\,\big[\mathbf{y}-\min{(\mathbf{y})}+1\big]_i}\;\text{,}
+  \\[1ex]
+  &\;\text{(discrete to-probability transform operator).}
+\end{aligned}
+$$
+
+In practice, so far, we get more robust results with discrete vectors (typically using between $1e3$ to $1e4$ samples), even when those were sampled from the same functions we would use in the continuous case. Therefore, we will (for now at least) only show the discrete JSD.
+
+$$
+\begin{aligned}
+  \mathbf{y}^{(\text{n})}=&\;\mathsf{N}^{(\text{d})}(\mathbf{y})\;\text{, and}
+  \\[0ex]
+  \mathbf{\hat{y}}^{(\text{n})}=&\;\mathsf{N}^{(\text{d})}(\mathbf{\hat{y}})\;\text{, to-probability normalized samples from two signals,}
+  \\[1ex]
+  \operatorname{KL}_{(\text{d,symm})}(\infdiv{\mathbf{y}}{\mathbf{\hat{y}}})=&\;\sum_{i=1}^{\norm{\mathbf{y}}}\,\mathbf{y}_i\times\log{\bigg(\frac{\mathbf{y}_i}{\mathbf{\hat{y}}_i}\bigg)}+\mathbf{\hat{y}}_i\times\log{\bigg(\frac{\mathbf{\hat{y}}_i}{\mathbf{y}_i}\bigg)}
+  \\[1ex]
+  \operatorname{JSD}_{(\text{d})}(\infdiv{\mathbf{y}}{\mathbf{\hat{y}}})=&\;\frac{1}{2}\operatorname{KL}_{(\text{d,symm})}\Big(\infdiv{\mathbf{y}}{\frac{\mathbf{y}+\mathbf{\hat{y}}}{2}}\Big)+\frac{1}{2}\operatorname{KL}_{(\text{d,symm})}\Big(\infdiv{\mathbf{\hat{y}}}{\frac{\mathbf{y}+\mathbf{\hat{y}}}{2}}\Big)\;\text{.}
+\end{aligned}
+$$
+
+
+## Match WP against itself\label{ssec:match_wp}
 
 The WP can be matched best by the reference pattern itself, i.e., nothing matches the reference better than it itself. A side-effect of this optimization goal thus is to obtain the maximum possible score, given the selected sub-models and their losses. The maximum score may then later be used to normalize scores when fitting the then \emph{calibrated} MLM to actual project data, as now we have upper bounds for all scores.
 
@@ -1358,13 +1610,11 @@ cow_og2_test1p_plots <- lapply(cow_og2_test1p, function(u) {
     lambda = p$lambda, begin = p$begin, end = p$end,
     openBegin = p$openBegin, openEnd = p$openEnd)
   
-  s$setParams(vartheta_l = u$r$srbtw$getVarthetaL())
+  s$setAllParams(params = u$r$opt$par)
   pd <- s$plot_dual_original(vOffset = 2)
   pd + labs(subtitle = u$n)
 })
-```
 
-```{r}
 ggarrange(
   ncol = 2,
   nrow = 2,
@@ -1387,15 +1637,20 @@ ggarrange(
 )
 ```
 
-All of the above examples that were closed/closed resulted in perfect fits (within margin of error), using the RSS loss. The half-open (begin) was OK, although it cut off the ascend in the beginning. The half-open (end) cut off major parts of the signal. Note that in both cases, before the begin or after the end, the WP was mapped to $0$, resulting in (visual) padding. In both cases, the remainder of the WC was mapped well, however. The fully-open examples seem to have gotten stuck even more in local optima and are probably victims to the absent regularization. Like the half-open tests, the non-cut-off parts are matched very well, but there was no mechanism to tell the optimization to try and include more of the signal.
+In all of the above cases, I used the discrete RSS data-loss, which itself uses a constant number of samples of $250$ per interval. Also I did __not__ use any regularization. This means, for example, that even a very short interval will be sampled from $250$ times, and if, for example, the WP interval was in the Long Stretch, and the WC interval is too, but it is much shorter, the loss will be equally low because of this setup. Especially when using open begin and/or end, regularization is strongly suggested
 
-In all of the above cases, I used the discrete RSS data-loss, which itself uses a constant number of samples of $250$ per interval. So if we divide the loss by the number of intervals, we can actually make apples-to-apples comparisons.
+The first two equidistantly-spaced examples resulted in perfect fits, no real surprise there. Examples 3 and 4 are quite OK, but they have a couple of intervals that are very short. Within the Long Stretch, it is virtually impossible for any of the intervals there to find a good match, as the function looks the same to the left and to the right (i.e., the gradient). Where the WP is not flat, the intervals actually find a good match again (i.e., we observe vertical lines in the non-flat phases). Examples 5 and 6 show the same behavior (`beta_1_2-20` and `beta_1_2-40`). It is worth noting that these two achieved quite a low error, which again is a hint at how ill-posed our setup here was (see previous paragraph).
+
+In examples 7 and 8 we use an open begin and end, respectively. In example 7, we see a perfect beginning with the _Fire Drill_ phase. Before that, almost all intervals have a loss of zero (except for the first ~3-4). This is because of the peculiarity I mentioned earlier ($250$ samples no matter the length). The begin was set initially at `r round(cow_og2_test1p[[7]]$b, 4)` and did not move much -- I suppose it was just too far off for the optimization to find the real beginning __without__ regularization. I suppose the same is true for example number 8, although that the starting-parameter for the end was `r round(cow_og2_test1p[[8]]$e, 4)`. However, that starting point is already slightly in the Fire Drill phase, and mapped initially to the last interval, which is flat. So the optimization probably moved it farther to the left to decrease that loss, as it would have gotten much stronger otherwise.
+
+If we divide the loss by the number of intervals, we can actually make apples-to-apples comparisons.
 
 ```{r echo=FALSE}
 cow_og2_test1p_stats <- NULL
 
 for (i in seq_len(length.out = length(cow_og2_test1p))) {
   u <- cow_og2_test1p[[i]]
+  u$r$srbtw$setAllParams(params = u$r$opt$par)
   cow_og2_test1p_stats <- rbind(cow_og2_test1p_stats, data.frame(
     Type = u$n,
     ob = if ("b" %in% names(u)) "Y" else "-",
@@ -1418,14 +1673,7 @@ cow_og2_test1p_stats
 
 The type in above table reveals some details: 'eq' means starting lengths of equal length, 'unif' mean they wer uniformly sampled from $[0,1]$ (with out scaling them back), 'beta' means they were drawn from a Beta-distribution with $\alpha=1$ and $\beta=2$ (also, no scaling back). 'ob' and 'oe' in the name indicate that the begin and/or end was open. Finally, the number of intervals is at the end of the type.
 
-```{r}
-ggplot() +
-  xlim(0,1) +
-  stat_function(fun = function(x) r(x) + 1) +
-  stat_function(fun = f) +
-  geom_path(data = data.frame(x = c(0, .5), y = c(.1, .7)), mapping = aes(x=x, y=y), color="blue", linetype = "dashed")
-```
-
+__Conclusion__: Yes, if the loss is well defined and mechanism for taking interval-lengths, begin and end into account (extreme value regularization), then this will absolutely work well.
 
 
 # Optimization goal III
