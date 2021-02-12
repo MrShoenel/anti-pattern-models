@@ -24,7 +24,9 @@ output:
   word_document: default
 ---
 
+\newcommand*\mean[1]{\overline{#1}}
 \newcommand{\norm}[1]{\left\lvert#1\right\rvert}
+\newcommand{\infdiv}[2]{#1\;\|\;#2}
 
 ```{r echo=FALSE, warning=FALSE}
 source(file = "../helpers.R")
@@ -706,19 +708,37 @@ srbtw$setAllParams(cow_og1_test1p$par)
 srbtw$plot_warp()
 ```
 
-In the meantime, I have implemented some new models as R6-classes. We should test that we can reach the same optimization result with these new structures. Some rationale for the architecture's design are the following:
+In the meantime, I have implemented some new models as __R6-classes__. We should test that we can reach the same optimization result with these new structures. Some rationale for the architecture's design are the following:
 
 Self-Regularizing Boundary Time Warping (__SRBTW__) is implicitly multi-variate and multi-dataseries capable. When defining a loss that concerns a variable, we will refer to it as a __Data-loss__. A loss that concerns the choice of model parameters will be called __Regularizer__. Since we have potentially many variables and intervals, a fully configured model may have many of either kind, and each of these are __objectives__; SRBTW, by design, hence is a __Multilevel-Model__ and poses a __Multi-objective__ optimization problem.
 
-Consider our Fire Drill example: The Warping Pattern has four variables and four intervals. If we want to fit a single project to it, we may want to define a single model and weight per variable and interval, which would result in already 16 objectives here. I wrote that SRBTW is implicitly capable of handling multiple variables and/or dataseries. Implicit because this complexity is reduced to having one SRBTW handle exactly two signals, the Warping Pattern and -Candidate, and then defining a loss per each. It is perfectly fine to reuse an SRBTW model across intervals of the same variable, but in practice the overhead of doing so may be reduced by having each objective use its own instance. We provide a __linear scalarizer__ to handle one or more objectives, each with their own weight.
+This is comparable to the output-layer of a neural network, so we can also view a fully-configured SRBTW as a vector-valued function, where each entry in the vector is a loss. The gradient then would be the __Jacobian__-matrix, i.e.,
 
 $$
 \begin{aligned}
-  \mathcal{O}(\bm{\vartheta}^{(l)},b,e)=&\;w_1\mathcal{L}_1+\;\dots\;+w_n\mathcal{L}_n\;\text{, (linear scalarization)}
+  \mathcal{O}(\operatorname{SRBTW})=&\;f:\mathbb{R}^m\to\mathbb{R}^n\;\text{,}
+  \\[1ex]
+  &\;\text{where}\;m\;\text{is the number of parameters (begin, end, interval-lengths etc.),}
+  \\[0ex]
+  &\;\text{and}\;n\;\text{is the number of defined singular objectives,}
+  \\[1ex]
+  \mathbf{J}_f=&\;\begin{bmatrix}
+    \frac{\partial\,f_1}{\partial\,x_1} & \cdots & \frac{\partial\,f_1}{\partial\,x_m} \\
+    \vdots & \ddots & \vdots \\
+    \frac{\partial\,f_n}{\partial\,x_1} & \cdots & \frac{\partial\,f_n}{\partial\,x_m}
+  \end{bmatrix}
+\end{aligned}
+$$
+
+Consider our Fire Drill example: The Warping Pattern has four variables and four intervals. If we want to fit a single project to it, we may want to define a single model and weight per variable and interval, which would result in already 16 objectives here. I wrote that SRBTW is implicitly capable of handling multiple variables and/or dataseries. Implicit because this complexity is reduced to having one SRBTW handle exactly two signals, the Warping Pattern and -Candidate, and then defining a _singular_ loss per each. It is perfectly fine to reuse an SRBTW model across intervals of the same variable, but in practice the overhead of doing so may be reduced by having each objective use its own instance. We provide a __linear scalarizer__ to handle one or more objectives, each with their own weight. Since the linear scalarizer reduces any number of objectives to a single objective, computing it results in a scalar loss, and the Jacobian becomes a gradient again.
+
+$$
+\begin{aligned}
+  \mathcal{O}^{(\text{LS})}(\operatorname{SRBTW})=&\;w_1\mathcal{L}_1(\cdot)+\;\dots\;+w_n\mathcal{L}_n(\cdot)\;\text{, (linear scalarization)}
   \\[1ex]
   =&\;\mathbf{w}^\top\bm{\mathcal{L}}\;\text{, with gradient (for any parameter in}\;\mathcal{L}_i\text{)}
   \\[1ex]
-  \nabla\,\mathcal{O}=&\;w_1\mathcal{L}'_1+\;\dots\;+w_n\mathcal{L}'_n\;\text{.}
+  \nabla\,\mathcal{O}=&\;w_1\mathcal{L}'_1(\cdot)+\;\dots\;+w_n\mathcal{L}'_n(\cdot)\;\text{.}
 \end{aligned}
 $$
 
