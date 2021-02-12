@@ -68,6 +68,14 @@ FitResult <- R6Class(
     
     getFitHist = function() {
       private$fitHist
+    },
+    
+    clearFitHist = function() {
+      nr <- nrow(private$fitHist)
+      if (nr > 0) {
+        private$fitHist <- private$fitHist[-(1:nr), ]
+      }
+      invisible(self)
     }
   )
 )
@@ -1286,6 +1294,7 @@ MultilevelModel <- R6Class(
       verbose = FALSE, reltol = sqrt(.Machine$double.eps),
       method = c("Nelder-Mead", "BFGS", "SANN")[1], forceSeq = NULL
     ) {
+      # TODO: Make this method return a FitResult instead.
       stopifnot(self$validateLinIneqConstraints())
       
       histCols <- c("begin", "end", "duration", "AIC", "AICc", "BIC", "BICc", "score_raw", "score_log", colnames(self$boundaries))
@@ -2026,13 +2035,19 @@ Stage1NoModel <- R6Class(
   lock_objects = FALSE,
   
   public = list(
-    initialize = function(approxRefFun = TRUE, approxQueryFun = TRUE) {
+    initialize = function(
+      approxRefFun = TRUE, approxQueryFun = TRUE,
+      zNormalizeRef = FALSE, zNormalizeQuery = FALSE
+    ) {
       super$initialize()
       
       stopifnot(is.logical(approxRefFun) && is.logical(approxQueryFun))
+      stopifnot(is.logical(zNormalizeRef) && is.logical(zNormalizeQuery))
       
       self$approxRefFun <- approxRefFun
       self$approxQueryFun <- approxQueryFun
+      self$zNormalizeRef <- zNormalizeRef
+      self$zNormalizeQuery <- zNormalizeQuery
       
       self$fnRef <- NA
       self$fnQuery <- NA
@@ -2046,6 +2061,13 @@ Stage1NoModel <- R6Class(
     #' @return list with keys 'dataRef', 'dataQuery', 'fnRef', 'fnQuery'
     compute = function() {
       super$compute() # Only performs checks - does not return anything
+      
+      if (self$zNormalizeRef) {
+        self$dataRef$y <- (self$dataRef$y - mean(self$dataRef$y)) / sd(self$dataRef$y)
+      }
+      if (self$zNormalizeQuery) {
+        self$dataQuery$y <- (self$dataQuery$y - mean(self$dataQuery$y)) / sd(self$dataQuery$y)
+      }
       
       
       if (self$approxRefFun) {

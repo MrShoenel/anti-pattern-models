@@ -654,9 +654,9 @@ stat_diff_2_functions_lm <- function(f1, f2, numSamples = 1e4) {
   
   # Also include if the two models cross over (their lines intersect).
   # stats::uniroot() throws an error if 
-  int <- rootSolve::uniroot.all(function(z) {
+  int <- sort(rootSolve::uniroot.all(function(z) {
     stats::predict(lm1, newdata = list(x = z)) - stats::predict(lm2, newdata = list(x = z))
-  }, interval = c(0, 1))
+  }, interval = c(0, 1)))
   
   arcCosAngle <- sum(vec1 * vec2) / (sqrt(sum(vec1^2)) * sqrt(sum(vec2^2)))
   # To increase numeric stability, as sometimes the calculated arcCos angle
@@ -752,22 +752,32 @@ stat_diff_2_functions_lm_score2 <- function(
 #' whenever there is doubt that the given functions f1,f2
 #' do not integrate to exactly one over the support [0,1].
 stat_diff_2_functions_symmetric_KL_sampled <- function(f1, f2, numSamples = 1e4) {
-  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
-  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  temp1 <- stat_diff_2_functions_philentropy_sampled(
+    f1 = f1, f2 = f2, numSamples = numSamples,
+    method = "kullback-leibler", skipNormalize = FALSE)
+  temp2 <- stat_diff_2_functions_philentropy_sampled(
+    f1 = f2, f2 = f1, numSamples = numSamples,
+    method = "kullback-leibler", skipNormalize = FALSE)
   
-  vec1 <- temp$dataF1[idx]
-  vec1 <- vec1 / sum(vec1)
-  vec2 <- temp$dataF2[idx]
-  vec2 <- vec2 / sum(vec2)
+  temp2$value <- unname(temp2$value + temp1$value) # symmetric KL!
+  temp2
   
-  temp$value <- suppressMessages({
-    philentropy::KL(
-      x = rbind(vec1, vec2), test.na = FALSE, unit = "log") +
-    philentropy::KL(
-      x = rbind(vec2, vec1), test.na = FALSE, unit = "log")
-  })
-  
-  return(temp)
+  # temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
+  # idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  # 
+  # vec1 <- temp$dataF1[idx]
+  # vec1 <- vec1 / sum(vec1)
+  # vec2 <- temp$dataF2[idx]
+  # vec2 <- vec2 / sum(vec2)
+  # 
+  # temp$value <- suppressMessages({
+  #   philentropy::KL(
+  #     x = rbind(vec1, vec2), test.na = FALSE, unit = "log") +
+  #   philentropy::KL(
+  #     x = rbind(vec2, vec1), test.na = FALSE, unit = "log")
+  # })
+  # 
+  # return(temp)
 }
 
 
@@ -775,6 +785,9 @@ stat_diff_2_functions_symmetric_KL_sampled <- function(f1, f2, numSamples = 1e4)
 #' Note that both functions must return strictly
 #' positive (including 0) values because of their
 #' use in the logarithm.
+#' 
+#' @note WARNING: This function may not work with
+#' z-normalized functions!
 stat_diff_2_functions_symmetric_KL <- function(
   f1, f2, numSamples = 1e4, sampleOnError = TRUE,
   useCubintegrate = TRUE
@@ -852,6 +865,9 @@ stat_diff_2_functions_symmetric_JSD_sampled <- function(f1, f2, numSamples = 1e4
 
 
 #' https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
+#' 
+#' @note WARNING: This function may not work with
+#' z-normalized functions!
 stat_diff_2_functions_symmetric_JSD <- function(
   f1, f2, numSamples = 1e4, sampleOnError = TRUE,
   useCubintegrate = TRUE
@@ -935,13 +951,17 @@ stat_diff_2_functions_symmetric_JSD <- function(
 stat_diff_2_functions_symmetric_JSD_score <- function(
   sensitivityExponent = 5, useSampledJSD = TRUE, numSamples = 1e4
 ) {
-  return(function(f1, f2, sampleOnError = if (useSampledJSD) NA else TRUE) {
+  return(function(f1, f2) {
     temp <- if (useSampledJSD)
       stat_diff_2_functions_symmetric_JSD_sampled(f1 = f1, f2 = f2, numSamples = numSamples)
       else stat_diff_2_functions_symmetric_JSD(
-        f1 = f1, f2 = f2, numSamples = numSamples, sampleOnError = sampleOnError)
+        f1 = f1, f2 = f2,
+        numSamples = numSamples, sampleOnError = if (useSampledJSD) NA else TRUE)
     
-    return(unname((1 - (temp$value / log(2)))^sensitivityExponent))
+    # New: We pull the root of the JSD to make it a true
+    # statistical distance metric. Note this also moves
+    # its upper bound from log(2) to sqrt(log(2)) ~ 0.83.
+    unname((1 - (sqrt(temp$value) / sqrt(log(2))))^sensitivityExponent)
   })
 }
 
@@ -967,17 +987,23 @@ stat_diff_2_functions_philentropy_sampled <- function(
   
   vec1 <- temp$dataF1[idx]
   if (!skipNormalize) {
+    vec1 <- vec1 - min(vec1) + .1 # if z-normalized, otherwise integral is 0!
     s1 <- sum(vec1)
     if (s1 > 0) {
       vec1 <- vec1 / s1
+    } else {
+      warning("Samples of f1 sum to 0.")
     }
   }
   
   vec2 <- temp$dataF2[idx]
   if (!skipNormalize) {
+    vec2 <- vec2 - min(vec2) + .1
     s2 <- sum(vec2)
     if (s2 > 0) {
       vec2 <- vec2 / s2
+    } else {
+      warning("Samples of f2 sum to 0.")
     }
   }
   
@@ -999,9 +1025,19 @@ stat_diff_2_functions_cross_entropy <- function(f1, f2, numSamples = 1e4) {
   idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2) & temp$dataF1 > 0 & temp$dataF2 > 0
   
   vec1 <- temp$dataF1[idx]
-  vec1 <- vec1 / sum(vec1)
   vec2 <- temp$dataF2[idx]
-  vec2 <- vec2 / sum(vec2)
+  
+  vec1 <- vec1 - min(vec1) # if z-normalized, otherwise integral is 0!
+  s1 <- sum(vec1)
+  if (s1 > 0) {
+    vec1 <- vec1 / s1
+  }
+  
+  vec2 <- vec2 - min(vec2)
+  s2 <- sum(vec2)
+  if (s2 > 0) {
+    vec2 <- vec2 / s2
+  }
   
   temp$value <- -sum(vec1 * log2(vec2))
   return(temp)
@@ -1029,23 +1065,63 @@ stat_diff_2_functions_mutual_information <- function(f1, f2, numSamples = 1e4) {
   
   vec1 <- temp$dataF1[idx]
   vec2 <- temp$dataF2[idx]
-  vecJ <- vec1 * vec2
   
-  vec1 <- vec1 / sum(vec1)
-  vec2 <- vec2 / sum(vec2)
+  vec1 <- vec1 - min(vec1) # if z-normalized, otherwise integral is 0!
+  s1 <- sum(vec1)
+  if (s1 > 0) {
+    vec1 <- vec1 / s1
+  }
+  
+  vec2 <- vec2 - min(vec2)
+  s2 <- sum(vec2)
+  if (s2 > 0) {
+    vec2 <- vec2 / s2
+  }
+  
+  vecJ <- vec1 * vec2
   vecJ <- vecJ / sum(vecJ)
   
   temp$entropy1 <- philentropy::H(vec1, unit = u)
   temp$entropy2 <- philentropy::H(vec2, unit = u)
-  temp$jointEntropy <- philentropy::JE(x = vecJ, unit = u)
-  temp$value <- philentropy::MI(x = vec1, y = vec2,  xy = vecJ, unit = u)
+  #temp$jointEntropy <- philentropy::JE(x = vecJ, unit = u)
+  #temp$value <- philentropy::MI(x = vec1, y = vec2,  xy = vecJ, unit = u)
+  temp$jointEntropy <- philentropy::MI(x = vec1, y = vec2,  xy = vecJ, unit = u)
+  temp$value <- philentropy::JE(x = vecJ, unit = u)
   
   return(temp)
 }
 
+stat_diff_2_functions_mutual_information_manual <- function(f1, f2, numSamples = 1e3) {
+  temp <- stat_diff_2_functions(f1 = f1, f2 = f2, numSamples = numSamples)
+  idx <- !is.na(temp$dataF1) & !is.na(temp$dataF2)
+  
+  vec1 <- temp$dataF1[idx]
+  vec2 <- temp$dataF2[idx]
+  
+  vec1 <- vec1 - min(vec1) # if z-normalized, otherwise integral is 0!
+  s1 <- sum(vec1)
+  if (s1 > 0) {
+    vec1 <- vec1 / s1
+  } else stop()
+  
+  vec2 <- vec2 - min(vec2)
+  s2 <- sum(vec2)
+  if (s2 > 0) {
+    vec2 <- vec2 / s2
+  } else stop()
+  
+  # idx <- !((vec1 == 0) | (vec2 == 0))
+  # vec1 <- vec1[idx]
+  # vec2 <- vec2[idx]
+  
+  temp$vec1 <- vec1
+  temp$vec2 <- vec2
+  temp
+}
+
 
 #' Computes a score based on the mutual information, using the entropy
-#' of either function. Returns a stat_diff- style function with f1, f2.
+#' of either function. Returns a stat_diff-style function with f1, f2.
 #' 
 #' @param symmetry One of 0, -1 or 1. The entropy of the first function
 #' divided by the mutual information is returned when using -1. The one
@@ -1068,7 +1144,10 @@ stat_diff_2_functions_mutual_information <- function(f1, f2, numSamples = 1e4) {
 #' already more sensitive. The default exponents are a somewhat good
 #' match for when the entropy and mutual information have about ten
 #' to fifteen bits.
-#' @param numSamples number of samples to use
+#' @param numSamples number of samples to use. Careful! This score is
+#' naturally very sensitive w.r.t. how many samples are drawn. While
+#' the actual amount is of less importance, it is crucial to use the
+#' same amount of samples across all comparisons made.
 #' @return function with parameters f1, f2
 stat_diff_2_functions_mutual_information_score <- function(
   symmetry = c(0, -1, 1)[1],
@@ -1083,6 +1162,7 @@ stat_diff_2_functions_mutual_information_score <- function(
     mi <- temp$value
     e1 <- temp$entropy1
     e2 <- temp$entropy2
+    temp$mi <- mi
     
     if (!useBits) {
       mi <- 2^mi
@@ -1093,11 +1173,40 @@ stat_diff_2_functions_mutual_information_score <- function(
     r1 <- e1 / mi
     r2 <- e2 / mi
     
-    switch (paste0(symmetry),
+    temp$value <- switch (paste0(symmetry),
       "0"  = r1 * r2,
       "1"  = r1,
       "-1" = r2
     )^sensitivityExponent
+    
+    temp
+  })
+}
+
+
+stat_diff_2_functions_mutual_information_score2 <- function(
+  numSamples = 1e4
+) {
+  return(function(f1, f2) {
+    temp <- stat_diff_2_functions_mutual_information(
+      f1 = f1, f2 = f2, numSamples = numSamples)
+    
+    I_xy <- temp$value
+    H_x <- temp$entropy1
+    H_y <- temp$entropy2
+    
+    temp$C_xy <- I_xy / H_y
+    temp$C_yx <- I_xy / H_x
+    
+    temp$R <- I_xy / (H_x + H_y)
+    temp$R_max <- min(H_x, H_y) / (H_x + H_y)
+    
+    temp$U <- 2 * temp$R
+    
+    # total correlation
+    temp$tc <- I_xy / min(H_x, H_y)
+    
+    temp
   })
 }
 
