@@ -256,6 +256,8 @@ $$
   &\;\text{(the corrected (positive) interval-length that is strictly}\;\geq\bm{\lambda}_q\text{),}
   \\[1ex]
   \psi=&\;\sum_{i=1}^{\max{(Q)}}\,l'_i\equiv \bm{l'}^\top\hat{\bm{u}}\;\text{, the sum used to normalize each and every}\;q\text{-th}\;l\text{,}
+  \\[0ex]
+  &\;\text{(}\hat{\bm{u}}\;\text{is the unit-vector),}
   \\[1ex]
   l_q^{(c)}=&\;\frac{l'_q}{\psi}\times(\beta_u-\beta_l)\;\text{, corrected, normalized and re-scaled version of}\;l_q\text{,}
   \\[1ex]
@@ -1685,6 +1687,124 @@ As for now, I want to note down two approaches that come to my mind:
 
 A third approach: Start with an empty Warping Pattern: A straight horizontal line located at $0.5$ for each variable and variably many equidistantly-spaced intervals (use information criterion to find best number). This is the approach where we throw away our definition of the Fire Drill AP and create one that is solely based on data.
 
+
+## Approach
+
+The approach that I suggest is to learn a __piece-wise linear__ function, that will be overlaid with the signal. For each interval, we will learn a separate slope. However, instead of learning a slope directly, we will learn the terminal y-translation at the end of the interval (with the initial translation being $0$). A linear function is given by $y=ax+b$, and we will only learn $a$. $b$, the intercept, is for each interval implicitly assumed to be $0$, but in reality is the sum of all preceding terminal y-translations. This is required because the resulting piece-wise linear function needs to be continuous (otherwise, when adding it to the signal, the signal would also become discontinuous). The first interval has no such preceding y-translation, so we will learn one using the additional parameter, $v$, that represents this. The advantage is, that we can simply __add__ this piece-wise function to each interval, in our case, to each $m_q^c(x,\dots)$. We can think of $v$ and the ordered set of terminal translations as a set of perpendicular vectors, so that for each $q$-th interval, we simply sum up $v$ and the set up to and including the preceding interval, to get the intercept.
+
+I call this approach __self-regularizing boundary amplitude warping__ (sr-BAW). In the style of the sub-model defintion for sr-BTW, $m_q^c$, we will call the sub-models for amplitude warping $n_q^c$.
+
+## Sub-Model formulation
+
+In each interval, we will call this function $t_q$:
+
+$$
+\begin{aligned}
+  \bm{\vartheta}^{(y)}\;\dots&\;\text{ordered set of terminal}\;y\text{-translations for each interval,}
+  \\[1ex]
+  a_q=&\;\frac{\bm{\vartheta}_q^{(y)}}{\iota_q}\;\text{, the slope for the}\;q\text{-th interval,}
+  \\[0ex]
+  &\;\text{where}\;\iota_q\;\text{is the length of the}\;q\text{-th interval,}
+  \\[1ex]
+  v\;\dots&\;\text{the global translation for the first interval,}
+  \\[1ex]
+  \phi_q^{(y)}=&\;\begin{cases}
+    0,&\text{if}\;q=1,
+    \\
+    \sum_{i=1}^{q-1}\,\bm{\vartheta}^{(y)}_i,&\text{otherwise,}
+  \end{cases}
+  \\[0ex]
+  &\;\text{(the intercept for the}\;q\text{-th interval), and}
+  \\[1ex]
+  \rho_q\;\dots&\;\text{starting}\;x\text{-offset of the}\;q\text{-th interval,}
+  \\[1ex]
+  t_q(a,x,\dots)=&\;a_q(x-\rho_q)+v+\phi_q^{(y)}\;\text{, linear amplitude warping in}\;q\text{-th interval.}
+\end{aligned}
+$$
+
+The amount of parameters for the y-translations is $1$ plus the amount of intervals (or the same as the amount of boundaries). For SRBTW, we had previously used the notion of $\phi_q$ to calculate the offset for each $q$-th interval. We use a similar notion here, $\phi_q^{(y)}$, to denote the intercept of each $q$-th interval.
+
+### Self-regularization
+
+Again, we would like this approach to be __self-regularizing__. That means, that any resulting final y-coordinate should never be less or more than the defined box-bounds. In DTW, the degrees of freedom are limited to warping time, i.e., the x-axis. Time can (linearly) compress and stretch, but never is the __amplitude__ of the signal altered. This would not make much sense for DTW, either, as it is a purely discrete algorithm, that manipulates __each__ discrete point of a query-signal. If DTW would alter the magnitude, the result would simply be the reference signal. Boundary Time Warping, on the other hand, instead of manipulating points, manipulates everything between the points (intervals) through linear affine transformation. This is the reason why the degrees of freedom are limited to time in DTW. That also means, for DTW, that time warping only works, when the query signal is within the bounds (y) of the reference signal. For that reason, time warping problems often have the application-specific y-limits that directly come from the reference signal, which is known a priori. It is also a possibility that the bounds are specified by the user.
+
+In SRBAW it is possible to specify limits on a per-interval basis, so we will have two vectors, one with lower- and one with upper bounds for each interval. It would also be possible to specify the limits as a function (per interval). But at this point it is not required so we will not make that extra effort.
+
+It is important to notice that in Boundary Time/Amplitude Warping, we cannot (should not) make any assumptions about the signal within an interval. For example, we cannot know its interval-global minimum or maximum. At the same time, we want to enforce box-bounds on the warped signal. The solution is to enforce these only after the warped signal has been computed. That means, that we need to wrap the warping function.
+
+$$
+\begin{aligned}
+  f(x,\dots)\;\dots&\;\text{some signal function, could be, e.g.,}\;m_q^c(x,\dots)\text{,}
+  \\[1ex]
+  t_q(a,x,\dots)=&\;a_q(x-\rho_q)+v+\phi_q^{(y)}
+  \\[1ex]
+  n_q(x,\dots)=&\;f(x,\dots)+\overbrace{a_q(x-\rho_q)+v+\phi_q^{(y)}}^{t_q(a,x,\dots)}\;\text{, sub-model that adds amplitude-warping to}\;f(x,\dots)\text{,}
+  \\[1ex]
+  \bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}\;\dots&\;\text{vectors with lower and upper}\;y\text{-bounds for each interval,}
+  \\[1ex]
+  n_q^c(x,\dots)=&\;\max{\bigg(\bm{\lambda}_q^{(\text{ymin})}, \;\min{\Big(n_q(x,\dots),\bm{\lambda}_q^{(\text{ymax})}\Big)}\bigg)}\;\text{, the}\;\min\text{/}\max\text{-constrained sub-model.}
+\end{aligned}
+$$
+
+### Gradient of the sub-model
+
+We need to pay attention when defining the gradient, for cases when $\iota_q$ and/or $\rho_q$ are parameters of the model that are learned and not constant. In our case, where we _wrap_ sr-BTW, $\iota_q=l_q^{(c)},\rho_q=\phi_q$, and $l_q^{(c)}$ depends on $\forall\,l\in\bm{\vartheta}^{(l)}$ as well as $b,e$ (if open begin and/or end), while $\phi_q$ depends on $\forall\,l_i^{(c)},i<q$. If we derive w.r.t. any of the sr-BAW parameters, i.e., $v$ or any of the terminal translations in $\bm{\vartheta}^{(y)}$, then this will eliminate any $m_q^c$, but we need to be careful when deriving for parameters that affect any $l_q^{(c)}$.
+
+
+### Testing
+
+We will define some piece-wise linear function and use the signal of the __A__-variable, then we warp the amplitude and see how that looks.
+
+```{r echo=FALSE}
+baw_intervals <- 5
+theta_baw <- c(0, .2, .4, .6, .8, 1)
+vartheta_l_baw <- rep(1 / baw_intervals, baw_intervals)
+baw_v <- .1
+baw_vartheta_y <- c(.05, -.35, -.1, .2, .025)
+
+baw_tq <- function(q, x) {
+  a_q <- baw_vartheta_y[q] / vartheta_l_baw[q]
+  phi_q_y <- if (q == 1) 0 else sum(baw_vartheta_y[1:(q - 1)])
+  phi_q <- if (q == 1) 0 else sum(vartheta_l_baw[1:(q - 1)])
+  a_q * (x - phi_q) + baw_v + phi_q_y
+}
+
+baw <- Vectorize(function(x) {
+  q <- 0
+  for (i in seq_len(baw_intervals)) {
+    q <- i
+    if (x >= theta_baw[i] && x < theta_baw[i + 1]) {
+      break
+    }
+  }
+  baw_tq(q = q, x = x)
+})
+
+n <- function(x) {
+  f(x) + baw(x)
+}
+```
+
+```{r}
+print(baw_v)
+print(theta_baw)
+print(vartheta_l_baw)
+print(baw_vartheta_y)
+
+ggplot() +
+  xlim(0, 1) +
+  stat_function(fun = f, color = "red") +
+  stat_function(fun = baw, color = "black") +
+  stat_function(fun = n, color = "blue")
+```
+
+What we see in the above plot is the following:
+
+* __Red__: The __A__-variable, as it appeared in the dataset,
+* __Black__: the piece-wise linear function, with initial offset `baw_v` (`r baw_v`), and per-interval terminal translations of `r baw_vartheta_y`. The interval-boundaries were equidistantly placed at `r theta_baw`,
+* __Blue__: Red+Black, i.e., the piece-wise linear function applied to the signal from the dataset.
+
+
 # Other thoughts
 
 Short unsorted list of things to consider.
@@ -1694,7 +1814,6 @@ Check progress of pattern: SRBTW allows for open-end matching, so that it can be
 In optimization goal III, we should also try to adapt the reference AP without actually defining a loss for the Long Stretch. With such an adapted pattern, we will find out what goes actually on in that phase in the projects we have, as the other intervals will match, leaving a gap for the LS.
 
 Choosing a good number of boundaries _a priori_: This depends on the problem, e.g., classification, and on whether a search can be performed for it. A search can be done using some information criterion (IC). Using some IC, then computing a best fit using $1\dots n$ boundaries, we should get a somewhat convex function, and can choose the number of boundaries using the minimum of that function. Sometimes, however, we cannot do this and need to make a decision a priori. I have done some tests using the __entropy__ of the signals, by treating them as probability density functions (which we showed works quite well for fitting a model). I have tried to compute it continuously (differential entropy) and discretely, by sampling from the signal. The latter case gives more usable values, yet it is much more volatile w.r.t. the number of samples. For example, a typical entropy (Shannon-bits) for $1e3$ samples is $\approx10$, and for $1e5$ it is already $\approx16$. Given the entropies of two signals, we could calculate the starting-number $n$ of boundaries like $n=(H^{(\text{WP})}\times H^{(\text{WC})})^{1-\frac{1}{e}}$. This gives OK-values for entropies in the range of approx. $\approx[5,20]$ and is just one idea. Eventually, we probably would need to do an empirical evaluation with many examples, where we employ a full search using some IC. Then, we could attempt to come up with some rule that best approximates this value.
-
 
 
 # References {-}
