@@ -5,22 +5,22 @@ header-includes:
   - \usepackage{bm}
   - \usepackage{mathtools}
 output:
-  pdf_document:
-    number_sections: true
+  md_document:
     toc: true
     toc_depth: 6
     df_print: kable
-    keep_tex: true
   html_document:
     number_sections: true
     toc: true
     toc_depth: 6
     toc_float: true
     df_print: kable
-  md_document:
+  pdf_document:
+    number_sections: true
     toc: true
     toc_depth: 6
     df_print: kable
+    keep_tex: true
   word_document: default
 ---
 
@@ -1718,7 +1718,7 @@ $$
   \\[1ex]
   \rho_q\;\dots&\;\text{starting}\;x\text{-offset of the}\;q\text{-th interval,}
   \\[1ex]
-  t_q(a,x,\dots)=&\;a_q(x-\rho_q)+v+\phi_q^{(y)}\;\text{, linear amplitude warping in}\;q\text{-th interval.}
+  t_q(x,\dots)=&\;a_q(x-\rho_q)+v+\phi_q^{(y)}\;\text{, linear amplitude warping in}\;q\text{-th interval.}
 \end{aligned}
 $$
 
@@ -1736,9 +1736,7 @@ $$
 \begin{aligned}
   f(x,\dots)\;\dots&\;\text{some signal function, could be, e.g.,}\;m_q^c(x,\dots)\text{,}
   \\[1ex]
-  t_q(a,x,\dots)=&\;a_q(x-\rho_q)+v+\phi_q^{(y)}
-  \\[1ex]
-  n_q(x,\dots)=&\;f(x,\dots)+\overbrace{a_q(x-\rho_q)+v+\phi_q^{(y)}}^{t_q(a,x,\dots)}\;\text{, sub-model that adds amplitude-warping to}\;f(x,\dots)\text{,}
+  n_q(x,\dots)=&\;f(x,\dots)+\overbrace{a_q(x-\rho_q)+v+\phi_q^{(y)}}^{t_q(x,\dots)}\;\text{, sub-model that adds amplitude-warping to}\;f(x,\dots)\text{,}
   \\[1ex]
   \bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}\;\dots&\;\text{vectors with lower and upper}\;y\text{-bounds for each interval,}
   \\[1ex]
