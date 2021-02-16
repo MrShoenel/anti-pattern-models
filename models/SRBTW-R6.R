@@ -384,6 +384,130 @@ SRBTW <- R6Class(
 )
 
 
+#' This model is SRBTW, wrapped in SRBAW, so we can do both optimizations.
+SRBTWBAW <- R6Class(
+  "SRBTWBAW",
+  
+  inherit = SRBTW,
+  
+  private = list(
+    v = NULL,
+    varthetaY = NULL,
+    lambdaYmin = NULL,
+    lambdaYmax = NULL
+  ),
+  
+  public = list(
+    initialize = function(
+      wp, wc, theta_b, gamma_bed, lambda, begin, end, # SRBTW
+      lambda_ymin, lambda_ymax, # SRBAW (!)
+      openBegin = FALSE, openEnd = FALSE, wc_d1 = NULL, wc_d2 = NULL # SRBTW
+    ) {
+      super$initialize(
+        wp = wp, wc = wc, theta_b = theta_b, gamma_bed = gamma_bed, lambda = lambda,
+        begin = begin, end = end, openBegin = openBegin, openEnd = openEnd,
+        wc_d1 = wc_d1, wc_d2 = wc_d2)
+      
+      stopifnot(is.numeric(c(lambda_ymin, lambda_ymax)) && !any(is.na(c(lambda_ymin, lambda_ymax))))
+      stopifnot(length(lambda_ymin) == length(lambda_ymax) && length(lambda_ymin) == (length(theta_b) - 1))
+      
+      private$lambdaYmin <- lambda_ymin
+      private$lambdaYmax <- lambda_ymax
+    },
+    
+    #' For SRBTWBAW, params is vartheta_l, [,b [, e]], v, vartheta_y
+    setAllParams = function(params) {
+      stopifnot(is.vector(params) && is.numeric(params) && !any(is.na(params)))
+      
+      ob <- self$isOpenBegin()
+      oe <- self$isOpenEnd()
+      # The total length is vartheta_l + [+b] [+e] v + vartheta_y,
+      # and the two varthetas have the same length.
+      vtLen <- length(private$thetaB) - 1
+      oboeLen <- (if (ob) 1 else 0) + (if (oe) 1 else 0)
+      superLen <- vtLen + oboeLen
+      requireLen <- vtLen + oboeLen + 1 + vtLen
+      stopifnot(length(params) == requireLen)
+      
+      super$setAllParams(
+        params = params[seq_len(length.out = superLen)])
+      
+      v <- params[superLen + 1]
+      vartheta_y <- params[(superLen + 2):length(params)]
+      
+      self$setParams(v = v, vartheta_y = vartheta_y)
+    },
+    
+    setParams = function(vartheta_l = NULL, begin = NULL, end = NULL, v = NULL, vartheta_y = NULL) {
+      super$setParams(vartheta_l = vartheta_l, begin = begin, end = end)
+      
+      if (!missing(v) && !is.null(v)) {
+        stopifnot(is.numeric(v) && !is.na(v))
+        private$v <- v
+      }
+      if (!missing(vartheta_y) && !is.null(vartheta_y)) {
+        stopifnot(is.numeric(vartheta_y) && !any(is.na(vartheta_y)))
+        stopifnot(length(vartheta_y) == (length(private$thetaB) - 1))
+        private$varthetaY <- vartheta_y
+      }
+      
+      invisible(self)
+    },
+    
+    getVarthetaY_q = function(q) {
+      private$checkQ(q = q)
+      private$varthetaY[q]
+    },
+    
+    getV = function() {
+      private$v
+    },
+    
+    getPhi_y_q = function(q) {
+      private$checkQ(q = q)
+      
+      if (q == 1) {
+        return(0)
+      }
+      
+      # Else: q > 1
+      X <- seq_len(length.out = q - 1)
+      sum(sapply(X = X, FUN = function(r) {
+        self$getVarthetaY_q(q = r)
+      }))
+    },
+    
+    getLambdaYmin = function() {
+      private$lambdaYmin
+    },
+    
+    getLambdaYmax = function() {
+      private$lambdaYmax
+    },
+    
+    getSubModel = function(q) {
+      private$checkQ(q)
+      
+      qs <- paste0(q)
+      if (!(qs %in% names(private$subModels))) {
+        # Lazy init:
+        private$subModels[[qs]] <- SRBTWBAW_SubModel$new(srbtw = self, q = q)
+      }
+      
+      private$subModels[[qs]]
+    },
+    
+    #' Overridden because some funcs, such as plot_warp, call M()
+    M = function(x) {
+      q <- self$getQForX(x)
+      sm <- self$getSubModel(q = q)
+      t <- sm$asTuple()
+      t$nqc(x)
+    }
+  )
+)
+
+
 SRBTW_SubModel <- R6Class(
   "SRBTW_SubModel",
   
@@ -408,7 +532,6 @@ SRBTW_SubModel <- R6Class(
     asTuple = function() {
       q <- private$q
       s <- private$srbtw
-      vtl <- s$getVarthetaL()
       
       beta_l <- s$getBeta_l()
       beta_u <- s$getBeta_u()
@@ -463,6 +586,66 @@ SRBTW_SubModel <- R6Class(
           stop("TODO")
         }
       )
+    }
+  )
+)
+
+
+
+
+SRBTWBAW_SubModel <- R6Class(
+  "SRBTWBAW_SubModel",
+  
+  inherit = SRBTW_SubModel,
+  
+  public = list(
+    initialize = function(srbtw, q) {
+      super$initialize(srbtw = srbtw, q = q)
+    },
+    
+    asTuple = function() {
+      q <- private$q
+      s <- private$srbtw
+      t <- super$asTuple()
+      
+      lambda_ymin <- s$getLambdaYmin()
+      lambda_ymax <- s$getLambdaYmax()
+      
+      v <- s$getV()
+      vty_q <- s$getVarthetaY_q(q = q)
+      phi_y_q <- s$getPhi_y_q(q = q)
+      a_q <- vty_q / t$l_q_c
+      lambda_ymin_q <- lambda_ymin[q]
+      lambda_ymax_q <- lambda_ymax[q]
+      
+      t$iota_q <- t$l_q_c
+      t$v <- v
+      t$vty_q <- vty_q
+      t$a_q <- a_q
+      t$phi_y_q <- phi_y_q
+      t$lambda_ymin_q <- lambda_ymin_q
+      t$lambda_ymax_q <- lambda_ymax_q
+      
+      tq <- function(x) {
+        a_q * (x - t$phi_q) + v + phi_y_q
+      }
+      t$tq <- tq
+      
+      t$nqc <- function(x) {
+        nq <- t$mqc(x = x) + tq(x = x)
+        max(lambda_ymin_q, min(nq, lambda_ymax_q))
+      }
+      
+      t$nqc_d1 <- function(x) {
+        # Gradient of nqc, needs wc, wc_d1
+        stop("TODO")
+      }
+      t$nqc_d2 <- function(x) {
+        # 2nd-order Gradient of nqc, needs wc, wc_d1, wc_d2
+        stop("TODO")
+      }
+      
+      t
     }
   )
 )
@@ -729,7 +912,7 @@ SRBTW_SingleObjectiveOptimization <- R6Class(
 # SRBTW_SubModel$debug("asTuple")
 # SRBTW$debug("initialize")
 # SRBTW_Loss$debug("compute")
-# SRBTW_DataLoss$debug("initialize")
+# SRBTW_DataLoss$debug("compute")
 # SRBTW_SingleObjectiveOptimization$debug("compute")
 
 
