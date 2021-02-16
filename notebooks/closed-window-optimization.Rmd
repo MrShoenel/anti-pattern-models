@@ -5,6 +5,12 @@ header-includes:
   - \usepackage{bm}
   - \usepackage{mathtools}
 output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+    # keep_tex: true
   md_document:
     toc: true
     toc_depth: 6
@@ -15,12 +21,6 @@ output:
     toc_depth: 6
     toc_float: true
     df_print: kable
-  pdf_document:
-    number_sections: true
-    toc: true
-    toc_depth: 6
-    df_print: kable
-    keep_tex: true
   word_document: default
 ---
 
@@ -359,7 +359,7 @@ $$
   \\[1ex]
   q\in Q;\;Q=&\;\Big\{1,\;\dots\;,\norm{\bm{\theta}^{(b)}}-1\Big\}\;\text{, where}\;Q\;\text{is ordered low to high, i.e.,}\;q_i\prec q_{i+1}\text{,}
   \\[0ex]
-  &\;\text{(boundaries converted to intervals),}
+  &\;\text{(boundaries converted to interval-indices),}
   \\[1ex]
   \mathcal{I}^{(\text{WP})},\mathcal{I}^{(\text{WC})}\;\dots&\;\text{the set of Warping Pattern- and Candidate-intervals with length}\;[\max{Q}]\text{,}
   \\[0ex]
@@ -677,7 +677,7 @@ objF <- function(x, isGrad = FALSE) {
 
 Let's try some optimization using box-bounds and closed open and begin:
 
-```{r}
+```{r echo=FALSE}
 # Optimization Goal 1, test 1, parallel:
 cow_og1_test1p <- loadResultsOrCompute(file = "../results/cow_og1_test1p.rds", computeExpr = {
   library(optimParallel)
@@ -690,7 +690,7 @@ cow_og1_test1p <- loadResultsOrCompute(file = "../results/cow_og1_test1p.rds", c
     "stat_diff_2_functions_symmetric_JSD_sampled",
     "stat_diff_2_functions_philentropy_sampled"))
 
-  doWithParallelClusterExplicit(cl = parallel::makePSOCKcluster(12), expr = {
+  doWithParallelClusterExplicit(cl = cl, expr = {
     set.seed(1337)
     optRp <- optimParallel::optimParallel(
       par = rep(1/length(vartheta_l), length(vartheta_l)),
@@ -787,7 +787,7 @@ soo$compute()
 
 Let's attempt to optimize this:
 
-```{r}
+```{r echo=FALSE}
 cow_og1_test2p <- loadResultsOrCompute(file = "../results/cow_og1_test2p.rds", computeExpr = {
   library(optimParallel)
   
@@ -848,7 +848,10 @@ dataLoss_JSD <- function(loss, listOfSms) {
 }
 
 dataLoss$setLossFunc(lossFunc = dataLoss_JSD)
+```
 
+
+```{r echo=FALSE}
 cow_og1_test3p <- loadResultsOrCompute(file = "../results/cow_og1_test3p.rds", computeExpr = {
   library(optimParallel)
   
@@ -896,7 +899,7 @@ srbtw$setOpenBegin(ob = TRUE)
 srbtw$setOpenEnd(oe = TRUE)
 ```
 
-```{r}
+```{r echo=FALSE}
 cow_og1_test4p <- loadResultsOrCompute(file = "../results/cow_og1_test4p.rds", computeExpr = {
   library(optimParallel)
     
@@ -938,11 +941,11 @@ This is still using the Jenson-Shannon divergence, and apparently it is a better
 
 ```{r eval=FALSE}
 optextras::kktchk(cow_og1_test4p$par, fn = function(x) {
-    soo$setParams(params = x)
-    soo$compute()
+  soo$setParams(params = x)
+  soo$compute()
 }, gr = function(x) {
-    soo$setParams(params = x)
-    soo$computeGrad()
+  soo$setParams(params = x)
+  soo$computeGrad()
 })
 ```
 
@@ -951,7 +954,9 @@ Let's also try this with the RSS data-loss:
 
 ```{r}
 dataLoss$setLossFunc(lossFunc = dataLoss_RSS)
+```
 
+```{r echo=FALSE}
 cow_og1_test5p <- loadResultsOrCompute(file = "../results/cow_og1_test5p.rds", computeExpr = {
   library(optimParallel)
     
@@ -997,7 +1002,9 @@ srbtw$setOpenBegin(ob = FALSE)
 srbtw$setOpenEnd(oe = TRUE)
 
 dataLoss$setLossFunc(lossFunc = dataLoss_JSD)
+```
 
+```{r echo=FALSE}
 cow_og1_test6p <- loadResultsOrCompute(file = "../results/cow_og1_test6p.rds", computeExpr = {
   library(optimParallel)
     
@@ -1039,7 +1046,9 @@ Now we have a late cut-out, that basically ignores `1/6` of the signal at the en
 ```{r}
 srbtw$setOpenBegin(ob = TRUE)
 srbtw$setOpenEnd(oe = FALSE)
+```
 
+```{r echo=FALSE}
 cow_og1_test7p <- loadResultsOrCompute(file = "../results/cow_og1_test7p.rds", computeExpr = {
   library(optimParallel)
     
@@ -1109,7 +1118,9 @@ dataLoss_swap <- SRBTW_DataLoss$new(
 soo_swap <- SRBTW_SingleObjectiveOptimization$new(srbtw = srbtw_swap)
 soo_swap$addObjective(obj = dataLoss_swap)
 dataLoss_swap$setLossFunc(lossFunc = dataLoss_RSS)
+```
 
+```{r echo=FALSE}
 cow_og1_test8p <- loadResultsOrCompute(file = "../results/cow_og1_test8p.rds", computeExpr = {
   library(optimParallel)
     
@@ -1194,9 +1205,9 @@ $$
 \begin{aligned}
   \bm{\kappa}\;\dots&\;\text{vector with expected lengths (ratios) for each interval,}
   \\[1ex]
-  \mathcal{R}^{(\text{exint})}=&\;\sum_{q=1}^{\max{(Q)}}\;\Big(\bm{\vartheta}_q^{(l)}-\bm{\kappa}_q\Big)^2\;\text{, with gradient}
+  \mathcal{R}^{(\text{exint})}=&\;\sum_{q=1}^{\max{(Q)}}\,\Big(\bm{\vartheta}_q^{(l)}-\bm{\kappa}_q\Big)^2\;\text{, with gradient}
   \\[1ex]
-  \frac{\partial\,\mathcal{R}^{(\text{exint})}}{\partial\,\bm{\vartheta}_q^{(l)}}=&\;2\Big(\bm{\vartheta}_q^{(l)}-\bm{\kappa}_q\Big)\;\text{and}\;\log\text{-loss}
+  \frac{\partial\,\mathcal{R}^{(\text{exint})}}{\partial\,\bm{\vartheta}_q^{(l)}}=&\;2\sum_{q=1}^{\max{(Q)}}\,\Big(\bm{\vartheta}_q^{(l)}-\bm{\kappa}_q\Big)\;\text{and}\;\log\text{-loss}
   \\[1ex]
   \mathcal{L}_{\mathcal{R}^{(\text{exint})}}=&\;\log{\Big(1+\mathcal{R}^{(\text{exint})}\Big)}\mapsto[+0,\infty]\;\text{, with gradient}
   \\[1ex]
@@ -1738,7 +1749,9 @@ $$
   \\[1ex]
   n_q(x,\dots)=&\;f(x,\dots)+\overbrace{a_q(x-\rho_q)+v+\phi_q^{(y)}}^{t_q(x,\dots)}\;\text{, sub-model that adds amplitude-warping to}\;f(x,\dots)\text{,}
   \\[1ex]
-  \bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}\;\dots&\;\text{vectors with lower and upper}\;y\text{-bounds for each interval,}
+  \bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}\;\dots&\;\text{vectors with lower and upper}\;y\text{-bounds for each interval}
+  \\[0ex]
+  &\;\text{(which could also be functions of}\;q\;\text{and/or}\;x\text{),}
   \\[1ex]
   n_q^c(x,\dots)=&\;\max{\bigg(\bm{\lambda}_q^{(\text{ymin})}, \;\min{\Big(n_q(x,\dots),\bm{\lambda}_q^{(\text{ymax})}\Big)}\bigg)}\;\text{, the}\;\min\text{/}\max\text{-constrained sub-model.}
 \end{aligned}
@@ -1757,8 +1770,8 @@ We will define some piece-wise linear function and use the signal of the __A__-v
 baw_intervals <- 5
 theta_baw <- c(0, .2, .4, .6, .8, 1)
 vartheta_l_baw <- rep(1 / baw_intervals, baw_intervals)
-baw_v <- .1
-baw_vartheta_y <- c(.05, -.35, -.1, .2, .025)
+baw_v <- .05
+baw_vartheta_y <- c(.025, .1, -.1, .05, .025)
 
 baw_tq <- function(q, x) {
   a_q <- baw_vartheta_y[q] / vartheta_l_baw[q]
@@ -1801,6 +1814,193 @@ What we see in the above plot is the following:
 * __Red__: The __A__-variable, as it appeared in the dataset,
 * __Black__: the piece-wise linear function, with initial offset `baw_v` (`r baw_v`), and per-interval terminal translations of `r baw_vartheta_y`. The interval-boundaries were equidistantly placed at `r theta_baw`,
 * __Blue__: Red+Black, i.e., the piece-wise linear function applied to the signal from the dataset.
+
+
+## Architecture of sr-BTW + sr-BAW
+
+So far, I had designed sr-BTW as an R6-class, and also a sub-model of it. This design was not made to be very performant, but to be very expressive and verbose, and I tried to be as close to the terms I use in this notebook as possible. BTW and BAW are stand-alone models, and they can be used independently from each other. If used together, the most straightforward way, however, is to __wrap__ BTW in BAW, as I had shown it using the $n_q^c$-model, where the signal is actually $m_q^c$. This is how we are going to do it here for optimization goal III.
+
+## Testing
+
+As I wrote in the previous section, we will just wrap sr-BTW with sr-BAW. So I sub-classes it and its sub-model and made the required extensions. In the following, we will conduct very similar tests to the ones I did with sr-BTW, except for the fact that we allow the y-intercepts to adjust now, too.
+
+
+```{r echo=FALSE, message=FALSE}
+source(file = "../models/SRBTW-R6.R")
+
+vartheta_l_baw <- c(.25,.275,.25,.225)
+# vartheta_y <- c(.1, .1, .1, .1)
+v <- .125
+vartheta_y <- c(0,0,.5,-.6)
+
+srbtwbaw <- SRBTWBAW$new(
+  wp = r,
+  wc = f,
+  theta_b = c(0, bounds, 1),
+  gamma_bed = c(0, 1, 0),
+  lambda = rep(0, length(vartheta_l_baw)),
+  begin = 0,
+  end = 1,
+  openBegin = FALSE,
+  openEnd = FALSE,
+  lambda_ymin = rep(0, length(vartheta_l_baw)),
+  lambda_ymax = rep(1, length(vartheta_l_baw))
+)
+
+srbtwbaw$setParams(vartheta_l = vartheta_l_baw, v = v, vartheta_y = vartheta_y)
+
+# We have a new plot-function!
+srbtwbaw$plot_warp()
+```
+
+I tried to put in values for the y-translation that would make the WC approximately close to the WP. It is still off quite a bit, but it should be already much closer (lower loss) than we had achieved in the first optimization where amplitude warping was not allowed. Now if we carefully check all of the values and the plot, we'll see that it works. Now what we are going to do is to repeat some of the optimizations, using the same losses as earlier, and then we are going to compare those fits.
+
+```{r echo=FALSE}
+dataLoss_baw <- SRBTW_DataLoss$new(
+  srbtw = srbtwbaw, intervals = 1:4,
+  weight = 1, continuous = TRUE,
+  params = c(vartheta_l_baw, v, vartheta_y))
+
+dataLoss_RSS_baw <- function(loss, listOfSms) {
+  # 'loss' is a reference to the data-loss itself.
+  continuous <- loss$isContinuous()
+  err <- 0
+  
+  for (sm in listOfSms) {
+    t <- sm$asTuple()
+    if (continuous) {
+      tempf <- function(x) (t$wp(x) - t$nqc(x))^2 # change mqc to nqc
+      err <- err + cubature::cubintegrate(
+        f = tempf, lower = t$tb_q, upper = t$te_q)$integral
+    } else {
+      X <- seq(from = t$tb_q, to = t$te_q, length.out = 250)
+      y <- sapply(X = X, FUN = t$wp)
+      y_hat <- sapply(X = X, FUN = t$nqc) # change mqc to nqc
+      err <- err + sum((y - y_hat)^2)
+    }
+  }
+  
+  log(1 + err)
+}
+
+dataLoss_baw$setLossFunc(lossFunc = dataLoss_RSS_baw)
+
+soo_baw <- SRBTW_SingleObjectiveOptimization$new(srbtw = srbtwbaw)
+soo_baw$addObjective(obj = dataLoss_baw)
+soo_baw$setParams(params = c(vartheta_l_baw, v, vartheta_y))
+soo_baw$compute()
+```
+
+Previously, the error at this point was $\approx 0.0709$, it is already much lower. What we should attempt now, is to find even better parameters using optimization:
+
+
+```{r echo=FALSE}
+# Optimization Goal 3, test 1, parallel:
+cow_og3_test1p <- loadResultsOrCompute(file = "../results/cow_og3_test1p.rds", computeExpr = {
+  library(optimParallel)
+  
+  cl <- parallel::makePSOCKcluster(parallel::detectCores())
+  parallel::clusterExport(cl, varlist = c("soo_baw"))
+
+  doWithParallelClusterExplicit(cl = cl, expr = {
+    set.seed(1337)
+    optRp <- optimParallel::optimParallel(
+      par = c(vartheta_l_baw, v, vartheta_y),
+      # par = c(vartheta_l_baw, rep(0, 1 + length(vartheta_y))),
+      # par = c(vartheta_l_baw, 1/2, runif(n = length(vartheta_y), min = 0, max = 1)),
+      fn = function(x) {
+        soo_baw$setParams(params = x)
+        soo_baw$compute()
+      },
+      lower = c(rep(0, length(vartheta_l_baw)), rep(-.Machine$double.xmax, 1 + length(vartheta_y))),
+      upper = c(rep(1, length(vartheta_l_baw)), rep( .Machine$double.xmax, 1 + length(vartheta_y))),
+      parallel = list(
+        cl = cl,
+        forward = FALSE
+      )
+    )
+  })
+})
+
+cow_og3_test1p
+srbtwbaw$setAllParams(cow_og3_test1p$par)
+srbtwbaw$plot_warp()
+```
+
+Ok, that worked extraordinarily well. However, we also gave it quite good starting values to be fair. Using just zeros as starting values for $v$ and all terminal y-translations worked also well. If we look at the learned parameters we notice a peculiarity of this model: The last terminal y-translation is almost minus three -- this allows the model in the last interval to decline steeply, and to actually make this "flat foot" at the end that the Warping Pattern has, because the signal now effectively becomes zero in the last section. That is why I had formulated the $\min,\max$ self-regularization on the final signal, and not the terminal y-translations, as these might be rather extreme in order to achieve a good fit.
+
+Let's also make an open/open test and see what happens:
+
+```{r}
+srbtwbaw$setOpenBegin(ob = TRUE)
+srbtwbaw$setOpenEnd(oe = TRUE)
+```
+
+
+```{r echo=FALSE}
+cow_og3_test2p <- loadResultsOrCompute(file = "../results/cow_og3_test2p.rds", computeExpr = {
+  library(optimParallel)
+  
+  cl <- parallel::makePSOCKcluster(parallel::detectCores())
+  parallel::clusterExport(cl, varlist = c("soo_baw"))
+
+  doWithParallelClusterExplicit(cl = cl, expr = {
+    set.seed(1337)
+    optRp <- optimParallel::optimParallel(
+      par = c(vartheta_l_baw, 0, 1, v, vartheta_y),
+      fn = function(x) {
+        soo_baw$setParams(params = x)
+        soo_baw$compute()
+      },
+      lower = c(rep(0, length(vartheta_l_baw)), 0, 0, rep(-.Machine$double.xmax, 1 + length(vartheta_y))),
+      upper = c(rep(1, length(vartheta_l_baw)), 1, 1, rep( .Machine$double.xmax, 1 + length(vartheta_y))),
+      parallel = list(
+        cl = cl,
+        forward = FALSE
+      )
+    )
+  })
+})
+
+cow_og3_test2p
+srbtwbaw$setAllParams(cow_og3_test2p$par)
+srbtwbaw$plot_warp() +
+  ggplot2::geom_vline(xintercept = cow_og3_test2p$par[5]) +
+  ggplot2::geom_vline(xintercept = cow_og3_test2p$par[6])
+```
+
+Ok, cut-in is still at $0$, but cut-out is at `r round(cow_og3_test2p$par[6], 4)`. The error is as low as in the previous test.
+
+
+## Regularization
+
+Regularization for sr-BAW is probably more difficult, as we cannot impose regularization directly on the parameters as I see it. Well, we could, but as I just wrote before this, it may be necessary for $v$ and the terminal y-translations to assume extreme values to achieve a good fit. In other words, I would not interfere with these too much at the moment. In fact, we did above optimization with the minimum/maximum machine double, effectively alleviating box-bounds for these parameters. I suppose that it may be an idea to regularize all y-translations together, and to look at them as a distribution. Then, extreme values could be penalized. However, this is probably application specific.
+
+What seems to be more promising is to impose regularization on the output of the model. Using $\bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}$, we can limit the __output__ of the model to be within box-bounds. However, if the model were to push too much of the signal onto either boundary, we would get a less optimal fit in many cases. An approach to alleviating this is described in the next subsection.
+
+### Regularize extreme outputs
+
+Another reason that makes regularization of the terminal y-translations difficult, is the fact that we cannot (and must not) make any assumptions about the signal in an interval -- we simply do not know how it behaves. Therefore, I suggest a regularizer that penalizes the output of the model instead. The more of its output is close to either box-bound, the higher the cost. This would require a somewhat _hybrid_ regularizer, as we need to consider the box-bounds, the y-translations and the data. A simple first version could take the __average__ of the output signal and score that:
+
+$$
+\begin{aligned}
+  \mathbf{\hat{y}},f(x)\;\dots&\;\text{complete discrete output of some model, or the model itself as function,}
+  \\[1ex]
+  \mu^{(c)}=&\;\frac{1}{\max{\big(\operatorname{supp}(f)\big)}-\min{\big(\operatorname{supp}(f)\big)}}\times\int\displaylimits_{\operatorname{supp}(f)}\,f(x)\;dx\;\text{, mean of function(model), or}
+  \\[1ex]
+  \mu^{(d)}=&\;\frac{1}{N}\sum_{i=1}^{N}\,\mathbf{\hat{y}}_i\;\text{, mean of some discrete output,}
+  \\[1ex]
+  \beta_l,\beta_u\;\dots&\;\text{lower- and upper bounds for the output,}
+  \\[1ex]
+  \mathcal{R}^{(\text{avgout})}=&\;1-\frac{\min{\big(\mu-\beta_l,\beta_u-\mu\big)}}{\frac{1}{2}\big(\beta_u-\beta_l\big)}\mapsto[0+,1]\;\text{, or, alternatively:}
+  \\[1ex]
+  \mathcal{R}^{(\text{avgout})}=&\;\bigg(\frac{1}{2}\big(\beta_u-\beta_l\big)-\mu\bigg)^2\mapsto[0+,1]\;\text{, and the log-loss:}
+  \\[1ex]
+  \mathcal{L}_{\mathcal{R}^{(\text{avgout})}}=&\;-\log{\Big(1-\mathcal{R}^{(\text{avgout})}\Big)}\mapsto[0+,\infty]\;\text{.}
+\end{aligned}
+$$
+
+Note that both versions of the regularizer are defined as ratios, and that, at most, their loss can be $1$ (and the least possible loss would be $0$). Also, $\frac{1}{2}\big(\beta_u-\beta_l\big)$ can be replaced with some user-defined, arbitrary expectation, i.e., it does not necessarily need to be the mean of the upper and lower bound (but it needs to be within them).
 
 
 # Other thoughts
