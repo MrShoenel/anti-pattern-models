@@ -1820,6 +1820,35 @@ What we see in the above plot is the following:
 
 So far, I had designed sr-BTW as an R6-class, and also a sub-model of it. This design was not made to be very performant, but to be very expressive and verbose, and I tried to be as close to the terms I use in this notebook as possible. BTW and BAW are stand-alone models, and they can be used independently from each other. If used together, the most straightforward way, however, is to __wrap__ BTW in BAW, as I had shown it using the $n_q^c$-model, where the signal is actually $m_q^c$. This is how we are going to do it here for optimization goal III.
 
+
+### Current architecture
+
+Our architecture here so far has a few drawbacks and does not exploit some commonalities. However, for the scope of the development of sr-BTW and sr-BAW, we will continue with this approach and just organically implement things as we need them. I plan to release everything as an R-package on CRAN, and for that purpose I will make a new repository where I implement it using the new architecture described below. I already took some minor parts of the new architecture and implemented it.
+
+
+### Future architecture
+
+In the future, we still want to use R6-classes. One important goal with the future architecture is extensibility. It must be possible for 3rd-party users to extend the code, especially with custom (data-)losses and regularizers. In the following, I show a class hierarchy of how it is planned to be eventually.
+
+* `Differentiable` -- this will be the mother-class of everything that is differentiable, i.e., models, objectives etc. The Differentiable is just a functional piece that itself cannot be computed.
+  * Main methods: `getFunction()` (returns the function that can be called), `get1stOrderPd(name)` and `get2ndOrderPd(name)` return functions for the the first- resp. second-order partial derivatives for the parameters specified by `name` (or all if `name=NULL`). The idea behind this class is to provide a standardized interface for any function that has zero or arbitrary many parameters that can be derived for once or twice. If we think of a specific loss, let's say the RSS, it needs to obtain the function for the warped candidate, and its gradient needs the partial derivatives of the WC. I.e., we need the actual functions and not just the results. This class will also allow us to provide some helper classes for, e.g., encapsulating a signal-generating function more robustly.
+* `Model` (likely `.. extends Differentiable`) -- A model is a mathematical formulation of how to, e.g., transform some data using some parameters. So that means we will have 1st- and 2nd-order partial derivatives next to the actual model function.
+  * Main methods: `setParams(p)`, `getParams()` for setting concrete values for some or all of the model's non-constant parameters (those that are altered during optimization).
+  * More methods: `plot()` for example
+  * Sub-classes: Everything related to Boundary Time- and Amplitude Warping, and their sub-models
+* `Objective extends Differentiable` -or- `Loss extends Differentiable` -- An objective is something that takes a model and computes the output of it, given the current parameters and/or data of the model. An Objective also has a weight. While `Differentiable` provides access to the functional part, the `Objective` can call that using some current $\mathbf{x}$, which can be uni- or multivariate (in our case it is always univariate).
+  * Main methods: `compute(x)`, `compute1stOrderPd(x, name)`, `compute2ndOrderPd(x, name)` -- given some $\mathbf{x}$, calls the methods of the `Differentiable`. The `name`-arguments allow to specify specific partial derivatives (return all if null). Those can then be used to construct, e.g., a Jacobian or Hessian.
+  * More methods: `setModel(m)`, where `m` is a `Differentiable` -- the concept of an objective is to compute a model's output or deviation (in case of a loss), so it brings together some mathematical formulation of how to do that with the model itself.
+  * Sub-classes (all extend `Objective`):
+    * `LogLoss`: Meta-class that takes another `Objective` and returns its result in a logarithmic way. For our project at hand, we usually return strictly positive logarithmic losses.
+    * `DataLoss`: Specialized objective that computes a loss solely based on the data. This is more of a semantic class.
+    * `Regularizer`: Like `DataLoss`, this is more of a semantic class that computes a loss solely based on the model's parameters.
+    * `Score`: Another meta-class that takes another `Objective` (or, e.g., `LogLoss`), together with some lower and upper bounds, and transforms it into a score.
+    * `MultiObjective`: Generic and abstract meta-class that can combine multiple other objectives, losses, regularizers etc. It is abstract and generic because A) it does not define an implementation on how to do that and B) because it provides some common facilities to do so, for example it will allow to compute objectives in parallel.
+      * `LinearScalarizer extends MultiObjective`: A concrete example of a `MultiObjective` that adds together all defined objectives using their weight.
+
+
+
 ## Testing
 
 As I wrote in the previous section, we will just wrap sr-BTW with sr-BAW. So I sub-classes it and its sub-model and made the required extensions. In the following, we will conduct very similar tests to the ones I did with sr-BTW, except for the fact that we allow the y-intercepts to adjust now, too.
