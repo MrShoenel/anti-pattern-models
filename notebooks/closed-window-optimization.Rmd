@@ -1263,7 +1263,9 @@ $$
   \\[1ex]
   \omega,\beta^{(l)},\beta^{(u)}\;\dots&\;\text{weight, lower- and upper bound for loss}\;\mathcal{L}(\cdot)\text{,}
   \\[1ex]
-  \mathsf{S}^{\oplus}(\cdot)=&\;\omega\Bigg(1-\frac{\mathcal{L}(\cdot)-\beta^{(l)}}{\beta^{(u)}-\beta^{(l)}}\Bigg)\;\text{, score-operator, where larger scores are better (}\oplus\text{),}
+  \mathsf{S}^{\oplus}(\cdot)=&\;\omega\Bigg(1-\frac{\mathcal{L}(\cdot)-\beta^{(l)}}{\beta^{(u)}-\beta^{(l)}}\Bigg)\;\mapsto[+0,1]\;\text{,}
+  \\[0ex]
+  &\;\text{score-operator, where larger scores are better}\;(\oplus)\text{,}
   \\[1ex]
   \nabla\,\mathsf{S}^{\oplus}\big(\mathcal{L}_q(\cdot)\big)=&\;\frac{\omega\nabla\,\mathcal{L}_q(\cdot)}{\beta^{(l)}-\beta^{(u)}}\;\text{, gradient of this operator.}
 \end{aligned}
@@ -1277,6 +1279,24 @@ __Scoring?__ --- The goal is to align (to time-warp) some data to a given patter
 If two or more losses are combined by, e.g., a linear scalarizer, and if these losses pursue objectives that are somewhat conflicting with each other (not necessarily orthogonal), then the lower bound for that aggregation is larger than or equal to the sum of the singular minimal possible losses. It may not be trivial to determine the new lower bound for an aggregated loss. We can find this lower bound through optimization, and this is described in subsection \ref{ssec:match_wp}. In practice, the lowest possible aggregated loss lies on a __Pareto__-boundary and there may be many optimal losses on that boundary.
 
 As for the upper bound of an aggregated loss, we too will have a Pareto-boundary. However, we cannot determine it computationally. The compromise is to sum up the worst possible losses of all singular losses. There are some losses that have a finite upper bound, and some that only have $\infty$ as upper bound. However, our goal is to come up with losses that have a well-defined upper bound for our problem, and these are presented in the next sub-section.
+
+
+## Aggregation of scores
+
+The mean aggregation operator for scores calculates a weighted sum. However, the average score is achieved simply by dividing by the number of scores. We suggest a slightly altered version which normalizes w.r.t. the _magnitude_ of the weights, and not just their amount.
+
+$$
+\begin{aligned}
+  \mathsf{A}\Big(\bm{\mathsf{S}}^{\oplus},\bm{\omega}\Big)=&\;\Bigg(\bigg[\prod_{i=1}^{\norm{\bm{\mathsf{S}}^{\oplus}}}\,1+\bm{\omega}_i\bm{\mathsf{S}}^{\oplus}_i(\cdot)\bigg]-1\Bigg)\times\underbrace{\Bigg(\bigg[\prod_{i=1}^{\norm{\bm{\omega}}}\,1+\bm{\omega}_i\bigg]-1\Bigg)^{-1}}_{k}\;\text{,}
+  \\[0ex]
+  &\;\text{where}\;0<\bm{\omega}_i\leq1\;\land\;\norm{\bm{\mathsf{S}}^{\oplus}}=\norm{\bm{\omega}}\;\text{, i.e., one weight for each score,}
+  \\[1ex]
+  =&\;k\times\bigg[\prod_{i=1}^{\norm{\bm{\mathsf{S}}^{\oplus}}}\,1+\bm{\omega}_i\bm{\mathsf{S}}^{\oplus}_i(\cdot)\bigg]-k\;\text{, with gradient}
+  \\[1ex]
+  \nabla\,\mathsf{A}\Big(\bm{\mathsf{S}}^{\oplus},\bm{\omega}\Big)=&\;k\times\Bigg[\sum_{i=1}^{\norm{\bm{\mathsf{S}}^{\oplus}}}\,\bm{\omega}_i\nabla\,\bm{\mathsf{S}}^{\oplus}_i(\cdot)\times\bigg[\prod_{j=1}^{\norm{\bm{\mathsf{S}}^{\oplus}}}\,1+\bm{\omega}_j\bm{\mathsf{S}}^{\oplus}_j(\cdot),\;\forall\,j\neq i\,\bigg]\Bigg]\;\text{.}
+\end{aligned}
+$$
+
 
 ## Losses with finite upper bounds
 
