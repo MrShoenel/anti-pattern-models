@@ -1281,7 +1281,7 @@ If two or more losses are combined by, e.g., a linear scalarizer, and if these l
 As for the upper bound of an aggregated loss, we too will have a Pareto-boundary. However, we cannot determine it computationally. The compromise is to sum up the worst possible losses of all singular losses. There are some losses that have a finite upper bound, and some that only have $\infty$ as upper bound. However, our goal is to come up with losses that have a well-defined upper bound for our problem, and these are presented in the next sub-section.
 
 
-## Aggregation of scores
+## Aggregation of scores\label{ssec:score_agg}
 
 The mean aggregation operator for scores calculates a weighted sum. However, the average score is achieved simply by dividing by the number of scores. We suggest a slightly altered version which normalizes w.r.t. the _magnitude_ of the weights, and not just their amount.
 
@@ -1850,23 +1850,32 @@ Our architecture here so far has a few drawbacks and does not exploit some commo
 
 In the future, we still want to use R6-classes. One important goal with the future architecture is extensibility. It must be possible for 3rd-party users to extend the code, especially with custom (data-)losses and regularizers. In the following, I show a class hierarchy of how it is planned to be eventually.
 
-* `Differentiable` -- this will be the mother-class of everything that is differentiable, i.e., models, objectives etc. The Differentiable is just a functional piece that itself cannot be computed.
-  * Main methods: `getFunction()` (returns the function that can be called), `get1stOrderPd(name)` and `get2ndOrderPd(name)` return functions for the the first- resp. second-order partial derivatives for the parameters specified by `name` (or all if `name=NULL`). The idea behind this class is to provide a standardized interface for any function that has zero or arbitrary many parameters that can be derived for once or twice. If we think of a specific loss, let's say the RSS, it needs to obtain the function for the warped candidate, and its gradient needs the partial derivatives of the WC. I.e., we need the actual functions and not just the results. This class will also allow us to provide some helper classes for, e.g., encapsulating a signal-generating function more robustly.
-* `Model` (likely `.. extends Differentiable`) -- A model is a mathematical formulation of how to, e.g., transform some data using some parameters. So that means we will have 1st- and 2nd-order partial derivatives next to the actual model function.
-  * Main methods: `setParams(p)`, `getParams()` for setting concrete values for some or all of the model's non-constant parameters (those that are altered during optimization).
-  * More methods: `plot()` for example
-  * Sub-classes: Everything related to Boundary Time- and Amplitude Warping, and their sub-models
-* `Objective extends Differentiable` -or- `Loss extends Differentiable` -- An objective is something that takes a model and computes the output of it, given the current parameters and/or data of the model. An Objective also has a weight. While `Differentiable` provides access to the functional part, the `Objective` can call that using some current $\mathbf{x}$, which can be uni- or multivariate (in our case it is always univariate).
-  * Main methods: `compute(x)`, `compute1stOrderPd(x, name)`, `compute2ndOrderPd(x, name)` -- given some $\mathbf{x}$, calls the methods of the `Differentiable`. The `name`-arguments allow to specify specific partial derivatives (return all if null). Those can then be used to construct, e.g., a Jacobian or Hessian.
-  * More methods: `setModel(m)`, where `m` is a `Differentiable` -- the concept of an objective is to compute a model's output or deviation (in case of a loss), so it brings together some mathematical formulation of how to do that with the model itself.
+* `abstract class Differentiable` -- this will be the mother-class of everything that is differentiable, i.e., models, objectives etc. The Differentiable is just a functional piece that itself cannot be computed.
+  * Main methods: `get0Function()` (returns the function that can be called), `get1stOrderPd(name)` and `get2ndOrderPd(name)` return functions for the the first- resp. second-order partial derivatives for the parameters specified by `name` (or all if `name=NULL`). The idea behind this class is to provide a standardized interface for any function that has zero or arbitrary many parameters that can be derived for once or twice. If we think of a specific loss, let's say the RSS, it needs to obtain the function for the warped candidate, and its gradient needs the partial derivatives of the WC. I.e., we need the actual functions and not just the results. This class will also allow us to provide some helper classes for, e.g., encapsulating a signal-generating function more robustly.
+  * More methods: `getParamNames()`, `getNumParams()`, `getNumOutputs()`, `getOutputNames()` -- note how there is no setter for the actual parameters, as the `Differentiable`'s purpose is to describe the encapsulated function. It is important to know what the parameters are one can derive by, especially later when we combine many objectives and not each and every has the same parameters.
+* `abstract class Model extends Differentiable` -- A model is a mathematical formulation of how to, e.g., transform some data using some parameters. So that means we will have 1st- and 2nd-order partial derivatives next to the actual model function. The `Model` also encompasses methods for getting statistical properties, such as residual or the likelihood (after fitting).
+  * Main methods: `setParams(p)`, `getParams()`/`coefficients()` for setting concrete values for some or all of the model's non-constant parameters (those that are altered during optimization).
+  * Statistical methods: `AIC()`/`BIC()`, `coefficients()`, `residuals()`, `likelihood()`
+  * More methods: `plot()` for example (this method is inherited from R6)
+  * Sub-classes: ___`srBTAW`___ -- Our main __multilevel-model__ (described below)
+* `abstract class Objective extends Differentiable` -- An objective is something that can be computed; however, it does not yet have a notion of a model or concrete parameters. Instead, it introduces methods that allow (numeric) computation of the underlying `Differentiable`. An `Objective` has no notion of a weight, or whether it should be minimized or maximized, for example.
+  * Main methods: `compute(x)`, `compute1stOrderPd(x, name)`, `compute2ndOrderPd(x, name)` -- given some $\mathbf{x}$, calls the methods of the underlying `Differentiable`. The `name`-arguments allow to specify specific partial derivatives (return all if null). Those can then be used to construct, e.g., a Jacobian. These methods return lists of functions, and the idea is that the name of the index represents the index of the output-parameter, and then which variable it was derived for first, then second.
+  * Additionally: `compute1stOrderPd_numeric(x, name)` and `compute2ndOrderPd_numeric(x, name)` -- these methods compute the 1st- and 2nd-order partial derivatives numerically. We will use the same naming scheme as previously. Note that 1st-order PDs would result in a 2-dimensional matrix for vector-valued functions, and in a 3-dimensional tensor for the second order.
   * Sub-classes (all extend `Objective`):
-    * `LogLoss`: Meta-class that takes another `Objective` and returns its result in a logarithmic way. For our project at hand, we usually return strictly positive logarithmic losses.
+    * `Loss`: Adds a weight, and also it knows whether we minimize or maximize,
+    * `LogLoss`: Meta-class that takes another `Loss` and returns its result in a logarithmic way. For our project at hand, we usually return strictly positive logarithmic losses.
     * `DataLoss`: Specialized objective that computes a loss solely based on the data. This is more of a semantic class.
     * `Regularizer`: Like `DataLoss`, this is more of a semantic class that computes a loss solely based on the model's parameters.
     * `Score`: Another meta-class that takes another `Objective` (or, e.g., `LogLoss`), together with some lower and upper bounds, and transforms it into a score.
-    * `MultiObjective`: Generic and abstract meta-class that can combine multiple other objectives, losses, regularizers etc. It is abstract and generic because A) it does not define an implementation on how to do that and B) because it provides some common facilities to do so, for example it will allow to compute objectives in parallel.
-      * `LinearScalarizer extends MultiObjective`: A concrete example of a `MultiObjective` that adds together all defined objectives using their weight.
+    * `abstract class MultiObjective`: Generic meta-class that can combine multiple other objectives, losses, regularizers etc. It is abstract and generic because A) it does not define an implementation on how to do that and B) because it provides some common facilities to do so, for example it will allow to compute objectives in parallel.
+      * `LinearScalarizer extends MultiObjective`: A concrete example of a `MultiObjective` that adds together all defined objectives using their weight. This is mostly what we will be using for our purposes.
+      * `ScoreMagnitudeScalarizer extends MultiObjective`: Previously described in section \ref{ssec:score_agg}, this is a score-aggregator that can be used to train the MLM with one or more `Score`s.
 
+#### srBTAW -- a Multilevel-model
+
+sr-BTW and sr-BAW are mere algorithms, and not quite models. Either can take a reference- and a query-signal (Warping Pattern and Warping Candidate) and compute a warped version of the candidate using the boundaries and terminal y-translations. Instead of inheriting from `Objective`, we chose to have the actual model called ___`srBTAW`___ to inherit from `Differentiable`, and to encapsulate a single `Objective` that can be computed. The abstract methods of `Differentiable` are forwarded to the encapsulated `Objective`. This has the advantage of the encapsulated objective actually representing the entire model, also we can use a single objective or, e.g., a `MultiObjective`, making this de facto a __multilevel-model__, that supports arbitrary many variables (one or more) for either, Warping Pattern and Warping Candidate.
+
+The main purpose of `srBTAW` is to encapsulate all available data (variables) and intervals, and to provide also helper methods (factories) for creating losses. It will also allow us to reuse instances or `SRBTW` and `SRBAW`/`SRBTWBAW`, as any of these create a tuple of one WP and one WC.
 
 
 ## Testing
