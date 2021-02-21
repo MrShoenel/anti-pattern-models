@@ -908,6 +908,196 @@ SRBTW_SingleObjectiveOptimization <- R6Class(
 )
 
 
+
+############################################# Below we start to define some
+############################################# classes of the future architecture.
+
+
+Differentiable <- R6Class(
+  "Differentiable",
+  
+  private = list(
+    paramNames = NULL,
+    numOuts = NULL,
+    outputNames = NULL
+  ),
+  
+  public = list(
+    initialize = function(paramNames = c(), numberOfOutputs = 1, outputNames = paste0("o_", seq_len(length.out = numberOfOutputs))) {
+      stopifnot((is.vector(paramNames) && length(paramNames) == 0) || (!any(is.na(paramNames)) && is.character(paramNames)))
+      stopifnot(is.numeric(numberOfOutputs) && !is.na(numberOfOutputs) && numberOfOutputs >= 1)
+      stopifnot(numberOfOutputs == length(outputNames) && is.character(outputNames))
+      
+      if (length(paramNames) > 0 && is.unsorted(x = paramNames, strictly = TRUE)) {
+        warning("The parameter names were not sorted, now they are.")
+      }
+      
+      private$paramNames <- sort(paramNames)
+      private$numOuts <- numberOfOutputs
+      private$outputNames <- outputNames
+    },
+    
+    getParamNames = function() {
+      private$paramNames
+    },
+    
+    getNumParams = function() {
+      length(private$paramNames)
+    },
+    
+    getOutputNames = function() {
+      private$outputNames
+    },
+    
+    getNumOutputs = function() {
+      private$numOuts
+    },
+    
+    get0Function = function() {
+      stop("Abstract method")
+    },
+    
+    get1stOrderPd = function(name = NULL) {
+      stop("Abstract method")
+    },
+    
+    get2ndOrderPd = function(name = NULL) {
+      stop("Abstract method")
+    }
+  )
+)
+
+
+#' Abstract super-class for all models. This class is meant
+#' to represent models that were fit previously -- that means
+#' that there are concrete values for all parameters, as well
+#' as the likelihood.
+Model <- R6Class(
+  "Model",
+  
+  inherit = Differentiable,
+  
+  private = list(
+    params = NULL
+  ),
+  
+  public = list(
+    initialize = function() {
+      super$initialize()
+    },
+    
+    likelihood = function() {
+      stop("Abstract method")
+    },
+    
+    residuals = function() {
+      stop("Abstract method")
+    },
+    
+    coefficients = function() {
+      private$params
+    },
+    
+    fit = function() {
+      stop("Abstract method")
+    },
+    
+    AIC = function() {
+      # 2*k - 2*ln(L)
+      2 * self$getNumParams() - 2 * log(self$likelihood())
+    },
+    
+    BIC = function() {
+      # k*ln(n) - 2*ln(L),
+      k <- self$getNumParams()
+      L <- self$likelihood()
+      # n = the number of data points, the number of observations, or equivalently, the sample size ->
+      # n probably only makes sense for when all associated objectives are finite and discrete..
+      stop("Abstract method")
+    }
+  )
+)
+
+
+Objective <- R6Class(
+  "Objective",
+  
+  inherit = Differentiable,
+  
+  lock_objects = FALSE,
+  
+  private = list(
+    model = NULL,
+    
+    zeroFunc = Vectorize(function(x) 0)
+  ),
+  
+  public = list(
+    initialize = function(paramNames = c(), numberOfOutputs = 1, model = NULL) {
+      stopifnot(missing(model) || is.null(model) || (R6::is.R6(model) && inherits(model, "Differentiable")))
+      super$initialize(paramNames = paramNames, numberOfOutputs = numberOfOutputs)
+      
+      private$model <- model
+    },
+    
+    compute0 = function(x) {
+      stopifnot(is.numeric(x) && length(x) > 0 && !any(is.na(x)))
+      
+      self$get0Function()(x)
+    },
+    
+    compute1stOrderPd = function(x, name = NULL) {
+      stopifnot(is.numeric(x) && length(x) > 0 && !any(is.na(x)))
+      stopifnot(missing(name) || is.null(name) || (is.character(name) && length(name) > 0))
+      rep(NA_real_, length(name))
+    },
+    
+    compute2ndOrderPd = function(x, name = NULL) {
+      stopifnot(is.numeric(x) && length(x) > 0 && !any(is.na(x)))
+      stopifnot(missing(name) || is.null(name) || (is.character(name) && length(name) > 0))
+      rep(NA_real_, length(name))
+    },
+    
+    computeGradient = function(x) {
+      unlist(self$compute1stOrderPd(x = x, name = c()))
+    },
+    
+    computeHessian = function(x) {
+      temp <- unlist(self$compute2ndOrderPd(x = x, name = c()))
+      # TODO: compose list into matrix
+      stop("not done implementing")
+    },
+    
+    computeGradient_numeric = function(x) {
+      pracma::grad(f = function(x_) {
+        self$compute0(x = x_)
+      }, x0 = x)
+    },
+    
+    computeHessian_numeric = function(x) {
+      pracma::hessian(f = function(x_) {
+        self$compute0(x = x_)
+      }, x0 = x)
+    },
+    
+    compute1stOrderPd_numeric = function(x, name = NULL) {
+      # TODO: use pracma::fderiv() for every parameter, support vector-valued functions like:
+      # pracma::fderiv(f = function(x) {
+      #   c(x[1]^2, x[2]^3)
+      # }, x = c(1,2))
+      stop("Not implemented")
+    },
+    
+    compute2ndOrderPd_numeric = function(x, name = NULL) {
+      # TODO: see above
+      stop("Not implemented")
+    }
+  )
+)
+
+
+
+
 # SRBTW$debug("setAllParams")
 # SRBTW_SubModel$debug("asTuple")
 # SRBTW$debug("initialize")
