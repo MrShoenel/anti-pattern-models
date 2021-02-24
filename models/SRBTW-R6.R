@@ -1002,16 +1002,21 @@ Objective <- R6Class(
         outputNames = outputNames)
     },
     
+    #' We need a setter for, e.g., computing the gradient/hessian.
+    setParams = function(params) {
+      stop("Abstract method")
+    },
+    
     #' Computes the underlying function with the given (or own) parameters.
-    compute0 = function(x = self$getParams()) {
-      do.call(what = self$get0Function(), args = list(x = x))
+    compute0 = function() {
+      do.call(what = self$get0Function(), args = list())
     },
     
     #' Returns a named vector of computed 1st-order partial derivatives.
     #' The names of that vector correspond to the parameter derived for,
     #' and for the output they were calculated for. The naming scheme is
     #' "parameterName_outputName".
-    compute1stOrderPd = function(x = self$getParams(), name = c()) {
+    compute1stOrderPd = function(name = c()) {
       stop("Abstract method")
     },
     
@@ -1020,7 +1025,7 @@ Objective <- R6Class(
     #' what parameters it was derived for, e.g., "a,b_o1" means that the
     #' partial derivative was first derived for "a", then for "b", and
     #' that it concerns output "o1".
-    compute2ndOrderPd = function(x = self$getParams(), name = c()) {
+    compute2ndOrderPd = function(name = c()) {
       stop("Abstract method")
     },
     
@@ -1029,10 +1034,10 @@ Objective <- R6Class(
     #' (according to the order of the parameters of the Differentiable)
     #' for scalar-valued functions, and a Jacobian-matrix for vector-
     #' valued functions (one row per parameter).
-    computeGradient = function(x = self$getParams()) {
-      temp <- do.call(what = self$compute1stOrderPd, args = list(x = x))
-      # TODO: compose list into matrix/tensor
-      # TODO: Check how I did it in computeGradient_numeric
+    computeGradient = function() {
+      # temp <- do.call(what = self$compute1stOrderPd, args = list())
+      # # TODO: compose list into matrix/tensor
+      # # TODO: Check how I did it in computeGradient_numeric
       stop("not done implementing")
     },
     
@@ -1041,9 +1046,9 @@ Objective <- R6Class(
     #' having a length of 1 for scalar-valued functions, and n for n-valued
     #' functions. Any of these are ordered according to the order of
     #' the parameters of the Differentiable.
-    computeHessian = function(x = self$getParams()) {
-      temp <- do.call(what = self$compute2ndOrderPd, args = list(x = x))
-      # TODO: compose list into matrix/tensor
+    computeHessian = function() {
+      # temp <- do.call(what = self$compute2ndOrderPd, args = list())
+      # # TODO: compose list into matrix/tensor
       stop("not done implementing")
     },
     
@@ -1053,15 +1058,16 @@ Objective <- R6Class(
     #' for scalar-valued functions, and a Jacobian-matrix for vector-
     #' valued functions (one row per parameter). Computation is done
     #' numerically using \code{pracma::grad()}.
-    computeGradient_numeric = function(x = self$getParams()) {
+    computeGradient_numeric = function() {
       g <- matrix(nrow = self$getNumOutputs(), ncol = self$getNumParams())
       colnames(g) <- self$getParamNames()
       rownames(g) <- self$getOutputNames()
       
       for (oIdx in seq_len(length.out = self$getNumOutputs())) {
-        g[oIdx, ] <- pracma::grad(f = function(x_) {
-          self$compute0(x = x_)[oIdx]
-        }, x0 = x)
+        g[oIdx, ] <- pracma::grad(f = function(x) {
+          self$setParams(params = x)
+          self$compute0()[oIdx]
+        }, x0 = self$getParams())
       }
       g
     },
@@ -1072,7 +1078,7 @@ Objective <- R6Class(
     #' functions. Any of these are ordered according to the order of
     #' the parameters of the Differentiable. Computation is done
     #' numerically using \code{pracma::hessian()}.
-    computeHessian_numeric = function(x = self$getParams()) {
+    computeHessian_numeric = function() {
       # TODO: like computeGradient_numeric, use pracma::hessian and always
       # TODO: return a 3rd-order Tensor that has dim(3) >= 1..
       stop("Not implemented")
@@ -1080,7 +1086,7 @@ Objective <- R6Class(
     
     #' Similar to \code{compute1stOrderPd()}, but computes each derivative
     #' numerically using \code{pracma::fderiv()}.
-    compute1stOrderPd_numeric = function(x = self$getParams(), name = c()) {
+    compute1stOrderPd_numeric = function(name = c()) {
       # TODO: use pracma::fderiv() for every parameter, support vector-valued functions like:
       # pracma::fderiv(f = function(x) {
       #   c(x[1]^2, x[2]^3)
@@ -1090,11 +1096,11 @@ Objective <- R6Class(
     
     #' Similar to \code{compute2ndOrderPd()}, but computes each derivative
     #' numerically using \code{pracma::fderiv(n=2)}.
-    compute2ndOrderPd_numeric = function(x = self$getParams(), name = c()) {
-      if (length(names) == 0) {
-        return(self$computeHessian_numeric(x = x))
-      }
-      # TODO: see above, use pracma::fderiv() with n=2
+    compute2ndOrderPd_numeric = function(name = c()) {
+      # if (length(names) == 0) {
+      #   return(self$computeHessian_numeric())
+      # }
+      # # TODO: see above, use pracma::fderiv() with n=2
       stop("Not implemented")
     }
   )
@@ -1196,9 +1202,20 @@ srBTAW_Loss <- R6Class(
       private$intervals <- intervals
     },
     
+    setParams = function(params) {
+      mlm <- private$srbtaw
+      stopifnot(R6::is.R6(mlm) && inherits(mlm, "srBTAW"))
+      mlm$setParams(params = params)
+      invisible(self)
+    },
+    
     setSrBtaw = function(srbtaw) {
       private$srbtaw <- srbtaw
       invisible(self)
+    },
+    
+    getSrBtaw = function() {
+      private$srbtaw
     },
     
     getWpName = function() {
@@ -1229,7 +1246,7 @@ srBTAW_Loss_Rss <- R6Class(
   public = list(
     initialize = function(
       wpName, wcName, weight = 1, intervals = c(),
-      continuous = FALSE, numSamples = rep(if (continuous) NA else 1e3, length(intervals))
+      continuous = FALSE, numSamples = rep(if (continuous) NA_real_ else 1e3, length(intervals))
     ) {
       super$initialize(
         wpName = wpName, wcName = wcName, weight = weight, intervals = intervals)
@@ -1261,12 +1278,35 @@ srBTAW_Loss_Rss <- R6Class(
     },
     ######## endregion
     
+    #' Overridden so that we can work in parallel!
+    # computeGradient_numeric = function() {
+    #   g <- matrix(nrow = self$getNumOutputs(), ncol = self$getNumParams())
+    #   colnames(g) <- self$getParamNames()
+    #   rownames(g) <- self$getOutputNames()
+    #   
+    #   foreach::foreach(
+    #     pIdx = seq_len(length.out = self$getNumParams()),
+    #     .combine = c,
+    #     .inorder = TRUE
+    #   ) foreach::`%dopar%` {
+    #     
+    #   }
+    #   
+    #   for (oIdx in seq_len(length.out = self$getNumOutputs())) {
+    #     g[oIdx, ] <- pracma::grad(f = function(x) {
+    #       self$setParams(params = x)
+    #       self$compute0()[oIdx]
+    #     }, x0 = self$getParams())
+    #   }
+    #   g
+    # },
+    
     get0Function = function() {
       continuous <- private$continuous
       mlm <- private$srbtaw
       qs <- private$intervals
       
-      function(x) {
+      function() {
         # Now for each interval, we compute the RSS over the
         # residuals from the MLM. The residuals currently
         # are just the sub-models as tuple so we can do
@@ -1280,9 +1320,8 @@ srBTAW_Loss_Rss <- R6Class(
           wc <- if (mlm$isBawEnabled()) t$nqc else t$mqc
           
           if (continuous) {
-            tempf <- function(k) t$wp(x = k) - wc(x = k)
             err <- err + cubature::cubintegrate(
-              f = tempf, lower = t$tb_q, upper = t$te_q)$integral
+              f = function(x) (t$wp(x) - wc(x))^2, lower = t$tb_q, upper = t$te_q)$integral
           } else {
             X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
             y <- sapply(X = X, FUN = t$wp)
@@ -1534,7 +1573,7 @@ srBTAW <- R6Class(
         # v, vartheta_y
         paramNames <- c(paramNames, "v", paste0("vty_", seq_len(length.out = length(private$theta_b) - 1)))
       }
-      super$initialize(paramNames = paramNames)
+      super$initialize(paramNames = sort(paramNames))
     },
     
     isBawEnabled = function() {
@@ -1627,10 +1666,24 @@ srBTAW <- R6Class(
     
     #' Overridden so that we can set parameters to all instances.
     setParams = function(params) {
-      super$setParams(params = params)
+      super$setParams(params = params) # called also for validation
+      
+      # 'params' is a named and sorted vector, and we need to deconstruct
+      # it into vartheta_l, b, e, v, vartheta_y and set these explicitly,
+      # if they are present.
+      useArgs <- list()
+      patterns <- c("vtl_" = "vartheta_l", "b" = "begin", "e" = "end",
+                    "v$" = "v", "vty_" = "vartheta_y")
+      for (p in names(patterns)) {
+        idx <- grep(pattern = p, x = names(params))
+        if (length(idx) > 0) {
+          temp <- params[idx]
+          useArgs[[patterns[p]]] <- unname(temp[sort(names(temp))])
+        }
+      }
       
       for (instName in names(private$instances)) {
-        private$instances[[instName]]$setAllParams(params = params)
+        do.call(what = private$instances[[instName]]$setParams, args = useArgs)
       }
       
       invisible(self)
@@ -1694,23 +1747,29 @@ srBTAW <- R6Class(
                       c(rep(max(private$lambda_ymax) + 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
                             length(private$theta_b))) else c()))
       
+      l <- -.Machine$double.xmax
+      u <- .Machine$double.xmax
+      bb_lower <- c(l, 0, 0, 0, 0, l, l, l, l)
+      bb_upper <- c(u, 1, 1, 1, 1, u, u, u, u)
+      
       optR <- stats::optim(
         par = self$getParams(),
         method = "L-BFGS-B",
         lower = bb_lower,
         upper = bb_upper,
         fn = function(x) {
-          self$setParams(params = x)
-          fr$startStep(verbose = verbose)
-          loss <- obj$compute0(x = x)
+          obj$setParams(params = x)
+          
+          fr$startStep()
+          loss <- obj$compute0()
           fr$stopStep(resultParams = c(x, loss), verbose = verbose)
           loss
         },
         gr = function(x) {
           # Note that computeGradient_numeric returns a matrix, and
           # we are dealing with scalar-valued losses only.
-          self$setParams(params = x)
-          obj$computeGradient_numeric(x = x)[1, ]
+          obj$setParams(params = x)
+          obj$computeGradient_numeric()[1, ]
         }
       )
       
@@ -1760,9 +1819,9 @@ residuals.srBTAW <- function(model, loss) {
 }
 
 
-Objective$debug("computeGradient_numeric")
-srBTAW_Loss_Rss$debug("computeGradient_numeric")
-# srBTAW$debug("fit")
+
+
+srBTAW$debug("fit")
 # srBTAW_Loss_Rss$debug("get0Function")
 # srBTAW$debug("residuals")
 # SRBTW$debug("setAllParams")
