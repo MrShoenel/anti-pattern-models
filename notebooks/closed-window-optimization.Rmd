@@ -10,7 +10,7 @@ output:
     toc: true
     toc_depth: 6
     df_print: kable
-    # keep_tex: true
+    keep_tex: true
   md_document:
     toc: true
     toc_depth: 6
@@ -140,8 +140,14 @@ However, notice how we have defined $r,f$ to map to dimensionalities of $1$ or g
 a_ref <- fd_data_concat[fd_data_concat$t == "A", ]
 a_query <- dens_acp_data[dens_acp_data$t == "A", ]
 
-r <- stats::approxfun(x = a_ref$x, y = a_ref$y)
-f <- stats::approxfun(x = a_query$x, y = a_query$y)
+r <- (function() {
+  temp <- stats::approxfun(x = a_ref$x, y = a_ref$y)
+  function(x) temp(v = x)
+})()
+f <- (function() {
+  temp <- stats::approxfun(x = a_query$x, y = a_query$y)
+  function(x) temp(v = x)
+})()
 
 ggarrange(
   plot_project_data(a_ref, boundaries = bounds),
@@ -570,6 +576,7 @@ Before we go any further, we should test the model. When this notebook was start
 
 
 ```{r echo=FALSE, message=FALSE}
+source(file = "../models/modelsR6.R")
 source(file = "../models/SRBTW-R6.R")
 
 vartheta_l <- c(.25,.275,.25,.225)
@@ -1711,19 +1718,26 @@ __Conclusion__: Yes, if the loss is well defined and mechanism for taking interv
 
 # Optimization goal III
 
-As for now, I want to note down two approaches that come to my mind:
+sr-BTW and sr-BAW allow to interchange Warping Pattern and Warping Candidate. Recall that only the former is treated as constant and needs to be used wholly (the WC only needs to be used wholly in closed/closed matching).
 
-* Use the AP as reference with the 4 intervals that we have defined and warp all data to it. If we know how to warp the data to the AP, we can inverse the process. As for warping Y-values, we would need to wrap our proposed model from goal I to allow Y-translation (offset+scale approach, where each sub-model learns a scale and the first sub-model additionally an offset). The advantage is that we reuse the model, as manipulation happens outside of it. In each interval and for each variable, we need to learn a translate for all data series capturing that variable, so that this translation can then also be inverted and applied to the AP (if we have, e.g., 10 projects, then we have to learn one common translation for all that best fits the single reference). This approach also allows us to give low or no weight to, e.g., the Long Stretch phase.
-* Use the AP as query instead. This means that the project data is constant, and that we subdivide it into some intervals by some strategy or just equidistantly-spaced. Using, e.g., AIC/BIC, we find the right amount of boundaries. We would make the same change to our model and wrap it such that sub-models can learn a Y-translation. This approach cannot consider the original intervals of the AP as we defined them, as the optimization chooses new intervals (also, it would most likely end up using a different number of intervals). This approach could result in a vastly different pattern that does not preserve too many shapes from the original pattern, but it may still worth testing.
+* __Pattern as WP, Data as WC__: This is the "ordinary" approach. It allows us to set boundaries on the WP that we think make sense for the pattern, it will thus preserve what was in the original intervals and apply warping to them. This approach is suitable for checking how well the data matches the pattern. If the goal were to adjust the WP, we could still use this approach and eventually inverse the warping. I.e., if we know how to warp the Data to the Pattern, we know how to warp the Pattern to the Data. That is not implemented yet but should be straightforward.
+* __Data as WP, Pattern AS WC__: This means that we still can choose boundaries, but they must be chosen on the data. This makes less sense as we do not know how to subdivide the data into intervals, so generally, you probably just want equidistantly-spaced boundaries. So, if we would choose our original Fire Drill AP as WC, we could not preserve the original segmentation into the 4 characteristic intervals, as the optimization would highly likely choose a different segmentation. It would be possible to restore the original segmentation after optimization, however. This would only work if we choose to have 4 intervals.
 
-A third approach: Start with an empty Warping Pattern: A straight horizontal line located at $0.5$ for each variable and variably many equidistantly-spaced intervals (use information criterion to find best number). This is the approach where we throw away our definition of the Fire Drill AP and create one that is solely based on data.
+A note on highly multivariate optimization: In section \ref{ssec:srbtaw} we introduce the Multilevel-model (__MLM__) that supports arbitrary many variables for either, Warping Pattern or Warping Candidate. The algorithms introduced here, namely `sr-BTW` and `sr-BAW`, are only univariate: they support exactly one variable for the WP and one for the WC. In the suggested MLM, we will use one instance of an algorithm per __unique__ pair of variables. All of the instances __share the same__ set of parameters, so that the MLM appears as a single model. This is a prerequisite for multivariate fitting and illustrated with a practical example of ours: Suppose we want to adjust the __A__-variable of our Fire Drill AP, such that the distance between it and the A-variables of, say, 5 other projects is minimized. The MLM will have 5 instances of the algorithm that share the same parameters during optimization. The data from the 5 projects will be adjusted simultaneously. Once we are finished, we inverse the learned parameters so that we can modify the Fire Drill AP's A-variable. If we had used different parameters for each algorithm, there would be no clear path for the inversion of the parameters.
+
+## Ideas
+
+
+* Use the AP as WP with the 4 intervals that we have defined and warp all data to it. If we know how to warp the data to the AP, we can inverse the results to apply warping to the pattern instead (see above). This approach also allows us to give low or no weight/loss to, e.g., the Long Stretch phase. If we were to do that, the other phases would extent into the Long Stretch, leaving is with a gap in each project that we can afterwards analyze. This will help us to learn about the Long Stretch phases!
+* Use the AP as query instead. This means that the project data is constant, and that we subdivide it into some intervals by some strategy or just equidistantly-spaced. Using, e.g., AIC/BIC, we find the right amount of boundaries. This approach cannot consider the original intervals of the AP as we defined them, as the optimization chooses new intervals (also, it would most likely end up using a different number of intervals). This approach could result in a vastly different pattern that does not preserve too many shapes from the original pattern, but it may still worth testing. In the case where we use exactly 4 intervals, it would be possible to restore the original segmentation.
+* A third approach: Start with an empty Warping Candidate: A straight horizontal line located at $0.5$ for each variable and variably many equidistantly-spaced intervals (use information criterion to find best number). This is the approach where we throw away our definition of the Fire Drill AP and create one that is solely based on data. The resulting warped candidate is a new pattern then.
 
 
 ## Approach
 
 The approach that I suggest is to learn a __piece-wise linear__ function, that will be overlaid with the signal. For each interval, we will learn a separate slope. However, instead of learning a slope directly, we will learn the terminal y-translation at the end of the interval (with the initial translation being $0$). A linear function is given by $y=ax+b$, and we will only learn $a$. $b$, the intercept, is for each interval implicitly assumed to be $0$, but in reality is the sum of all preceding terminal y-translations. This is required because the resulting piece-wise linear function needs to be continuous (otherwise, when adding it to the signal, the signal would also become discontinuous). The first interval has no such preceding y-translation, so we will learn one using the additional parameter, $v$, that represents this. The advantage is, that we can simply __add__ this piece-wise function to each interval, in our case, to each $m_q^c(x,\dots)$. We can think of $v$ and the ordered set of terminal translations as a set of perpendicular vectors, so that for each $q$-th interval, we simply sum up $v$ and the set up to and including the preceding interval, to get the intercept.
 
-I call this approach __self-regularizing boundary amplitude warping__ (sr-BAW). In the style of the sub-model defintion for sr-BTW, $m_q^c$, we will call the sub-models for amplitude warping $n_q^c$.
+I call this approach __self-regularizing boundary amplitude warping__ (sr-BAW). In the style of the sub-model definition for sr-BTW, $m_q^c$, we will call the sub-models for amplitude warping $n_q^c$.
 
 ## Sub-Model formulation
 
@@ -1871,11 +1885,11 @@ In the future, we still want to use R6-classes. One important goal with the futu
       * `LinearScalarizer extends MultiObjective`: A concrete example of a `MultiObjective` that adds together all defined objectives using their weight. This is mostly what we will be using for our purposes.
       * `ScoreMagnitudeScalarizer extends MultiObjective`: Previously described in section \ref{ssec:score_agg}, this is a score-aggregator that can be used to train the MLM with one or more `Score`s.
 
-#### srBTAW -- a Multilevel-model
+## `srBTAW extends Model` -- a Multilevel-model\label{ssec:srbtaw}
 
 sr-BTW and sr-BAW are mere algorithms, and not quite models. Either can take a reference- and a query-signal (Warping Pattern and Warping Candidate) and compute a warped version of the candidate using the boundaries and terminal y-translations. Instead of inheriting from `Objective`, we chose to have the actual model called ___`srBTAW`___ to inherit from `Differentiable`, and to encapsulate a single `Objective` that can be computed. The abstract methods of `Differentiable` are forwarded to the encapsulated `Objective`. This has the advantage of the encapsulated objective actually representing the entire model, also we can use a single objective or, e.g., a `MultiObjective`, making this de facto a __multilevel-model__, that supports arbitrary many variables (one or more) for either, Warping Pattern and Warping Candidate.
 
-The main purpose of `srBTAW` is to encapsulate all available data (variables) and intervals, and to provide also helper methods (factories) for creating losses. It will also allow us to reuse instances or `SRBTW` and `SRBAW`/`SRBTWBAW`, as any of these create a tuple of one WP and one WC.
+The main purpose of `srBTAW` is to encapsulate all available data (variables) and intervals, and to provide helper methods (factories) for creating losses. It will allow us to reuse instances of `SRBTW` and `SRBAW`/`SRBTWBAW`, as any of these create a pair of one WP and one WC.
 
 
 ## Testing
@@ -2059,6 +2073,75 @@ $$
 $$
 
 Note that both versions of the regularizer are defined as ratios, and that, at most, their loss can be $1$ (and the least possible loss would be $0$). Also, $\frac{1}{2}\big(\beta_u-\beta_l\big)$ can be replaced with some user-defined, arbitrary expectation, i.e., it does not necessarily need to be the mean of the upper and lower bound (but it needs to be within them).
+
+
+## Testing new `srBTAW` model
+
+I did implement the new architecture and wrapped some of the older classes, and it's finally time to make a test.
+
+```{r echo=FALSE, message=FALSE}
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+set.seed(1)
+vartheta_l_mlm <- c(.25,.275,.25,.225)
+vartheta_y_mlm <- runif(n = length(vartheta_l_mlm), min = sqrt(.Machine$double.eps), max = .05)
+
+mlm <- srBTAW$new(
+  theta_b = c(0, bounds, 1),
+  gamma_bed = c(0, 1, sqrt(.Machine$double.eps)),
+  lambda = rep(sqrt(.Machine$double.eps), length(vartheta_l_mlm)),
+  begin = 0, end = 1,
+  openBegin = FALSE, openEnd = FALSE,
+  useAmplitudeWarping = TRUE,
+  lambda_ymin = rep(0, length(vartheta_l_mlm)),
+  lambda_ymax = rep(1, length(vartheta_l_mlm)))
+
+# Next, we do the signals; here we'll only do 1 WP and 1 WC:
+sig_wp_mlm <- Signal$new(name = "A_WP", isWp = TRUE, support = c(0, 1), func = r)
+sig_wc_mlm <- Signal$new(name = "A_WC", isWp = FALSE, support = c(0, 1), func = f)
+
+ggarrange(
+  sig_wp_mlm$plot(),
+  sig_wc_mlm$plot(),
+  nrow = 1
+)
+```
+
+We got our MLM and the two signals (one WP/WC each). The next steps are adding the signal to the model, as well as initializing an appropriate loss (objective).
+
+```{r}
+mlm$setSignal(signal = sig_wp_mlm)
+mlm$setSignal(signal = sig_wc_mlm)
+
+loss_mlm <- srBTAW_Loss_Rss$new(
+  wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(),
+  weight = 1, intervals = 1:4, continuous = TRUE)#, numSamples = rep(250, 4))
+
+mlm$addLoss(loss = loss_mlm)
+mlm$setObjective(obj = loss_mlm)
+```
+
+Finally, we can set the parameters and start fitting!
+
+```{r}
+mlm$setParams(params = c(
+  # The order is important!
+  c(v = 0.001),
+  `names<-`(vartheta_l_mlm, paste0("vtl_", seq_len(length.out = length(vartheta_l_mlm)))),
+  `names<-`(vartheta_y_mlm, paste0("vty_", seq_len(length.out = length(vartheta_y_mlm))))
+))
+```
+
+
+```{r}
+mlm_fr <- mlm$fit(verbose = TRUE)
+```
+
+```{r}
+plot(mlm_fr$getFitHist()[, "loss"], type="l")
+mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp()
+```
 
 
 # Other thoughts
