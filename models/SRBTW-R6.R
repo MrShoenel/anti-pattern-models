@@ -923,10 +923,13 @@ Differentiable <- R6Class(
   ),
   
   public = list(
-    initialize = function(paramNames = c(), numberOfOutputs = 1, outputNames = paste0("o_", seq_len(length.out = numberOfOutputs))) {
+    initialize = function(
+      paramNames = c(), numberOfOutputs = 1,
+      outputNames = paste0("o_", seq_len(length.out = numberOfOutputs))
+    ) {
       stopifnot((is.vector(paramNames) && length(paramNames) == 0) || (!any(is.na(paramNames)) && is.character(paramNames)))
       stopifnot(is.numeric(numberOfOutputs) && !is.na(numberOfOutputs) && numberOfOutputs >= 1)
-      stopifnot(numberOfOutputs == length(outputNames) && is.character(outputNames))
+      stopifnot(numberOfOutputs == length(outputNames) && is.character(outputNames) && all(nchar(outputNames) > 0))
       
       if (length(paramNames) > 0 && is.unsorted(x = paramNames, strictly = TRUE)) {
         warning("The parameter names were not sorted, now they are.")
@@ -935,6 +938,12 @@ Differentiable <- R6Class(
       private$paramNames <- sort(paramNames)
       private$numOuts <- numberOfOutputs
       private$outputNames <- outputNames
+    },
+    
+    #' Must return a named vector with all parameters. The names
+    #' must be those the Differentiable was initialized with.
+    getParams = function() {
+      stop("Abstract method")
     },
     
     getParamNames = function() {
@@ -953,19 +962,144 @@ Differentiable <- R6Class(
       private$numOuts
     },
     
+    #' Returns a function that takes a single argument, x, that
+    #' is the parameters of the Differentiable. That function,
+    #' together with the parameters, computes the output.
     get0Function = function() {
       stop("Abstract method")
     },
     
-    get1stOrderPd = function(name = NULL) {
+    get1stOrderPd = function(name = c()) {
       stop("Abstract method")
     },
     
-    get2ndOrderPd = function(name = NULL) {
+    get2ndOrderPd = function(name = c()) {
       stop("Abstract method")
     }
   )
 )
+
+
+Objective <- R6Class(
+  "Objective",
+  
+  inherit = Differentiable,
+  
+  lock_objects = FALSE,
+  
+  private = list(
+    zeroFunc = Vectorize(function(x) 0)
+  ),
+  
+  public = list(
+    initialize = function(
+      paramNames = c(), numberOfOutputs = 1,
+      outputNames = paste0("o", seq_len(length.out = numberOfOutputs))
+    ) {
+      super$initialize(
+        paramNames = paramNames,
+        numberOfOutputs = numberOfOutputs,
+        outputNames = outputNames)
+    },
+    
+    #' Computes the underlying function with the given (or own) parameters.
+    compute0 = function(x = self$getParams()) {
+      do.call(what = self$get0Function(), args = list(x = x))
+    },
+    
+    #' Returns a named vector of computed 1st-order partial derivatives.
+    #' The names of that vector correspond to the parameter derived for,
+    #' and for the output they were calculated for. The naming scheme is
+    #' "parameterName_outputName".
+    compute1stOrderPd = function(x = self$getParams(), name = c()) {
+      stop("Abstract method")
+    },
+    
+    #' Returns a named vector of computed 2nd-order partial derivatives.
+    #' The names of that vector correspond to comma-separated lists of
+    #' what parameters it was derived for, e.g., "a,b_o1" means that the
+    #' partial derivative was first derived for "a", then for "b", and
+    #' that it concerns output "o1".
+    compute2ndOrderPd = function(x = self$getParams(), name = c()) {
+      stop("Abstract method")
+    },
+    
+    #' Computes all 1st-order partial derivatives, which is equal to the
+    #' gradient. The result is an ordered and named matrix with one row
+    #' (according to the order of the parameters of the Differentiable)
+    #' for scalar-valued functions, and a Jacobian-matrix for vector-
+    #' valued functions (one row per parameter).
+    computeGradient = function(x = self$getParams()) {
+      temp <- do.call(what = self$compute1stOrderPd, args = list(x = x))
+      # TODO: compose list into matrix/tensor
+      # TODO: Check how I did it in computeGradient_numeric
+      stop("not done implementing")
+    },
+    
+    #' Computes all 2nd-order partial derivatives, which is equal to the
+    #' Hessian. The result is a 3rd-order Tensor with the 3rd-dimension
+    #' having a length of 1 for scalar-valued functions, and n for n-valued
+    #' functions. Any of these are ordered according to the order of
+    #' the parameters of the Differentiable.
+    computeHessian = function(x = self$getParams()) {
+      temp <- do.call(what = self$compute2ndOrderPd, args = list(x = x))
+      # TODO: compose list into matrix/tensor
+      stop("not done implementing")
+    },
+    
+    #' Computes all 1st-order partial derivatives, which is equal to the
+    #' gradient. The result is an ordered and named matrix with one row
+    #' (according to the order of the parameters of the Differentiable)
+    #' for scalar-valued functions, and a Jacobian-matrix for vector-
+    #' valued functions (one row per parameter). Computation is done
+    #' numerically using \code{pracma::grad()}.
+    computeGradient_numeric = function(x = self$getParams()) {
+      g <- matrix(nrow = self$getNumOutputs(), ncol = self$getNumParams())
+      colnames(g) <- self$getParamNames()
+      rownames(g) <- self$getOutputNames()
+      
+      for (oIdx in seq_len(length.out = self$getNumOutputs())) {
+        g[oIdx, ] <- pracma::grad(f = function(x_) {
+          self$compute0(x = x_)[oIdx]
+        }, x0 = x)
+      }
+      g
+    },
+    
+    #' Computes all 2nd-order partial derivatives, which is equal to the
+    #' Hessian. The result is a 3rd-order Tensor with the 3rd-dimension
+    #' having a length of 1 for scalar-valued functions, and n for n-valued
+    #' functions. Any of these are ordered according to the order of
+    #' the parameters of the Differentiable. Computation is done
+    #' numerically using \code{pracma::hessian()}.
+    computeHessian_numeric = function(x = self$getParams()) {
+      # TODO: like computeGradient_numeric, use pracma::hessian and always
+      # TODO: return a 3rd-order Tensor that has dim(3) >= 1..
+      stop("Not implemented")
+    },
+    
+    #' Similar to \code{compute1stOrderPd()}, but computes each derivative
+    #' numerically using \code{pracma::fderiv()}.
+    compute1stOrderPd_numeric = function(x = self$getParams(), name = c()) {
+      # TODO: use pracma::fderiv() for every parameter, support vector-valued functions like:
+      # pracma::fderiv(f = function(x) {
+      #   c(x[1]^2, x[2]^3)
+      # }, x = c(1,2))
+      stop("Not implemented")
+    },
+    
+    #' Similar to \code{compute2ndOrderPd()}, but computes each derivative
+    #' numerically using \code{pracma::fderiv(n=2)}.
+    compute2ndOrderPd_numeric = function(x = self$getParams(), name = c()) {
+      if (length(names) == 0) {
+        return(self$computeHessian_numeric(x = x))
+      }
+      # TODO: see above, use pracma::fderiv() with n=2
+      stop("Not implemented")
+    }
+  )
+)
+
 
 
 #' Abstract super-class for all models. This class is meant
@@ -982,20 +1116,37 @@ Model <- R6Class(
   ),
   
   public = list(
-    initialize = function() {
-      super$initialize()
+    initialize = function(
+      paramNames = c(), numberOfOutputs = 1,
+      outputNames = paste0("o_", seq_len(length.out = numberOfOutputs))
+    ) {
+      super$initialize(
+        paramNames = paramNames, numberOfOutputs = numberOfOutputs, outputNames = outputNames)
+    },
+    
+    #' Implements abstract method from \code{Differentiable::getParams()}.
+    getParams = function() {
+      private$params
+    },
+    
+    setParams = function(params) {
+      stopifnot(is.vector(params) && length(params) == self$getNumParams())
+      stopifnot(is.numeric(params) && !any(is.na(params)))
+      stopifnot(TRUE == all.equal(self$getParamNames(), names(params)))
+      private$params <- params
+      invisible(self)
     },
     
     likelihood = function() {
       stop("Abstract method")
     },
     
-    residuals = function() {
+    residuals = function(...) {
       stop("Abstract method")
     },
     
     coefficients = function() {
-      private$params
+      self$getParams()
     },
     
     fit = function() {
@@ -1019,85 +1170,601 @@ Model <- R6Class(
 )
 
 
-Objective <- R6Class(
-  "Objective",
+srBTAW_Loss <- R6Class(
+  "srBTAW_Loss",
   
-  inherit = Differentiable,
-  
-  lock_objects = FALSE,
+  inherit = Objective,
   
   private = list(
-    model = NULL,
-    
-    zeroFunc = Vectorize(function(x) 0)
+    srbtaw = NULL,
+    wpName = NULL,
+    wcName = NULL,
+    weight = NULL,
+    intervals = NULL
   ),
   
   public = list(
-    initialize = function(paramNames = c(), numberOfOutputs = 1, model = NULL) {
-      stopifnot(missing(model) || is.null(model) || (R6::is.R6(model) && inherits(model, "Differentiable")))
-      super$initialize(paramNames = paramNames, numberOfOutputs = numberOfOutputs)
+    initialize = function(wpName, wcName, weight = 1, intervals = c()) {
+      stopifnot(is.character(wpName) && is.character(wcName))
+      stopifnot(is.numeric(weight) && !is.na(weight) && weight > 0 && weight <= 1)
+      stopifnot(is.numeric(intervals) && !any(is.na(intervals)) && all(intervals >= 1))
+      stopifnot(!is.unsorted(intervals))
       
-      private$model <- model
+      private$wpName <- wpName
+      private$wcName <- wcName
+      private$weight <- weight
+      private$intervals <- intervals
     },
     
-    compute0 = function(x) {
-      stopifnot(is.numeric(x) && length(x) > 0 && !any(is.na(x)))
+    setSrBtaw = function(srbtaw) {
+      private$srbtaw <- srbtaw
+      invisible(self)
+    },
+    
+    getWpName = function() {
+      private$wpName
+    },
+    
+    getWcName = function() {
+      private$wcName
+    },
+    
+    getIntervals = function() {
+      private$intervals
+    }
+  )
+)
+
+
+srBTAW_Loss_Rss <- R6Class(
+  "srBTAW_Loss_Rss",
+  
+  inherit = srBTAW_Loss,
+  
+  private = list(
+    continuous = NULL,
+    numSamples = NULL
+  ),
+  
+  public = list(
+    initialize = function(
+      wpName, wcName, weight = 1, intervals = c(),
+      continuous = FALSE, numSamples = rep(if (continuous) NA else 1e3, length(intervals))
+    ) {
+      super$initialize(
+        wpName = wpName, wcName = wcName, weight = weight, intervals = intervals)
       
-      self$get0Function()(x)
+      stopifnot(is.logical(continuous) && is.numeric(numSamples))
+      
+      private$continuous <- continuous
+      private$numSamples <- numSamples
     },
     
-    compute1stOrderPd = function(x, name = NULL) {
-      stopifnot(is.numeric(x) && length(x) > 0 && !any(is.na(x)))
-      stopifnot(missing(name) || is.null(name) || (is.character(name) && length(name) > 0))
-      rep(NA_real_, length(name))
+    ######## region TEMP, TODO: REMOVE
+    getNumOutputs = function() {
+      1
+    },
+    getParamNames = function() {
+      private$srbtaw$getParamNames()
     },
     
-    compute2ndOrderPd = function(x, name = NULL) {
-      stopifnot(is.numeric(x) && length(x) > 0 && !any(is.na(x)))
-      stopifnot(missing(name) || is.null(name) || (is.character(name) && length(name) > 0))
-      rep(NA_real_, length(name))
+    getOutputNames = function() {
+      private$srbtaw$getOutputNames()
     },
     
-    computeGradient = function(x) {
-      unlist(self$compute1stOrderPd(x = x, name = c()))
+    getNumParams = function() {
+      private$srbtaw$getNumParams()
     },
     
-    computeHessian = function(x) {
-      temp <- unlist(self$compute2ndOrderPd(x = x, name = c()))
-      # TODO: compose list into matrix
-      stop("not done implementing")
+    getParams = function() {
+      private$srbtaw$getParams()
     },
+    ######## endregion
     
-    computeGradient_numeric = function(x) {
-      pracma::grad(f = function(x_) {
-        self$compute0(x = x_)
-      }, x0 = x)
-    },
-    
-    computeHessian_numeric = function(x) {
-      pracma::hessian(f = function(x_) {
-        self$compute0(x = x_)
-      }, x0 = x)
-    },
-    
-    compute1stOrderPd_numeric = function(x, name = NULL) {
-      # TODO: use pracma::fderiv() for every parameter, support vector-valued functions like:
-      # pracma::fderiv(f = function(x) {
-      #   c(x[1]^2, x[2]^3)
-      # }, x = c(1,2))
-      stop("Not implemented")
-    },
-    
-    compute2ndOrderPd_numeric = function(x, name = NULL) {
-      # TODO: see above
-      stop("Not implemented")
+    get0Function = function() {
+      continuous <- private$continuous
+      mlm <- private$srbtaw
+      qs <- private$intervals
+      
+      function(x) {
+        # Now for each interval, we compute the RSS over the
+        # residuals from the MLM. The residuals currently
+        # are just the sub-models as tuple so we can do
+        # whatever we want.
+        
+        err <- 0
+        res <- stats::residuals(mlm, loss = self)
+        idx <- 1
+        for (q in qs) {
+          t <- res[[q]]
+          wc <- if (mlm$isBawEnabled()) t$nqc else t$mqc
+          
+          if (continuous) {
+            tempf <- function(k) t$wp(x = k) - wc(x = k)
+            err <- err + cubature::cubintegrate(
+              f = tempf, lower = t$tb_q, upper = t$te_q)$integral
+          } else {
+            X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
+            y <- sapply(X = X, FUN = t$wp)
+            y_hat <- sapply(X = X, FUN = wc)
+            err <- err + sum((y - y_hat)^2)
+          }
+          
+          idx <- idx + 1
+        }
+        
+        `names<-`(c(log(1 + err)), mlm$getOutputNames())
+      }
     }
   )
 )
 
 
 
+Signal <- R6Class(
+  "Signal",
+  
+  inherit = Differentiable,
+  
+  private = list(
+    name = NULL,
+    func = NULL,
+    support = NULL,
+    isWp = NULL,
+    
+    func_d1 = NULL,
+    func_d2 = NULL
+  ),
+  
+  public = list(
+    initialize = function(name, func, support, isWp) {
+      stopifnot(is.character(name) && nchar(name) > 0)
+      stopifnot(is.function(func) && all(methods::formalArgs(func) == "x"))
+      stopifnot(is.numeric(support) && length(support) == 2 && !any(is.na(support)))
+      stopifnot(is.logical(isWp))
+      
+      private$name <- name
+      private$func <- Vectorize(func)
+      private$support <- support
+      private$isWp <- isWp
+      
+      func_deriv <- function(x, n) {
+        m <- "central"
+        eps <- sqrt(.Machine$double.eps)
+        if (abs(x - support[1]) < eps) {
+          m <- "forward"
+        } else if (abs(support[2] - x) < eps) {
+          m <- "backward"
+        }
+        pracma::fderiv(f = func, x = x, n = n, method = m)
+      }
+      
+      private$func_d1 <- Vectorize(function(x) {
+        func_deriv(x = x, n = 1)
+      })
+      private$func_d2 <- Vectorize(function(x) {
+        func_deriv(x = x, n = 2)
+      })
+    },
+    
+    getName = function() {
+      private$name
+    },
+    
+    getSupport = function() {
+      private$support
+    },
+    
+    isWarpingPattern = function() {
+      private$isWp
+    },
+    
+    
+    # region Differentiable
+    get0Function = function() {
+      private$func
+    },
+    
+    get1stOrderPd = function(name = c()) {
+      # 'name' must be an empty vector or 'x'
+      stopifnot(length(name) == 0 || (length(name) == 1 && name == "x"))
+      private$func_d1
+    },
+    
+    get2ndOrderPd = function(name = c()) {
+      # 'name' must be an empty vector or 'x'
+      stopifnot(length(name) == 0 || (length(name) == 1 && name == "x"))
+      private$func_d2
+    },
+    
+    getParams = function() {
+      # Signal does not store a value for x (i.e., there is no setter).
+      c(x = NA_real_)
+    },
+    
+    getParamNames = function() {
+      "x"
+    },
+    
+    getNumParams = function() {
+      1
+    },
+    
+    getOutputNames = function() {
+      "y"
+    },
+    
+    getNumOutputs = function() {
+      1
+    },
+    # endregion Differentiable
+    
+    
+    plot = function(showSignal = TRUE, show1stDeriv = FALSE, show2ndDeriv = FALSE) {
+      funcsColors <- c(Signal = "black", Signal_d1 = "red", Signal_d2 = "blue")
+      funcs <- c()
+      g <- ggplot2::ggplot()
+      
+      if (showSignal) {
+        funcs <- c(1)
+        g <- g + ggplot2::stat_function(
+          fun = self$get0Function(), xlim = private$support,
+          mapping = ggplot2::aes(color = names(funcsColors)[1]))
+      }
+      if (show1stDeriv) {
+        funcs <- c(funcs, 2)
+        g <- g + ggplot2::stat_function(
+          fun = self$get1stOrderPd(), xlim = private$support,
+          mapping = ggplot2::aes(color = names(funcsColors)[2]))
+      }
+      if (show2ndDeriv) {
+        funcs <- c(funcs, 3)
+        g <- g + ggplot2::stat_function(
+          fun = self$get2ndOrderPd(), xlim = private$support,
+          mapping = ggplot2::aes(color = names(funcsColors)[3]))
+      }
+      
+      g + ggplot2::scale_color_manual(
+        private$name,
+        values = funcsColors[funcs]) +
+        ggplot2::theme(legend.position = "bottom")
+    }
+  )
+)
 
+
+
+srBTAW <- R6Class(
+  "srBTAW",
+  
+  inherit = Model,
+  
+  private = list(
+    objective = NULL,
+    
+    useAmplitudeWarping = NULL,
+    isObjectiveLogarithmic = NULL,
+    
+    theta_b = NULL, gamma_bed = NULL, lambda = NULL,
+    begin = NULL, end = NULL, openBegin = NULL, openEnd = NULL,
+    lambda_ymin = NULL, lambda_ymax = NULL,
+    
+    lastFitResult = NULL,
+    
+    instances = NULL,
+    
+    signals_wp = NULL, signals_wc = NULL,
+    
+    data = NULL, dataWeights = NULL,
+    
+    requireObjective = function() {
+      if (!self$hasObjective()) stop("No Objective present.")
+    },
+    
+    hasInstance = function(wpName, wcName) {
+      key <- paste(wpName, wcName, sep = "|")
+      key %in% names(private$instances)
+    },
+    
+    getInstance = function(wpName, wcName) {
+      stopifnot(private$hasInstance(wpName = wpName, wcName = wcName))
+      key <- paste(wpName, wcName, sep = "|")
+      private$instances[[key]]
+    },
+    
+    addInstance = function(wpName, wcName, instance) {
+      key <- paste(wpName, wcName, sep = "|")
+      private$instances[[key]] <- instance
+    },
+    
+    createInstance = function(wp, wc) {
+      ctor <- if (private$useAmplitudeWarping) SRBTWBAW$new else SRBTW$new
+      args <- list(
+        wp = wp, wc = wc, theta_b = private$theta_b, gamma_bed = private$gamma_bed,
+        lambda = private$lambda, begin = private$begin, end = private$end,
+        openBegin = private$openBegin, openEnd = private$openEnd)
+      
+      if (private$useAmplitudeWarping) {
+        args$lambda_ymin <- private$lambda_ymin
+        args$lambda_ymax <- private$lambda_ymax
+      }
+      
+      do.call(what = ctor, args = args)
+    }
+  ),
+  
+  public = list(
+    initialize = function(
+      theta_b, gamma_bed, lambda, begin, end, openBegin, openEnd, # required BTW/BAW params
+      useAmplitudeWarping = FALSE,
+      lambda_ymin = NULL, lambda_ymax = NULL # required if BAW
+      
+      ,paramNames = c(), numberOfOutputs = 1,
+      outputNames = paste0("o_", seq_len(length.out = numberOfOutputs)),
+      
+      isObjectiveLogarithmic = TRUE
+    ) {
+      stopifnot(!useAmplitudeWarping || (is.vector(lambda_ymin) && is.vector(lambda_ymax)))
+      
+      private$instances <- list()
+      private$signals_wp <- list()
+      private$signals_wc <- list()
+      
+      private$useAmplitudeWarping <- useAmplitudeWarping
+      private$theta_b <- theta_b
+      private$gamma_bed <- gamma_bed
+      private$lambda <- lambda
+      private$begin <- begin
+      private$end <- end
+      private$openBegin <- openBegin
+      private$openEnd <- openEnd
+      private$lambda_ymin <- lambda_ymin
+      private$lambda_ymax <- lambda_ymax
+      
+      private$isObjectiveLogarithmic <- isObjectiveLogarithmic
+      
+      paramNames <- paste0("vtl_", seq_len(length.out = length(private$theta_b) - 1)) # vartheta_l
+      if (openBegin) {
+        paramNames <- c(paramNames, "b")
+      }
+      if (openEnd) {
+        paramNames <- c(paramNames, "e")
+      }
+      if (useAmplitudeWarping) {
+        # v, vartheta_y
+        paramNames <- c(paramNames, "v", paste0("vty_", seq_len(length.out = length(private$theta_b) - 1)))
+      }
+      super$initialize(paramNames = paramNames)
+    },
+    
+    isBawEnabled = function() {
+      private$useAmplitudeWarping
+    },
+    
+    setIsObjectiveLogarithmic = function(val) {
+      stopifnot(is.logical(val))
+      private$isObjectiveLogarithmic <- val
+      invisible(self)
+    },
+    
+    getIsObjectiveLogarithmic = function() {
+      private$isObjectiveLogarithmic
+    },
+    
+    setSignal = function(signal) {
+      stopifnot(R6::is.R6(signal) && inherits(signal, "Signal"))
+      
+      if (signal$isWarpingPattern()) {
+        private$signals_wp[[signal$getName()]] <- signal
+      } else {
+        private$signals_wc[[signal$getName()]] <- signal
+      }
+      
+      invisible(self)
+    },
+    
+    getSignal = function(name) {
+      stopifnot(is.character(name))
+      
+      if (name %in% names(private$signals_wp)) {
+        return(private$signals_wp[[name]])
+      } else if (name %in% names(private$signals_wc)) {
+        return(private$signals_wc[[name]])
+      }
+      stop(paste0("The signal ", name, " was not previously added."))
+    },
+    
+    removeSignal = function(nameOrSignal) {
+      stopifnot(is.character(nameOrSignal) || (R6::is.R6(signal) && inherits(signal, "Signal")))
+      
+      name <- if (is.character(nameOrSignal)) nameOrSignal else nameOrSignal$getName()
+      if (name %in% names(private$signals_wp)) {
+        private$signals_wp[[name]] <- NULL
+      } else if (name %in% names(private$signals_wc)) {
+        private$signals_wc[[name]] <- NULL
+      } else {
+        stop(paste0("The signal ", name, " was not previously added."))
+      }
+      
+      invisible(self)
+    },
+    
+    setObjective = function(obj = NULL) {
+      stopifnot(is.null(obj) || (R6::is.R6(obj) && inherits(obj, "Objective")))
+      private$objective <- obj
+      invisible(self)
+    },
+    
+    getObjective = function() {
+      private$objective
+    },
+    
+    hasObjective = function() {
+      R6::is.R6(private$objective) && inherits(private$objective, "Objective")
+    },
+    
+    addLoss = function(loss) {
+      stopifnot(R6::is.R6(loss) && inherits(loss, "srBTAW_Loss"))
+      
+      wpName <- loss$getWpName()
+      wcName <- loss$getWcName()
+      if (!private$hasInstance(wpName = wpName, wcName = wcName)) {
+        wpSig <- self$getSignal(name = wpName)
+        stopifnot(wpSig$isWarpingPattern())
+        wcSig <- self$getSignal(name = wcName)
+        stopifnot(!wcSig$isWarpingPattern())
+        
+        private$addInstance(
+          wpName = wpName, wcName = wcName,
+          instance = private$createInstance(
+            wp = wpSig$get0Function(), wc = wcSig$get0Function()))
+      }
+      
+      loss$setSrBtaw(self)
+      invisible(self)
+    },
+    # region Model
+    
+    #' Overridden so that we can set parameters to all instances.
+    setParams = function(params) {
+      super$setParams(params = params)
+      
+      for (instName in names(private$instances)) {
+        private$instances[[instName]]$setAllParams(params = params)
+      }
+      
+      invisible(self)
+    },
+    
+    likelihood = function() {
+      fr <- private$lastFitResult
+      stopifnot(R6::is.R6(fr) && inherits(fr, "FitResult"))
+      
+      # Likelihood and loss are anti-proportional, the lower
+      # the loss, the higher the likelihood.
+      bestLoss <- fr$getBest(paramName = "loss", lowest = TRUE)[, "loss"]
+      # The following has limit \infty for loss -> 0 and limit 0
+      # for loss -> \infty (what we want)
+      -log(1 - 1/(1 + bestLoss))
+    },
+    
+    #' This method is the most important for computing Objectives and Losses,
+    #' as these are based on the performed warping. This method expects one
+    #' parameter, a loss which must be an instance of \code{srBTAW_Loss}.
+    residuals = function(...) {
+      private$requireObjective()
+      
+      params <- list(...)
+      stopifnot(length(params) > 0)
+      loss <- utils::head(params, 1)[[1]]
+      stopifnot(R6::is.R6(loss) && inherits(loss, "srBTAW_Loss"))
+      
+      qs <- loss$getIntervals()
+      stopifnot(length(qs) > 0) # You can request multiple q!
+      
+      instance <- private$getInstance(
+        wpName = loss$getWpName(), wcName = loss$getWcName())
+      
+      res <- list()
+      for (q in qs) {
+        res[[q]] <- instance$getSubModel(q = q)$asTuple()
+      }
+      
+      res
+    },
+    
+    fit = function(verbose = TRUE) {
+      private$requireObjective()
+      obj <- self$getObjective()
+      
+      fr <- FitResult$new(paramNames = c(self$getParamNames(), "loss"))
+      fr$start()
+      
+      # Bounds: for SRBTWBAW, params is vartheta_l, [, b [, e [, v, vartheta_y]]]
+      bb_lower <- c(private$lambda,
+                    (if (private$openBegin) private$gamma_bed[1] else c()),
+                    (if (private$openEnd) private$gamma_bed[1] + private$gamma_bed[3] else c()),
+                    (if (private$useAmplitudeWarping)
+                      c(rep(min(private$lambda_ymin) - 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
+                            length(private$theta_b))) else c()))
+      bb_upper <- c(rep(max(private$lambda), length(private$lambda)), # remember vartheta_l are ratios ideally
+                    (if (private$openBegin) private$gamma_bed[2] - private$gamma_bed[3] else c()),
+                    (if (private$openEnd) private$gamma_bed[2] else c()),
+                    (if (private$useAmplitudeWarping)
+                      c(rep(max(private$lambda_ymax) + 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
+                            length(private$theta_b))) else c()))
+      
+      optR <- stats::optim(
+        par = self$getParams(),
+        method = "L-BFGS-B",
+        lower = bb_lower,
+        upper = bb_upper,
+        fn = function(x) {
+          self$setParams(params = x)
+          fr$startStep(verbose = verbose)
+          loss <- obj$compute0(x = x)
+          fr$stopStep(resultParams = c(x, loss), verbose = verbose)
+          loss
+        },
+        gr = function(x) {
+          # Note that computeGradient_numeric returns a matrix, and
+          # we are dealing with scalar-valued losses only.
+          self$setParams(params = x)
+          obj$computeGradient_numeric(x = x)[1, ]
+        }
+      )
+      
+      fr$setOptResult(optResult = optR)
+      fr$finish()
+      private$lastFitResult <- fr
+      fr
+    },
+    # endregion Model
+    
+    
+    # region Differentiable
+    getNumParams = function() {
+      n <- length(private$theta_b) - 1 # vartheta_l
+      if (private$openBegin) {
+        n <- n + 1
+      }
+      if (private$openEnd) {
+        n <- n + 1
+      }
+      if (private$useAmplitudeWarping) {
+        n <- n + length(private$theta_b) # v, vartheta_y
+      }
+      n
+    },
+    
+    get0Function = function() {
+      private$requireObjective()
+      do.call(what = self$getObjective()$get0Function, args = list())
+    },
+    
+    get1stOrderPd = function(name = c()) {
+      private$requireObjective()
+      do.call(what = self$getObjective()$get1stOrderPd, args = list(name = name))
+    },
+    
+    get2ndOrderPd = function(name = c()) {
+      private$requireObjective()
+      do.call(what = self$getObjective()$get2ndOrderPd, args = list(name = name))
+    }
+    # endregion Differentiable
+  )
+)
+
+residuals.srBTAW <- function(model, loss) {
+  model$residuals(loss)
+}
+
+
+Objective$debug("computeGradient_numeric")
+srBTAW_Loss_Rss$debug("computeGradient_numeric")
+# srBTAW$debug("fit")
+# srBTAW_Loss_Rss$debug("get0Function")
+# srBTAW$debug("residuals")
 # SRBTW$debug("setAllParams")
 # SRBTW_SubModel$debug("asTuple")
 # SRBTW$debug("initialize")
