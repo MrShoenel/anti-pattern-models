@@ -631,7 +631,9 @@ SRBTWBAW_SubModel <- R6Class(
       v <- s$getV()
       vty_q <- s$getVarthetaY_q(q = q)
       phi_y_q <- s$getPhi_y_q(q = q)
-      a_q <- vty_q / t$l_q_c
+      # a_q <- vty_q / t$l_q_c
+      tb_q <- s$getTb_q(q = q)
+      a_q <- vty_q / (s$getTe_q(q = q) - tb_q)
       lambda_ymin_q <- lambda_ymin[q]
       lambda_ymax_q <- lambda_ymax[q]
       
@@ -644,7 +646,7 @@ SRBTWBAW_SubModel <- R6Class(
       t$lambda_ymax_q <- lambda_ymax_q
       
       tq <- function(x) {
-        a_q * (x - t$phi_q) + v + phi_y_q
+        a_q * (x - tb_q) + v + phi_y_q
       }
       t$tq <- tq
       
