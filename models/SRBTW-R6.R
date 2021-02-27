@@ -1909,6 +1909,9 @@ srBTAW <- R6Class(
           wpName = wpName, wcName = wcName,
           instance = private$createInstance(
             wp = wpSig$get0Function(), wc = wcSig$get0Function()))
+        
+        # Also, make sure the new instance gets may existing parameters:
+        self$setParams(params = self$getParams())
       }
       
       loss$setSrBtaw(self)
