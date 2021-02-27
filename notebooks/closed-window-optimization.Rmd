@@ -2153,9 +2153,10 @@ I did implement the new architecture and wrapped some of the older classes, and 
 source(file = "../models/modelsR6.R")
 source(file = "../models/SRBTW-R6.R")
 
-set.seed(1)
+# Let's use the same as in the previous example and see, if the result is the same.
 vartheta_l_mlm <- c(.25,.275,.25,.225)
-vartheta_y_mlm <- runif(n = length(vartheta_l_mlm), min = sqrt(.Machine$double.eps), max = .05)
+#vartheta_y_mlm <- c(0, 0, 0.5, -0.6)
+vartheta_y_mlm <- c(.0001, .0001, .0001, .0001)
 
 mlm <- srBTAW$new(
   theta_b = c(0, bounds, 1),
@@ -2178,23 +2179,10 @@ ggarrange(
 )
 ```
 
-We got our MLM and the two signals (one WP/WC each). The next steps are adding the signal to the model, as well as initializing an appropriate loss (objective).
-
-```{r}
-mlm$setSignal(signal = sig_wp_mlm)
-mlm$setSignal(signal = sig_wc_mlm)
-
-loss_mlm <- srBTAW_Loss_Rss$new(
-  wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(),
-  weight = 1, intervals = 1:4, continuous = TRUE)#, numSamples = rep(250, 4))
-
-mlm$addLoss(loss = loss_mlm)
-mlm$setObjective(obj = loss_mlm)
-```
 
 Finally, we can set the parameters and start fitting!
 
-```{r}
+```{r echo=FALSE}
 mlm$setParams(params = c(
   # The order is important!
   c(v = 0.001),
@@ -2204,14 +2192,77 @@ mlm$setParams(params = c(
 ```
 
 
-```{r}
-mlm_fr <- mlm$fit(verbose = TRUE)
+We got our MLM and the two signals (one WP/WC each). The next steps are adding the signal to the model, as well as initializing an appropriate loss (objective).
+
+```{r echo=FALSE}
+mlm$setSignal(signal = sig_wp_mlm)
+mlm$setSignal(signal = sig_wc_mlm)
+
+mlm_obj <- srBTAW_LossLinearScalarizer$new(
+  computeParallel = TRUE, gradientParallel = TRUE,
+  progressCallback = function(what, step, total) {
+    # print(paste(what, step, total))
+    # We can also update, e.g., a progress-bar here..
+  })
+
+# Let's add 4 singular losses, one for each interval,
+# so that we can exploit parallelism.
+for (i in 1:4) {
+  temp <- srBTAW_Loss_Rss$new(
+    wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(),
+    weight = 1, intervals = i, continuous = TRUE)#, numSamples = 250)
+  # register loss for variable-pair:
+  mlm$addLoss(loss = temp)
+  
+  # add loss to MultiObjective:
+  mlm_obj$setObjective(name = paste0("Loss_q_", i), obj = temp)
+}
+
+mlm$setObjective(obj = mlm_obj)
 ```
 
-```{r}
-plot(mlm_fr$getFitHist()[, "loss"], type="l")
-mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp()
+```{r echo=FALSE}
+# Currently disabled:
+# temp <- YTransRegularization$new(intervals = 1:4, weight = .05, use = "trapezoid")
+# 
+# mlm$addLoss(loss = temp)
+# mlm_obj$setObjective(name = "Loss_vty", obj = temp)
 ```
+
+
+The following optimization works equally well with a __continuous__ version of the same loss, but computing is approx. ten times slower and needs about 50% more iterations. However, it converges much faster to its final minimum, whereas we see a rather gradual improvement for the discrete RSS.
+
+```{r echo=FALSE}
+mlm_fr <- loadResultsOrCompute(file = "../results/cow_og3_mlm_fr.rds", computeExpr = {
+  cl <- parallel::makeCluster(parallel::detectCores())
+  doSNOW::registerDoSNOW(cl)
+  
+  temp <- mlm$fit(verbose = TRUE)
+  
+  parallel::stopCluster(cl)
+  foreach::registerDoSEQ()
+  temp
+})
+
+mlm$setParams(params = mlm_fr$optResult$par)
+
+mlm_fr$optResult
+ggpubr::ggarrange(
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
+  nrow = 1
+)
+
+ggpubr::ggarrange(
+  mlm_fr$plot(c("vtl_1", "vtl_2", "vtl_3", "vtl_4"), FALSE) + coord_flip() + scale_x_reverse() + theme(legend.position = "bottom"),
+  mlm_fr$plot(c("v", "vty_1", "vty_2", "vty_3", "vty_4"), FALSE) + coord_flip() + scale_x_reverse() + theme(legend.position = "bottom"),
+  nrow = 1
+)
+```
+
+This is (within margin of error) the same result as we got previously, so this means that our new architecture indeed works! Like in the previous result, we have one interval with length $\approx0$, and generally, the chosen lengths could align better with the reference. However, this is a human error, as the model did exactly what it was supposed to. In other words, what is missing, is __regularization__. Before arriving at this result here, I had done numerous tests using y-translation regularization (trapezoidal, Tikhonov, average) and managed to have the intervals better aligned. However, to balance each other, we probably also need to impose regularizations on extreme interval lengths, which I did not try at this point.
+
+My advice is the following: Since `srBTAW` is self-regularizing to some degree, always try first __without__ any additional regularization. Regularizations should be added one-by-one to better observe their impact, and they should be balanced. A regularizer is always an additional optimization goal, do not forget that. For complex cases I recommend to add a low-weight (compared to the actual losses) regularizer for each, extreme interval lengths and trapezoidal overlaps, to _guide_ the optimization process, not to lead it.
 
 
 # Other thoughts
