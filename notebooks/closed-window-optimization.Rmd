@@ -1181,7 +1181,7 @@ An extreme support is one that is much shorter than what would be allowed (given
 
 $$
 \begin{aligned}
-  \mathcal{R}^{(\text{supp})}=&\;\frac{\beta_u-\beta_l}{\gamma_e-\gamma_b-\gamma_a}
+  \mathcal{R}^{(\text{supp})}=&\;\frac{\beta_u-\beta_l}{\gamma_e-\gamma_b-\gamma_d}
   \\[1ex]
   =&\;\frac{\overbrace{\max{\Big(\gamma_b+\gamma_d,\min{\big(\gamma_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\gamma_e-\gamma_d,\max{\big(\gamma_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}}{\gamma_e-\gamma_b-\gamma_d}\;\text{.}
 \end{aligned}
@@ -1749,7 +1749,7 @@ $$
   \\[1ex]
   a_q=&\;\frac{\bm{\vartheta}_q^{(y)}}{\iota_q}\;\text{, the slope for the}\;q\text{-th interval,}
   \\[0ex]
-  &\;\text{where}\;\iota_q\;\text{is the length of the}\;q\text{-th interval,}
+  &\;\text{where}\;\iota_q\;\text{is the length of the}\;q\text{-th \textbf{target}-interval,}
   \\[1ex]
   v\;\dots&\;\text{the global translation for the first interval,}
   \\[1ex]
@@ -1761,7 +1761,7 @@ $$
   \\[0ex]
   &\;\text{(the intercept for the}\;q\text{-th interval), and}
   \\[1ex]
-  \rho_q\;\dots&\;\text{starting}\;x\text{-offset of the}\;q\text{-th interval,}
+  \rho_q\;\dots&\;\text{starting}\;x\text{-offset of the}\;q\text{-th \textbf{target}-interval,}
   \\[1ex]
   t_q(x,\dots)=&\;a_q(x-\rho_q)+v+\phi_q^{(y)}\;\text{, linear amplitude warping in}\;q\text{-th interval.}
 \end{aligned}
@@ -1802,15 +1802,15 @@ We will define some piece-wise linear function and use the signal of the __A__-v
 
 ```{r echo=FALSE}
 baw_intervals <- 5
-theta_baw <- c(0, .2, .4, .6, .8, 1)
+theta_baw <- c(0, .1, .3, .5, .8, 1)
 vartheta_l_baw <- rep(1 / baw_intervals, baw_intervals)
 baw_v <- .05
 baw_vartheta_y <- c(.025, .1, -.1, .05, .025)
 
 baw_tq <- function(q, x) {
-  a_q <- baw_vartheta_y[q] / vartheta_l_baw[q]
+  a_q <- baw_vartheta_y[q] / (theta_baw[q + 1] - theta_baw[q])
   phi_q_y <- if (q == 1) 0 else sum(baw_vartheta_y[1:(q - 1)])
-  phi_q <- if (q == 1) 0 else sum(vartheta_l_baw[1:(q - 1)])
+  phi_q <- theta_baw[q]
   a_q * (x - phi_q) + baw_v + phi_q_y
 }
 
@@ -1903,7 +1903,7 @@ source(file = "../models/SRBTW-R6.R")
 vartheta_l_baw <- c(.25,.275,.25,.225)
 # vartheta_y <- c(.1, .1, .1, .1)
 v <- .125
-vartheta_y <- c(0,0,.5,-.6)
+vartheta_y <- c(0,0,.65,-.75)
 
 srbtwbaw <- SRBTWBAW$new(
   wp = r,
@@ -1997,6 +1997,7 @@ cow_og3_test1p <- loadResultsOrCompute(file = "../results/cow_og3_test1p.rds", c
 cow_og3_test1p
 srbtwbaw$setAllParams(cow_og3_test1p$par)
 srbtwbaw$plot_warp()
+srbtwbaw$plot_dual_original()
 ```
 
 Ok, that worked extraordinarily well. However, we also gave it quite good starting values to be fair. Using just zeros as starting values for $v$ and all terminal y-translations worked also well. If we look at the learned parameters we notice a peculiarity of this model: The last terminal y-translation is almost minus three -- this allows the model in the last interval to decline steeply, and to actually make this "flat foot" at the end that the Warping Pattern has, because the signal now effectively becomes zero in the last section. That is why I had formulated the $\min,\max$ self-regularization on the final signal, and not the terminal y-translations, as these might be rather extreme in order to achieve a good fit.
@@ -2036,9 +2037,15 @@ cow_og3_test2p <- loadResultsOrCompute(file = "../results/cow_og3_test2p.rds", c
 
 cow_og3_test2p
 srbtwbaw$setAllParams(cow_og3_test2p$par)
-srbtwbaw$plot_warp() +
-  ggplot2::geom_vline(xintercept = cow_og3_test2p$par[5]) +
-  ggplot2::geom_vline(xintercept = cow_og3_test2p$par[6])
+
+ggpubr::ggarrange(
+  srbtwbaw$plot_warp() +
+    ggplot2::geom_vline(xintercept = cow_og3_test2p$par[5]) +
+    ggplot2::geom_vline(xintercept = cow_og3_test2p$par[6]) +
+    theme(legend.position = "bottom"),
+  srbtwbaw$plot_dual_original() + theme(legend.position = "bottom"),
+  nrow = 1
+)
 ```
 
 Ok, cut-in is still at $0$, but cut-out is at `r round(cow_og3_test2p$par[6], 4)`. The error is as low as in the previous test.
@@ -2046,7 +2053,7 @@ Ok, cut-in is still at $0$, but cut-out is at `r round(cow_og3_test2p$par[6], 4)
 
 ## Regularization
 
-Regularization for sr-BAW is probably more difficult, as we cannot impose regularization directly on the parameters as I see it. Well, we could, but as I just wrote before this, it may be necessary for $v$ and the terminal y-translations to assume extreme values to achieve a good fit. In other words, I would not interfere with these too much at the moment. In fact, we did above optimization with the minimum/maximum machine double, effectively alleviating box-bounds for these parameters. I suppose that it may be an idea to regularize all y-translations together, and to look at them as a distribution. Then, extreme values could be penalized. However, this is probably application specific.
+Regularization for sr-BAW is probably more difficult, as we cannot impose regularization directly on the parameters as I see it. Well, we could, but as I just wrote before this, it may be necessary for $v$ and the terminal y-translations to assume extreme values (well beyond $\bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}$) to achieve a good fit. In other words, I would not interfere with these too much at the moment. In fact, we did above optimization with the minimum/maximum machine double, effectively alleviating box-bounds for these parameters. I suppose that it may be an idea to regularize all y-translations together, and to look at them as a distribution. Then, extreme values could be penalized. However, this is probably application specific.
 
 What seems to be more promising is to impose regularization on the output of the model. Using $\bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}$, we can limit the __output__ of the model to be within box-bounds. However, if the model were to push too much of the signal onto either boundary, we would get a less optimal fit in many cases. An approach to alleviating this is described in the next subsection.
 
@@ -2073,6 +2080,69 @@ $$
 $$
 
 Note that both versions of the regularizer are defined as ratios, and that, at most, their loss can be $1$ (and the least possible loss would be $0$). Also, $\frac{1}{2}\big(\beta_u-\beta_l\big)$ can be replaced with some user-defined, arbitrary expectation, i.e., it does not necessarily need to be the mean of the upper and lower bound (but it needs to be within them).
+
+
+### Trapezoidal-overlap regularization
+
+Using the suggested y-translations results in a rectangular interval becoming a __trapezoid__. Even more specific, the trapezoid is a __parallelogram__, which has the __same__ area as the original interval, as the base of corresponds to the interval's length. I suggest using another kind of regularizer that measures the overlap of these skewed and translated parallelograms with their original interval (as a ratio).
+
+$$
+\begin{aligned}
+  \mathbf{x}_q\;\dots&\;\text{support for the}\;q\text{-th interval},
+  \\[1ex]
+  \beta_l,\beta_u\;\dots&\;\text{lower and upper boundary for}\;y\;\text{(coming from}\;\bm{\lambda}^{(\text{ymin})},\bm{\lambda}^{(\text{ymax})}\text{),}
+  \\[1ex]
+  b_{\beta_l}(x),b_{\beta_u}(x)\;\dots&\;\text{functions over the lower- and upper boundaries,}
+  \\[1ex]
+  o_q=&\;v+\phi_q^{(y)}\;\text{, initial translation in the interval,}
+  \\[1ex]
+  s,t\;\dots&\;\text{intersections of}\;t_q(x,\dots)\;\text{with lower- and upper boundary,}
+  \\[0ex]
+  &\;\text{(}s=\min{(\mathbf{x}_q)}\;\text{and}\;t=\max{(\mathbf{x}_q)}\;\text{if no intersetion),}
+  \\[1ex]
+  \delta_q^{(\max)}\;\dots&\;\text{maximum possible difference in interval}\;q\text{, i.e., no overlap,}
+  \\[1ex]
+  \delta_q=&\;\begin{cases}
+    \text{if}\;o_q<\beta_l,&\begin{cases}
+      \text{if}\;o_q+\bm{\vartheta}_q^{(y)}>\beta_l,&\int_s^{\max{(\mathbf{x}_q)}}\,\min{\big(b_{\beta_u}(x),t_q(x)\big)}-b_{\beta_l}(x)\,dx,
+      \\
+      \text{else}&\min{\Big(\delta_q^{(\max)},\int_s^t\,b_{\beta_l}(x)-t_q(x)\Big)},
+    \end{cases}
+    \\
+    \text{else if}\;o_q>\beta_u,&\begin{cases}
+      \text{if}\;o_q+\bm{\vartheta}_q^{(y)}<\beta_u,&\int_{\min{(\mathbf{x}_q)}}^{t}\,\min{\big(b_{\beta_u}(x),t_q(x)\big)-b_{\beta_l}(x)}\,dx,
+      \\
+      \text{else}&0,
+    \end{cases}
+    \\
+    \text{else}&\begin{cases}
+      \text{if}\;o_q+\bm{\vartheta}_q^{(y)}>\beta_u,&\int_s^t\,\min{\big(b_{\beta_u}(x),t_q(x)\big)}-b_{\beta_l}(x)\,dx,
+      \\
+      \text{else}&\int_s^t\,t_q(x)-b_{\beta_l}(x)\,dx,
+    \end{cases}
+  \end{cases}
+  \\[1ex]
+  \mathcal{R}^{(\text{trapez})}=&\;{\max{(Q)}}^{-1}\times\sum_{i=1}^{\max{(Q)}}\,\frac{\delta_q}{\delta_q^{(\max)}}\mapsto[0+,1]\;\text{, and the log-loss:}
+  \\[1ex]
+  \mathcal{L}_{\mathcal{R}^{(\text{trapez})}}=&\;-\log{\Big(1-\mathcal{R}^{(\text{trapez})}\Big)}\mapsto[0+,\infty]\;\text{.}
+\end{aligned}
+$$
+
+### Tikhonov/$L_2$ regularization of translations
+
+A somewhat effortless way to regularize extreme y-translations is to use the (squared) $L_2$-norm for the parameters $v$ and $\bm{\vartheta}^{(y)}$, as we would prefer less extreme values for these translations. However, during optimization we also would prefer allowing these parameters to cover a wider range than others, to allow more adapted solutions. This regularization has to be used carefully therefore.
+
+$$
+\begin{aligned}
+  \bm{\omega}=&\;\{v\,\frown\,\bm{\vartheta}^{(y)}\}\;\text{, vector containing all y-translations,}
+  \\
+  \lVert \bm{\omega}\rVert_2=&\;\sqrt{\sum_{i=1}^{\norm{\bm{\omega}}}\,\bm{\omega}_i^2}\;\text{, the}\;L_2\text{-norm, alternatively}
+  \\[1ex]
+  \lVert \bm{\omega}\rVert_2^2=&\;\sum_{i=1}^{\norm{\bm{\omega}}}\,\bm{\omega}_i^2\;\text{, the squared}\;L_2\text{-norm, with regularizer/loss}
+  \\[1ex]
+  \mathcal{L}_{\mathcal{R}^{(L_2)}}=&\;\log{\Big(1+\lVert \bm{\omega}\rVert_2^2\Big)}\;\text{.}
+\end{aligned}
+$$
 
 
 ## Testing new `srBTAW` model

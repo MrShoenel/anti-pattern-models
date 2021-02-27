@@ -2259,7 +2259,7 @@ residuals.srBTAW <- function(model, loss) {
 
 
 
-srBTAW$debug("fit")
+# srBTAW$debug("fit")
 # srBTAW_Loss_Rss$debug("get0Function")
 # srBTAW$debug("residuals")
 # SRBTW$debug("setAllParams")
