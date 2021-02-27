@@ -83,6 +83,26 @@ FitResult <- R6Class(
         private$fitHist <- private$fitHist[-(1:nr), ]
       }
       invisible(self)
+    },
+    
+    plot = function(paramNames = colnames(self$getFitHist()), logY = TRUE) {
+      stopifnot(is.character(paramNames) && length(paramNames) > 0 && all(paramNames %in% colnames(self$getFitHist())))
+      fh <- self$getFitHist()
+      df <- as.data.frame(fh[, paramNames])
+      colnames(df) <- paramNames
+      df$x <- seq_len(length.out = nrow(df))
+      g <- ggplot2::ggplot(data = df)
+      
+      for (pn in paramNames) {
+        g <- g + ggplot2::geom_line(mapping = ggplot2::aes_string(
+          x = "x", y = pn, color = factor(x = pn, levels = paramNames)))
+      }
+
+      if (logY) {
+        g <- g + ggplot2::scale_y_log10()
+      }
+
+      g + ggplot2::labs(x = "Step", y = "Value", color = "Params", subtitle = "FitResult")
     }
   )
 )
