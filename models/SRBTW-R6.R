@@ -1444,25 +1444,28 @@ srBTAW_Loss <- R6Class(
     wpName = NULL,
     wcName = NULL,
     weight = NULL,
-    intervals = NULL
+    intervals = NULL,
+    minimize = NULL
   ),
   
   public = list(
-    initialize = function(wpName, wcName, weight = 1, intervals = c()) {
+    initialize = function(wpName, wcName, weight = 1, intervals = c(), minimize = TRUE) {
       stopifnot(is.character(wpName) && is.character(wcName))
       stopifnot(is.numeric(weight) && !is.na(weight) && weight > 0 && weight <= 1)
       stopifnot(is.numeric(intervals) && !any(is.na(intervals)) && all(intervals >= 1))
       stopifnot(!is.unsorted(intervals))
+      stopifnot(is.logical(minimize))
       
       private$wpName <- wpName
       private$wcName <- wcName
       private$weight <- weight
       private$intervals <- intervals
+      private$minimize <- minimize
     },
     
     setParams = function(params) {
       mlm <- private$srbtaw
-      stopifnot(R6::is.R6(mlm) && inherits(mlm, "srBTAW"))
+      stopifnot(R6::is.R6(mlm) && inherits(mlm, srBTAW$classname))
       mlm$setParams(params = params)
       invisible(self)
     },
@@ -1484,8 +1487,39 @@ srBTAW_Loss <- R6Class(
       private$wcName
     },
     
+    getWeight = function() {
+      private$weight
+    },
+    
     getIntervals = function() {
       private$intervals
+    },
+    
+    setMinimization = function(val) {
+      stopifnot(is.logical(val))
+      private$minimize <- val
+      invisible(self)
+    },
+    
+    isMinimization = function() {
+      private$minimze
+    },
+    
+    
+    getParamNames = function() {
+      self$getSrBtaw()$getParamNames()
+    },
+    
+    getOutputNames = function() {
+      self$getSrBtaw()$getOutputNames()
+    },
+    
+    getNumParams = function() {
+      self$getSrBtaw()$getNumParams()
+    },
+    
+    getParams = function() {
+      self$getSrBtaw()$getParams()
     }
   )
 )
