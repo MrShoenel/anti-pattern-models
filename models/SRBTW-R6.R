@@ -1946,13 +1946,14 @@ srBTAW <- R6Class(
     
     likelihood = function() {
       fr <- private$lastFitResult
-      stopifnot(R6::is.R6(fr) && inherits(fr, "FitResult"))
+      stopifnot(R6::is.R6(fr) && inherits(fr, FitResult$classname))
       
       # Likelihood and loss are anti-proportional, the lower
       # the loss, the higher the likelihood.
       bestLoss <- fr$getBest(paramName = "loss", lowest = TRUE)[, "loss"]
       # The following has limit \infty for loss -> 0 and limit 0
       # for loss -> \infty (what we want)
+      # TODO: Check if Objective is logarithmic
       -log(1 - 1/(1 + bestLoss))
     },
     
@@ -1965,7 +1966,7 @@ srBTAW <- R6Class(
       params <- list(...)
       stopifnot(length(params) > 0)
       loss <- utils::head(params, 1)[[1]]
-      stopifnot(R6::is.R6(loss) && inherits(loss, "srBTAW_Loss"))
+      stopifnot(R6::is.R6(loss) && inherits(loss, srBTAW_Loss$classname))
       
       qs <- loss$getIntervals()
       stopifnot(length(qs) > 0) # You can request multiple q!
@@ -1995,17 +1996,19 @@ srBTAW <- R6Class(
                     (if (private$useAmplitudeWarping)
                       c(rep(min(private$lambda_ymin) - 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
                             length(private$theta_b))) else c()))
-      bb_upper <- c(rep(max(private$lambda), length(private$lambda)), # remember vartheta_l are ratios ideally
+      bb_upper <- c(rep(max(private$varthetaL), length(private$lambda)), # remember vartheta_l are ratios ideally
                     (if (private$openBegin) private$gamma_bed[2] - private$gamma_bed[3] else c()),
                     (if (private$openEnd) private$gamma_bed[2] else c()),
                     (if (private$useAmplitudeWarping)
                       c(rep(max(private$lambda_ymax) + 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
                             length(private$theta_b))) else c()))
       
-      l <- -.Machine$double.xmax
-      u <- .Machine$double.xmax
-      bb_lower <- c(l, 0, 0, 0, 0, l, l, l, l)
-      bb_upper <- c(u, 1, 1, 1, 1, u, u, u, u)
+      # l <- -.Machine$double.xmax
+      # u <- .Machine$double.xmax
+      # # bb_lower <- c(l, 0, 0, 0, 0, l, l, l, l)
+      # # bb_upper <- c(u, 1, 1, 1, 1, u, u, u, u)
+      # bb_lower <- c(l, l, l, l, l, l, l, l, l)
+      # bb_upper <- c(u, u, u, u, u, u, u, u, u)
       
       optR <- stats::optim(
         par = self$getParams(),
@@ -2013,7 +2016,12 @@ srBTAW <- R6Class(
         lower = bb_lower,
         upper = bb_upper,
         fn = function(x) {
-          obj$setParams(params = x)
+          self$setParams(params = x)
+          if (inherits(obj, srBTAW_Loss$classname)) {
+            obj$setParams(params = x)
+          }
+          # otherwise, the method is abstract and the Objective has to have
+          # a way of obtaining parameters implemented.
           
           fr$startStep()
           loss <- obj$compute0()
@@ -2021,9 +2029,13 @@ srBTAW <- R6Class(
           loss
         },
         gr = function(x) {
+          self$setParams(params = x)
+          if (inherits(obj, srBTAW_Loss$classname)) {
+            obj$setParams(params = x)
+          }
+          
           # Note that computeGradient_numeric returns a matrix, and
           # we are dealing with scalar-valued losses only.
-          obj$setParams(params = x)
           obj$computeGradient_numeric()[1, ]
         }
       )
