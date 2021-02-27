@@ -1549,63 +1549,23 @@ srBTAW_Loss_Rss <- R6Class(
       private$numSamples <- numSamples
     },
     
-    ######## region TEMP, TODO: REMOVE
     getNumOutputs = function() {
       1
     },
-    getParamNames = function() {
-      private$srbtaw$getParamNames()
-    },
-    
-    getOutputNames = function() {
-      private$srbtaw$getOutputNames()
-    },
-    
-    getNumParams = function() {
-      private$srbtaw$getNumParams()
-    },
-    
-    getParams = function() {
-      private$srbtaw$getParams()
-    },
-    ######## endregion
-    
-    #' Overridden so that we can work in parallel!
-    # computeGradient_numeric = function() {
-    #   g <- matrix(nrow = self$getNumOutputs(), ncol = self$getNumParams())
-    #   colnames(g) <- self$getParamNames()
-    #   rownames(g) <- self$getOutputNames()
-    #   
-    #   foreach::foreach(
-    #     pIdx = seq_len(length.out = self$getNumParams()),
-    #     .combine = c,
-    #     .inorder = TRUE
-    #   ) foreach::`%dopar%` {
-    #     
-    #   }
-    #   
-    #   for (oIdx in seq_len(length.out = self$getNumOutputs())) {
-    #     g[oIdx, ] <- pracma::grad(f = function(x) {
-    #       self$setParams(params = x)
-    #       self$compute0()[oIdx]
-    #     }, x0 = self$getParams())
-    #   }
-    #   g
-    # },
     
     get0Function = function() {
-      continuous <- private$continuous
-      mlm <- private$srbtaw
-      qs <- private$intervals
-      
       function() {
         # Now for each interval, we compute the RSS over the
         # residuals from the MLM. The residuals currently
         # are just the sub-models as tuple so we can do
         # whatever we want.
         
+        continuous <- private$continuous
+        mlm <- private$srbtaw
+        qs <- private$intervals
+        
         err <- 0
-        res <- stats::residuals(mlm, loss = self)
+        res <- mlm$residuals(loss = self)
         idx <- 1
         for (q in qs) {
           t <- res[[q]]
@@ -1810,17 +1770,17 @@ srBTAW <- R6Class(
     
     createInstance = function(wp, wc) {
       ctor <- if (private$useAmplitudeWarping) SRBTWBAW$new else SRBTW$new
-      args <- list(
+      useArgs <- list(
         wp = wp, wc = wc, theta_b = private$theta_b, gamma_bed = private$gamma_bed,
         lambda = private$lambda, begin = private$begin, end = private$end,
         openBegin = private$openBegin, openEnd = private$openEnd)
       
       if (private$useAmplitudeWarping) {
-        args$lambda_ymin <- private$lambda_ymin
-        args$lambda_ymax <- private$lambda_ymax
+        useArgs$lambda_ymin <- private$lambda_ymin
+        useArgs$lambda_ymax <- private$lambda_ymax
       }
       
-      do.call(what = ctor, args = args)
+      do.call(what = ctor, args = useArgs)
     }
   ),
   
@@ -1883,7 +1843,7 @@ srBTAW <- R6Class(
     },
     
     setSignal = function(signal) {
-      stopifnot(R6::is.R6(signal) && inherits(signal, "Signal"))
+      stopifnot(R6::is.R6(signal) && inherits(signal, Signal$classname))
       
       if (signal$isWarpingPattern()) {
         private$signals_wp[[signal$getName()]] <- signal
@@ -1906,7 +1866,7 @@ srBTAW <- R6Class(
     },
     
     removeSignal = function(nameOrSignal) {
-      stopifnot(is.character(nameOrSignal) || (R6::is.R6(signal) && inherits(signal, "Signal")))
+      stopifnot(is.character(nameOrSignal) || (R6::is.R6(signal) && inherits(signal, Signal$classname)))
       
       name <- if (is.character(nameOrSignal)) nameOrSignal else nameOrSignal$getName()
       if (name %in% names(private$signals_wp)) {
@@ -1921,7 +1881,7 @@ srBTAW <- R6Class(
     },
     
     setObjective = function(obj = NULL) {
-      stopifnot(is.null(obj) || (R6::is.R6(obj) && inherits(obj, "Objective")))
+      stopifnot(is.null(obj) || (R6::is.R6(obj) && inherits(obj, Objective$classname)))
       private$objective <- obj
       invisible(self)
     },
@@ -1931,11 +1891,11 @@ srBTAW <- R6Class(
     },
     
     hasObjective = function() {
-      R6::is.R6(private$objective) && inherits(private$objective, "Objective")
+      R6::is.R6(private$objective) && inherits(private$objective, Objective$classname)
     },
     
     addLoss = function(loss) {
-      stopifnot(R6::is.R6(loss) && inherits(loss, "srBTAW_Loss"))
+      stopifnot(R6::is.R6(loss) && inherits(loss, srBTAW_Loss$classname))
       
       wpName <- loss$getWpName()
       wcName <- loss$getWcName()
