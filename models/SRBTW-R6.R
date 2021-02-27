@@ -18,13 +18,19 @@ SRBTW <- R6Class(
     subModels = NULL,
     gamma_bed = NULL,
     lambda = NULL,
+    thetaB = NULL,
     begin = NULL,
     end = NULL,
-    thetaB = NULL,
     varthetaL = NULL,
     
     checkQ = function(q) {
       stopifnot(is.numeric(q) && !is.na(q) && q >= min(private$Q) && q <= max(private$Q))
+    },
+    
+    requireParams = function() {
+      stopifnot(!is.null(private$varthetaL))
+      stopifnot(!is.null(private$begin))
+      stopifnot(!is.null(private$end))
     }
   ),
   
@@ -129,12 +135,12 @@ SRBTW <- R6Class(
     },
     
     getBegin = function() {
-      stopifnot(!is.null(private$begin))
+      private$requireParams()
       private$begin
     },
     
     getEnd = function() {
-      stopifnot(!is.null(private$end))
+      private$requireParams()
       private$end
     },
     
@@ -149,11 +155,13 @@ SRBTW <- R6Class(
     },
     
     getLength_q = function(q) {
+      private$requireParams()
       private$checkQ(q)
       private$varthetaL[q]
     },
     
     getVarthetaL = function() {
+      private$requireParams()
       c(private$varthetaL)
     },
     
@@ -394,7 +402,13 @@ SRBTWBAW <- R6Class(
     v = NULL,
     varthetaY = NULL,
     lambdaYmin = NULL,
-    lambdaYmax = NULL
+    lambdaYmax = NULL,
+    
+    requireParamsBaw = function() {
+      private$requireParams()
+      stopifnot(!is.null(private$v))
+      stopifnot(!is.null(private$varthetaY))
+    }
   ),
   
   public = list(
@@ -455,15 +469,18 @@ SRBTWBAW <- R6Class(
     },
     
     getVarthetaY_q = function(q) {
+      private$requireParamsBaw()
       private$checkQ(q = q)
       private$varthetaY[q]
     },
     
     getV = function() {
+      private$requireParamsBaw()
       private$v
     },
     
     getPhi_y_q = function(q) {
+      private$requireParamsBaw()
       private$checkQ(q = q)
       
       if (q == 1) {
