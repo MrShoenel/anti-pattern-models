@@ -2143,6 +2143,115 @@ TimeWarpRegularization <- R6Class(
   )
 )
 
+
+
+YTransRegularization <- R6Class(
+  "YTransRegularization",
+  
+  inherit = srBTAW_Loss,
+  
+  private = list(
+    use = NULL
+  ),
+  
+  public = list(
+    initialize = function(intervals = c(), weight = 1, use = c("trapezoid", "tikhonov", "avgout")) {
+      super$initialize(wpName = "__ALL__", wcName = "__ALL__", intervals = intervals, weight = weight)
+      private$use <- match.arg(use)
+    },
+    
+    getNumOutputs = function() {
+      1
+    },
+    
+    funcTrapezoid = function() {
+      mlm <- private$srbtaw
+      qs <- private$intervals
+      
+      ratios <- 0
+      res <- mlm$residuals(loss = self)
+      params <- mlm$getParams()
+      v <- params["v"]
+      for (q in qs) {
+        t <- res[[q]]
+        wc <- if (mlm$isBawEnabled()) t$nqc else t$mqc
+        o_q <- v + t$phi_y_q
+        beta_l <- t$lambda_ymin_q
+        beta_u <- t$lambda_ymax_q
+        delta_max_q <- (beta_u - beta_l) * (t$te_q - t$tb_q)
+        
+        # We have 6 cases, let's check 1-by-1 and add to the ratios:
+        delta_q <- 0
+        if (o_q < beta_l) {
+          if ((o_q + t$vty_q) > beta_l) {
+            s <- t$tb_q + ((beta_l - o_q) / t$a_q)
+            delta_q <- cubature::cubintegrate(
+              f = function(x) min(beta_u, t$tq(x)) - beta_l, lower = s, upper = t$te_q)$integral
+            if (delta_q < 0) warning(paste("1", delta_q))
+          } else {
+            delta_q <- min(delta_max_q, cubature::cubintegrate(
+              f = function(x) beta_l - t$tq(x), lower = t$tb_q, upper = t$te_q)$integral)
+            if (delta_q < 0) warning(paste("2", delta_q))
+          }
+        } else if (o_q > beta_u) {
+          if ((o_q + t$vty_q) < beta_u) {
+            t1 <- if ((o_q + t$vty_q) > beta_l) t$te_q else t$te_q - ((beta_l - (o_q + t$vty_q)) / t$a_q)
+            delta_q <- cubature::cubintegrate(
+              f = function(x) min(beta_u, t$tq(x)) - beta_l, lower = t$tb_q, upper = t1)$integral
+            if (delta_q < 0) warning(paste("3", delta_q))
+          } else {
+            delta_q <- 0
+          }
+        } else {
+          if ((o_q + t$vty_q) > beta_u) {
+            t1 <- ((o_q + t$vty_q) - beta_u) / t$a_q
+            delta_q <- cubature::cubintegrate(
+              f = function(x) min(beta_u, t$tq(x)) - beta_l, lower = t$tb_q, upper = t1)$integral
+            if (delta_q < 0) warning(paste("4", delta_q))
+          } else {
+            t1 <- if ((o_q + t$vty_q) >= beta_l) t$te_q else t$te_q - ((beta_l - (o_q + t$vty_q)) / t$a_q)
+            delta_q <- cubature::cubintegrate(
+              f = function(x) t$tq(x) - beta_l, lower = t$tb_q, upper = t1)$integral
+            if (delta_q < 0) warning(paste("5", delta_q))
+          }
+        }
+        
+        ratios <- c(ratios, min(1, max(0, delta_q / delta_max_q)))
+      }
+      
+      `names<-`(c(-log(1 - mean(ratios))), mlm$getOutputNames())
+    },
+    
+    funcTikhonov = function() {
+      mlm <- private$srbtaw
+      v <- mlm$getParams()[grep(pattern = "v$", x = names(mlm$getParams()))]
+      vty <- mlm$getParams()[grep(pattern = "vty_", x = names(mlm$getParams()))]
+      log(1 + sqrt(sum(c(v, vty)^2)))
+    },
+    
+    funcAvgout = function() {
+      mlm <- private$srbtaw
+      mod <- head(mlm$.__enclos_env__$private$instances)[[1]]
+      beta_l <- min(mod$getLambdaYmin())
+      beta_u <- max(mod$getLambdaYmax())
+      mu <- cubature::cubintegrate(f = mod$M, lower = 0, upper = 1)$integral
+      ravg <- (1/2 * (beta_u - beta_l) - mu)^2
+      -log(1 - ravg)
+    },
+    
+    get0Function = function() {
+      if (private$use == "trapezoid") {
+        self$funcTrapezoid
+      } else if (private$use == "tikhonov") {
+        self$funcTikhonov
+      } else {
+        self$funcAvgout
+      }
+    }
+  )
+)
+
+
 residuals.srBTAW <- function(model, loss) {
   model$residuals(loss)
 }
