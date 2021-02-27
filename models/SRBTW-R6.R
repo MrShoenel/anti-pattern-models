@@ -744,7 +744,7 @@ SRBTW_Loss <- R6Class(
     },
     
     computeGrad = function() {
-      stop("Abstract method")
+      stop("Abstract method 1")
     },
     
     computeGradNumeric = function() {
@@ -755,7 +755,7 @@ SRBTW_Loss <- R6Class(
     },
     
     computeHess = function() {
-      stop("Abstract method")
+      stop("Abstract method 2")
     },
     
     computeHessNumeric = function() {
@@ -892,7 +892,7 @@ SRBTW_SingleObjectiveOptimization <- R6Class(
     },
     
     addObjective = function(obj) {
-      stopifnot(R6::is.R6(obj) && inherits(obj, "SRBTW_Loss"))
+      stopifnot(R6::is.R6(obj) && inherits(obj, SRBTW_Loss$classname))
       
       private$objectives <- append(private$objectives, obj)
       invisible(self)
@@ -946,7 +946,7 @@ Differentiable <- R6Class(
       paramNames = c(), numberOfOutputs = 1,
       outputNames = paste0("o_", seq_len(length.out = numberOfOutputs))
     ) {
-      stopifnot((is.vector(paramNames) && length(paramNames) == 0) || (!any(is.na(paramNames)) && is.character(paramNames)))
+      stopifnot((length(paramNames) == 0) || (!any(is.na(paramNames)) && is.character(paramNames)))
       stopifnot(is.numeric(numberOfOutputs) && !is.na(numberOfOutputs) && numberOfOutputs >= 1)
       stopifnot(numberOfOutputs == length(outputNames) && is.character(outputNames) && all(nchar(outputNames) > 0))
       
@@ -962,7 +962,7 @@ Differentiable <- R6Class(
     #' Must return a named vector with all parameters. The names
     #' must be those the Differentiable was initialized with.
     getParams = function() {
-      stop("Abstract method")
+      stop("Abstract method 3")
     },
     
     getParamNames = function() {
@@ -985,15 +985,15 @@ Differentiable <- R6Class(
     #' is the parameters of the Differentiable. That function,
     #' together with the parameters, computes the output.
     get0Function = function() {
-      stop("Abstract method")
+      stop("Abstract method 4")
     },
     
     get1stOrderPd = function(name = c()) {
-      stop("Abstract method")
+      stop("Abstract method 5")
     },
     
     get2ndOrderPd = function(name = c()) {
-      stop("Abstract method")
+      stop("Abstract method 6")
     }
   )
 )
@@ -1023,7 +1023,7 @@ Objective <- R6Class(
     
     #' We need a setter for, e.g., computing the gradient/hessian.
     setParams = function(params) {
-      stop("Abstract method")
+      stop("Abstract method 7")
     },
     
     #' Computes the underlying function with the given (or own) parameters.
@@ -1036,7 +1036,7 @@ Objective <- R6Class(
     #' and for the output they were calculated for. The naming scheme is
     #' "parameterName_outputName".
     compute1stOrderPd = function(name = c()) {
-      stop("Abstract method")
+      stop("Abstract method 8")
     },
     
     #' Returns a named vector of computed 2nd-order partial derivatives.
@@ -1045,7 +1045,7 @@ Objective <- R6Class(
     #' partial derivative was first derived for "a", then for "b", and
     #' that it concerns output "o1".
     compute2ndOrderPd = function(name = c()) {
-      stop("Abstract method")
+      stop("Abstract method 9")
     },
     
     #' Computes all 1st-order partial derivatives, which is equal to the
@@ -1163,11 +1163,11 @@ Model <- R6Class(
     },
     
     likelihood = function() {
-      stop("Abstract method")
+      stop("Abstract method 10")
     },
     
     residuals = function(...) {
-      stop("Abstract method")
+      stop("Abstract method 11")
     },
     
     coefficients = function() {
@@ -1175,7 +1175,7 @@ Model <- R6Class(
     },
     
     fit = function() {
-      stop("Abstract method")
+      stop("Abstract method 12")
     },
     
     AIC = function() {
@@ -1189,7 +1189,7 @@ Model <- R6Class(
       L <- self$likelihood()
       # n = the number of data points, the number of observations, or equivalently, the sample size ->
       # n probably only makes sense for when all associated objectives are finite and discrete..
-      stop("Abstract method")
+      stop("Abstract method 13")
     }
   )
 )
