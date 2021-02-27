@@ -1127,6 +1127,245 @@ Objective <- R6Class(
 
 
 
+MultiObjective <- R6Class(
+  "MultiObjective",
+  
+  inherit = Objective,
+  
+  private = list(
+    objectives = NULL,
+    
+    requireOneObjective = function() {
+      stopifnot(length(private$objectives) > 0)
+      private$objectives[[names(private$objectives)[1]]]
+    }
+  ),
+  
+  public = list(
+    initialize = function() {
+      # The parameters depend on the objectives added. All added
+      # objectives must have the same number of parameters and
+      # outputs, and their names must be equal.
+      super$initialize(paramNames = c(), numberOfOutputs = 1)
+      
+      private$objectives <- list()
+    },
+    
+    getNumObjectives = function() {
+      length(private$objectives)
+    },
+    
+    # region Objective
+    getNumOutputs = function() {
+      o <- private$requireOneObjective()
+      o$getNumOutputs()
+    },
+    
+    getNumParams = function() {
+      o <- private$requireOneObjective()
+      o$getNumParams()
+    },
+    
+    getOutputNames = function() {
+      o <- private$requireOneObjective()
+      o$getOutputNames()
+    },
+    
+    getParamNames = function() {
+      o <- private$requireOneObjective()
+      o$getParamNames()
+    },
+    # endregion Objective
+    
+    setObjective = function(name, obj) {
+      stopifnot(is.character(name) && length(name) == 1 && nchar(name) > 0)
+      stopifnot(R6::is.R6(obj) && inherits(obj, Objective$classname))
+      
+      if (self$getNumObjectives() > 0) {
+        o <- private$requireOneObjective()
+        # Check compatibility:
+        stopifnot(o$getNumOutputs() == obj$getNumOutputs())
+        stopifnot(o$getNumParams() == obj$getNumParams())
+        stopifnot(all.equal(o$getOutputNames(), obj$getOutputNames()))
+        stopifnot(all.equal(o$getParamNames(), obj$getParamNames()))
+      } else {
+        private$numOuts <- obj$getNumOutputs()
+        private$outputNames <- obj$getOutputNames()
+        private$paramNames <- obj$getParamNames()
+      }
+      private$objectives[[name]] <- obj
+      invisible(self)
+    },
+    
+    hasObjective = function(name) {
+      stopifnot(is.character(name) && length(name) == 1 && nchar(name) > 0)
+      name %in% names(private$objectives)
+    },
+    
+    removeObjective = function(name) {
+      if (!self$hasObjective(name = name)) {
+        stop(paste0("The Objective ", name, " is not known."))
+      }
+      stopifnot(is.character(name) && length(name) == 1 && nchar(name) > 0)
+      private$objectives[[name]] <- NULL
+      invisible(self)
+    }
+  )
+)
+
+
+srBTAW_LossLinearScalarizer <- R6Class(
+  "srBTAW_LossLinearScalarizer",
+  
+  inherit = MultiObjective,
+  
+  private = list(
+    computeParallel = NULL,
+    gradientParallel = NULL,
+    computeWithinGradientParallel = NULL,
+    
+    isComputingGrad = NULL,
+    
+    computeFunc = NULL,
+    
+    progressCallback = NULL,
+    
+    reportProgress = function(n) {
+      # 'n' is the number of done steps and the total amount of
+      # steps depends on whether we called compute or the gradient.
+      total <- if (private$isComputingGrad) {
+        self$getNumParams()
+      } else {
+        length(private$objectives)
+      }
+      do.call(what = private$progressCallback, args = list(
+        step = n, total = total, what = if (private$isComputingGrad) "Gradient" else "Compute"
+      ))
+    }
+  ),
+  
+  public = list(
+    initialize = function(
+      computeParallel = TRUE,
+      gradientParallel = TRUE,
+      computeWithinGradientParallel = FALSE,
+      progressCallback = function(what = c("Compute", "Gradient")[1], step, total) { }
+    ) {
+      stopifnot(is.logical(computeParallel))
+      stopifnot(is.logical(gradientParallel))
+      stopifnot(is.logical(computeWithinGradientParallel))
+      stopifnot(is.function(progressCallback))
+      stopifnot(TRUE == all.equal(c("what", "step", "total"), methods::formalArgs(progressCallback)))
+      super$initialize()
+      
+      private$computeParallel <- computeParallel
+      private$gradientParallel <- gradientParallel
+      private$computeWithinGradientParallel <- computeWithinGradientParallel
+      private$progressCallback <- progressCallback
+      private$isComputingGrad <- FALSE
+      
+      private$computeFunc <- function() {
+        private$requireOneObjective()
+        
+        `%parop%` <- if (private$computeParallel) foreach::`%dopar%` else foreach::`%do%`
+        # w_1*L_1 + ... + w_n*L_n
+        losses <- foreach::foreach(
+          objName = names(private$objectives),
+          .combine = c,
+          .inorder = FALSE, # does not matter here
+          .export = c("private"),
+          .verbose = FALSE,
+          .options.snow = list(progress = function(n) {
+            private$reportProgress(n)
+          })
+        ) %parop% {
+          source("../models/SRBTW-R6.R")
+          obj <- private$objectives[[objName]] # instance of 'srBTAW_Loss'
+          obj$getWeight() * obj$compute0()
+        }
+        
+        sum(losses)
+      }
+    },
+    
+    getParams = function() {
+      private$requireOneObjective()$getParams()
+    },
+    
+    setParams = function(params) {
+      private$requireOneObjective()$getSrBtaw()$setParams(params = params)
+      invisible(self)
+    },
+    
+    setComputeParallel = function(computeParallel) {
+      stopifnot(is.logical(computeParallel))
+      private$computeParallel <- computeParallel
+      invisible(self)
+    },
+    
+    setObjective = function(name, obj) {
+      stopifnot(inherits(obj, srBTAW_Loss$classname))
+      super$setObjective(name = name, obj = obj)
+    },
+    
+    get0Function = function() {
+      private$computeFunc
+    },
+    
+    #' Overridden so that we can work in parallel!
+    computeGradient_numeric = function() {
+      private$isComputingGrad <- TRUE
+
+      if (!private$gradientParallel) {
+        return(super$computeGradient_numeric())
+      }
+
+      g <- matrix(nrow = self$getNumOutputs(), ncol = self$getNumParams())
+      colnames(g) <- self$getParamNames()
+      rownames(g) <- self$getOutputNames()
+
+      `%parop%` <- if (private$computeParallel) foreach::`%dopar%` else foreach::`%do%`
+
+      for (oIdx in seq_len(length.out = self$getNumOutputs())) {
+        g[oIdx, ] <- foreach::foreach(
+          pIdx = seq_len(length.out = self$getNumParams()),
+          .combine = c,
+          .inorder = TRUE,
+          .packages = c("pracma"),
+          .export = c("self"),
+          .options.snow = list(progress = function(n) {
+            private$reportProgress(n)
+          })
+        ) %parop% {
+          source("../models/SRBTW-R6.R")
+          # The following is not very elegant but it works!
+          # We need to make a clone of the model and this objective:
+          copy <- self$clone()
+          srbtaw <- private$requireOneObjective()$getSrBtaw()$clone()
+          srbtaw$setObjective(obj = copy)
+          
+          copy$setComputeParallel(computeParallel = private$computeWithinGradientParallel)
+          params <- srbtaw$getParams()
+
+          gr <- function(x) {
+            params[pIdx] <- x # hold everything else constant
+            srbtaw$setParams(params = params)
+            copy$compute0()[oIdx]
+          }
+
+          pracma::fderiv(
+            f = gr, x = params[pIdx], n = 1, method = "central")
+        }
+      }
+
+      private$isComputingGrad <- FALSE
+      g
+    }
+  )
+)
+
+
+
 #' Abstract super-class for all models. This class is meant
 #' to represent models that were fit previously -- that means
 #' that there are concrete values for all parameters, as well
