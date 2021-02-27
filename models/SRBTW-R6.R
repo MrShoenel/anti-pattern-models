@@ -2081,6 +2081,68 @@ srBTAW <- R6Class(
   )
 )
 
+
+
+TimeWarpRegularization <- R6Class(
+  "",
+  
+  inherit = srBTAW_Loss,
+  
+  private = list(
+    use = NULL,
+    
+    exintKappa = NULL
+  ),
+  
+  public = list(
+    initialize = function(intervals = c(), weight = 1, use = c("exsupp", "exint"), exintKappa = NULL) {
+      super$initialize(wpName = "__ALL__", wcName = "__ALL__", intervals = intervals, weight = weight)
+      private$use <- match.arg(use)
+      private$exintKappa <- exintKappa
+      
+      if (private$use == "exint") {
+        stopifnot(is.null(exintKappa) || (is.numeric(exintKappa) && !any(is.na(exintKappa))))
+      }
+    },
+    
+    funcExsupp = function() {
+      mlm <- private$srbtaw
+      gamma_bed <- mlm$getgamma_bed()
+      beta_l <- mlm$getBeta_l()
+      beta_u <- mlm$getBeta_u()
+      
+      -log((beta_u - beta_l) / (gamma_bed[2] - gamma_bed[1] - gamma_bed[3]))
+    },
+    
+    funcExint = function() {
+      mlm <- private$srbtaw
+      vtl <- mlm$getParams()[grep(pattern = "vtl_", x = mlm$getParamNames())]
+      
+      exintKappa <- private$exintKappa
+      if (is.null(exintKappa)) {
+        gamma_bed <- mlm$getgamma_bed()
+        exintKappa <- rep((gamma_bed[2] - gamma_bed[1]) / length(vtl), length(vtl))
+      }
+      stopifnot(length(exintKappa) == length(vtl))
+      
+      r <- sum((vtl - exintKappa)^2)
+      log(1 + r)
+    },
+    
+    getNumOutputs = function() {
+      1
+    },
+    
+    get0Function = function() {
+      if (private$use == "exsupp") {
+        self$funcExsupp
+      } else {
+        self$funcExint
+      }
+    }
+  )
+)
+
 residuals.srBTAW <- function(model, loss) {
   model$residuals(loss)
 }
