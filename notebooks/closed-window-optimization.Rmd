@@ -2073,7 +2073,7 @@ $$
   \\[1ex]
   \mathcal{R}^{(\text{avgout})}=&\;1-\frac{\min{\big(\mu-\beta_l,\beta_u-\mu\big)}}{\frac{1}{2}\big(\beta_u-\beta_l\big)}\mapsto[0+,1]\;\text{, or, alternatively:}
   \\[1ex]
-  \mathcal{R}^{(\text{avgout})}=&\;\bigg(\frac{1}{2}\big(\beta_u-\beta_l\big)-\mu\bigg)^2\mapsto[0+,1]\;\text{, and the log-loss:}
+  \mathcal{R}^{(\text{avgout})}=&\;2\,\sqrt{\bigg(\frac{1}{2}\big(\beta_u-\beta_l\big)-\mu\bigg)^2}\mapsto[0+,1]\;\text{, and the log-loss:}
   \\[1ex]
   \mathcal{L}_{\mathcal{R}^{(\text{avgout})}}=&\;-\log{\Big(1-\mathcal{R}^{(\text{avgout})}\Big)}\mapsto[0+,\infty]\;\text{.}
 \end{aligned}
@@ -2223,11 +2223,14 @@ mlm$setObjective(obj = mlm_obj)
 
 ```{r echo=FALSE}
 # Currently disabled:
-# temp <- YTransRegularization$new(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(), intervals = 1:4, weight = .05, use = "trapezoid")
+# temp <- YTransRegularization$new(
+#   wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(),
+#   intervals = 1:4, weight = .05, use = "trapezoid")
 # mlm$addLoss(loss = temp)
 # mlm_obj$setObjective(name = "Loss_vty", obj = temp)
-
-# temp <- TimeWarpRegularization$new(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(), intervals = 1:4, weight = .1, use = "exint")
+# 
+# temp <- TimeWarpRegularization$new(
+#   wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(), intervals = 1:4, weight = .1, use = "exint")
 # mlm$addLoss(loss = temp)
 # mlm_obj$setObjective(name = "Loss_exint", obj = temp)
 ```
@@ -2252,8 +2255,8 @@ mlm$setParams(params = mlm_fr$optResult$par)
 mlm_fr$optResult
 
 ggpubr::ggarrange(
-  mlm_fr$plot(c("vtl_1", "vtl_2", "vtl_3", "vtl_4"), FALSE) + coord_flip() + scale_x_reverse() + theme(legend.position = "bottom"),
-  mlm_fr$plot(c("v", "vty_1", "vty_2", "vty_3", "vty_4"), FALSE) + coord_flip() + scale_x_reverse() + theme(legend.position = "bottom"),
+  mlm_fr$plot(c("vtl_1", "vtl_2", "vtl_3", "vtl_4"), FALSE) + coord_flip() + scale_x_reverse() + theme(legend.position = "bottom") + theme(axis.title.y = element_text(angle = 270)),
+  mlm_fr$plot(c("v", "vty_1", "vty_2", "vty_3", "vty_4"), FALSE) + coord_flip() + scale_x_reverse() + theme(legend.position = "bottom") + theme(axis.title.y = element_text(angle = 270)),
   nrow = 1
 )
 ```
@@ -2266,24 +2269,24 @@ In the third row, I have added very mild trapezoidal-overlap regularization (wei
 
 ```{r echo=FALSE, fig.height=8}
 g_noReg <- annotate_figure(p = ggpubr::ggarrange(
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
+  mlm$getInstance(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName())$plot_warp() + theme(legend.position = "bottom"),
+  mlm$getInstance(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName())$plot_dual_original() + theme(legend.position = "bottom"),
   nrow = 1
 ), top = text_grob("No Regularization", size = 16))
 
 temp <- readRDS(file = "../results/cow_og3_mlm_fr_exint.rds")
 mlm$setParams(params = temp$optResult$par)
 g_exint <- annotate_figure(p = ggpubr::ggarrange(
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
+  mlm$getInstance(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName())$plot_warp() + theme(legend.position = "bottom"),
+  mlm$getInstance(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName())$plot_dual_original() + theme(legend.position = "bottom"),
   nrow = 1
 ), top = text_grob("Using extreme-intervals regularization", size = 15))
 
 temp <- readRDS(file = "../results/cow_og3_mlm_fr_both.rds")
 mlm$setParams(params = temp$optResult$par)
 g_both <- annotate_figure(p = ggpubr::ggarrange(
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
+  mlm$getInstance(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName())$plot_warp() + theme(legend.position = "bottom"),
+  mlm$getInstance(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName())$plot_dual_original() + theme(legend.position = "bottom"),
   nrow = 1
 ), top = text_grob("Using extreme-intervals and trapezoidal-overlap regularization", size = 16))
 
