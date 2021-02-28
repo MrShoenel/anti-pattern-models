@@ -2084,7 +2084,7 @@ srBTAW <- R6Class(
 
 
 TimeWarpRegularization <- R6Class(
-  "",
+  "TimeWarpRegularization",
   
   inherit = srBTAW_Loss,
   
@@ -2095,8 +2095,8 @@ TimeWarpRegularization <- R6Class(
   ),
   
   public = list(
-    initialize = function(intervals = c(), weight = 1, use = c("exsupp", "exint"), exintKappa = NULL) {
-      super$initialize(wpName = "__ALL__", wcName = "__ALL__", intervals = intervals, weight = weight)
+    initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("exsupp", "exint"), exintKappa = NULL) {
+      super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight)
       private$use <- match.arg(use)
       private$exintKappa <- exintKappa
       
@@ -2106,7 +2106,7 @@ TimeWarpRegularization <- R6Class(
     },
     
     funcExsupp = function() {
-      mlm <- private$srbtaw
+      mlm <- head(private$srbtaw$.__enclos_env__$private$instances, 1)[[1]]
       gamma_bed <- mlm$getgamma_bed()
       beta_l <- mlm$getBeta_l()
       beta_u <- mlm$getBeta_u()
@@ -2115,8 +2115,8 @@ TimeWarpRegularization <- R6Class(
     },
     
     funcExint = function() {
-      mlm <- private$srbtaw
-      vtl <- mlm$getParams()[grep(pattern = "vtl_", x = mlm$getParamNames())]
+      mlm <- head(private$srbtaw$.__enclos_env__$private$instances, 1)[[1]]
+      vtl <- private$srbtaw$getParams()[grep(pattern = "vtl_", x = private$srbtaw$getParamNames())]
       
       exintKappa <- private$exintKappa
       if (is.null(exintKappa)) {
@@ -2155,8 +2155,8 @@ YTransRegularization <- R6Class(
   ),
   
   public = list(
-    initialize = function(intervals = c(), weight = 1, use = c("trapezoid", "tikhonov", "avgout")) {
-      super$initialize(wpName = "__ALL__", wcName = "__ALL__", intervals = intervals, weight = weight)
+    initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("trapezoid", "tikhonov", "avgout")) {
+      super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight)
       private$use <- match.arg(use)
     },
     

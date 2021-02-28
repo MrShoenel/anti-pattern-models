@@ -2223,14 +2223,17 @@ mlm$setObjective(obj = mlm_obj)
 
 ```{r echo=FALSE}
 # Currently disabled:
-# temp <- YTransRegularization$new(intervals = 1:4, weight = .05, use = "trapezoid")
-# 
+# temp <- YTransRegularization$new(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(), intervals = 1:4, weight = .05, use = "trapezoid")
 # mlm$addLoss(loss = temp)
 # mlm_obj$setObjective(name = "Loss_vty", obj = temp)
+
+# temp <- TimeWarpRegularization$new(wpName = sig_wp_mlm$getName(), wcName = sig_wc_mlm$getName(), intervals = 1:4, weight = .1, use = "exint")
+# mlm$addLoss(loss = temp)
+# mlm_obj$setObjective(name = "Loss_exint", obj = temp)
 ```
 
 
-The following optimization works equally well with a __continuous__ version of the same loss, but computing is approx. ten times slower and needs about 50% more iterations. However, it converges much faster to its final minimum, whereas we see a rather gradual improvement for the discrete RSS.
+The following optimization works equally well with a __continuous__ version of the same loss, but computing is approx. ten times slower and needs about 50% more iterations. However, it converges much faster to its final minimum, whereas we see a rather gradual improvement for the discrete RSS. In the following, we plot the parameters' course over all optimization steps. Note that values for $\bm{\vartheta}^{(l)}$ (`vtl_1` etc.) are not normalized as to sum up to $1$.
 
 ```{r echo=FALSE}
 mlm_fr <- loadResultsOrCompute(file = "../results/cow_og3_mlm_fr.rds", computeExpr = {
@@ -2247,11 +2250,6 @@ mlm_fr <- loadResultsOrCompute(file = "../results/cow_og3_mlm_fr.rds", computeEx
 mlm$setParams(params = mlm_fr$optResult$par)
 
 mlm_fr$optResult
-ggpubr::ggarrange(
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
-  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
-  nrow = 1
-)
 
 ggpubr::ggarrange(
   mlm_fr$plot(c("vtl_1", "vtl_2", "vtl_3", "vtl_4"), FALSE) + coord_flip() + scale_x_reverse() + theme(legend.position = "bottom"),
@@ -2260,10 +2258,46 @@ ggpubr::ggarrange(
 )
 ```
 
-This is (within margin of error) the same result as we got previously, so this means that our new architecture indeed works! Like in the previous result, we have one interval with length $\approx0$, and generally, the chosen lengths could align better with the reference. However, this is a human error, as the model did exactly what it was supposed to. In other words, what is missing, is __regularization__. Before arriving at this result here, I had done numerous tests using y-translation regularization (trapezoidal, Tikhonov, average) and managed to have the intervals better aligned. However, to balance each other, we probably also need to impose regularizations on extreme interval lengths, which I did not try at this point.
+The warping- and dual-original plots of this fit are in the top of the following figure. We can see that without regularization we obtain a very good fit. However, the first interval  has a length of almost $0$, which might not be desirable in practice.
 
-My advice is the following: Since `srBTAW` is self-regularizing to some degree, always try first __without__ any additional regularization. Regularizations should be added one-by-one to better observe their impact, and they should be balanced. A regularizer is always an additional optimization goal, do not forget that. For complex cases I recommend to add a low-weight (compared to the actual losses) regularizer for each, extreme interval lengths and trapezoidal overlaps, to _guide_ the optimization process, not to lead it.
+Therefore, I have added very mild (weight of $0.1$) regularization for extreme intervals and ran it again, the results are in the second row of below plot. I suppose it is fair to say that this fit is the overall best so far: It selects the flat beginning to map to the first interval, then the slight fluctuations to the Long Stretch, before mapping the begin of the next interval to the signal's local minimum shortly before the peak, which is perfectly mapped to the reference's peak.
 
+In the third row, I have added very mild trapezoidal-overlap regularization (weight of $0.05$). The fit is very good, too, but the first two intervals were selected even slightly better with extreme-interval regularization only. Also the peak appears to be selected slightly better there.
+
+```{r echo=FALSE, fig.height=8}
+g_noReg <- annotate_figure(p = ggpubr::ggarrange(
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
+  nrow = 1
+), top = text_grob("No Regularization", size = 16))
+
+temp <- readRDS(file = "../results/cow_og3_mlm_fr_exint.rds")
+mlm$setParams(params = temp$optResult$par)
+g_exint <- annotate_figure(p = ggpubr::ggarrange(
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
+  nrow = 1
+), top = text_grob("Using extreme-intervals regularization", size = 15))
+
+temp <- readRDS(file = "../results/cow_og3_mlm_fr_both.rds")
+mlm$setParams(params = temp$optResult$par)
+g_both <- annotate_figure(p = ggpubr::ggarrange(
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_warp() + theme(legend.position = "bottom"),
+  mlm$.__enclos_env__$private$instances$`A_WP|A_WC`$plot_dual_original() + theme(legend.position = "bottom"),
+  nrow = 1
+), top = text_grob("Using extreme-intervals and trapezoidal-overlap regularization", size = 16))
+
+ggarrange(
+  g_noReg, g_exint, g_both,
+  nrow = 3
+)
+```
+
+This is (within margin of error) the same result as we got previously (first row), so this means that our new architecture indeed works! Like in the previous result, we have one interval with length $\approx0$, and generally, the chosen lengths could align better with the reference. However, this is a human error, as the model did exactly what it was supposed to. In other words, what is missing, is __regularization__. The red `M`-function could probably not be closer to the blue warping pattern (`WP`). It is an extremely good solution that also requires extreme parameters, like the almost zero-length first interval and the y-translations for the last two intervals. If, for the use-case, the goal is to obtain `M` such that it is most close to `WP`, regardless of how extreme the parameters may be, then this is our winner. In practice, however, such extreme parameters are often less desirable, so I have tested two additional cases with added regularization.
+
+My advice is the following: Since `srBTAW` is self-regularizing to some degree, always try first __without__ any additional regularization. Regularizations should be added one-by-one to better observe their impact, and they should be balanced. A regularizer is always an additional optimization goal, do not forget that. If very short (almost or equal to zero length) intervals are acceptable, additional regularization is not necessary. To avoid these, extreme-interval regularization may be added. It should have a low weight compared to the data-losses to begin with (start with an order of magnitude smaller) and then may be adjusted from there.
+
+For most cases it is probably advisable to start with regularizations for the interval-lengths, and not the y-translations. Looking at the first plot in the group above, the third and fourth intervals require quite extreme y-translations, esp. since the absolute peak is mapped before it happens. Imposing just y-translations regularizations leads to a result similar as in the first plot. However, excessive y-translations are costly quickly, and can be avoided by aligning the intervals better in the first place. Y-translation regularization appears to have a stronger guiding-effect, and higher weights can lead to the signal not being able to properly translate. Also, and that depends on the regularizer used, penalizing y-translations should not be necessary in most cases, as we need/want the process to assume more extreme values in order to get a good fit. However, adding this kind of regularization is specific to the use-case and might still be beneficial. The three kinds of regularizers I had introduced earlier (Tikhonov, Average-output and Trapezoidal-overlap) are targeting three different properties and should cover any eventual needs.
 
 # Other thoughts
 
