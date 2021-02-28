@@ -498,8 +498,18 @@ SRBTWBAW <- R6Class(
       private$lambdaYmin
     },
     
+    getLambdaYmin_q = function(q) {
+      private$checkQ(q)
+      private$lambdaYmin[q]
+    },
+    
     getLambdaYmax = function() {
       private$lambdaYmax
+    },
+    
+    getLambdaYmax_q = function(q) {
+      private$checkQ(q)
+      private$lambdaYmax[q]
     },
     
     getSubModel = function(q) {
@@ -625,17 +635,14 @@ SRBTWBAW_SubModel <- R6Class(
       s <- private$srbtw
       t <- super$asTuple()
       
-      lambda_ymin <- s$getLambdaYmin()
-      lambda_ymax <- s$getLambdaYmax()
-      
       v <- s$getV()
       vty_q <- s$getVarthetaY_q(q = q)
       phi_y_q <- s$getPhi_y_q(q = q)
       # a_q <- vty_q / t$l_q_c
       tb_q <- s$getTb_q(q = q)
       a_q <- vty_q / (s$getTe_q(q = q) - tb_q)
-      lambda_ymin_q <- lambda_ymin[q]
-      lambda_ymax_q <- lambda_ymax[q]
+      lambda_ymin_q <- s$getLambdaYmin_q(q = q)
+      lambda_ymax_q <- s$getLambdaYmax_q(q = q)
       
       t$iota_q <- t$l_q_c
       t$v <- v
@@ -1448,9 +1455,12 @@ srBTAW_Loss <- R6Class(
     minimize = NULL
   ),
   
+  #' Arguments for the names of the signals should be NULL if the loss
+  #' is not specific to a pair of variables.
   public = list(
-    initialize = function(wpName, wcName, weight = 1, intervals = c(), minimize = TRUE) {
-      stopifnot(is.character(wpName) && is.character(wcName))
+    initialize = function(wpName = NULL, wcName = NULL, weight = 1, intervals = c(), minimize = TRUE) {
+      stopifnot(is.null(wpName) || (is.character(wpName) && nchar(wpName) > 0))
+      stopifnot(is.null(wcName) || (is.character(wcName) && nchar(wcName) > 0))
       stopifnot(is.numeric(weight) && !is.na(weight) && weight > 0 && weight <= 1)
       stopifnot(is.numeric(intervals) && !any(is.na(intervals)) && all(intervals >= 1))
       stopifnot(!is.unsorted(intervals))
@@ -1464,9 +1474,9 @@ srBTAW_Loss <- R6Class(
     },
     
     setParams = function(params) {
-      mlm <- private$srbtaw
-      stopifnot(R6::is.R6(mlm) && inherits(mlm, srBTAW$classname))
-      mlm$setParams(params = params)
+      srbtaw <- private$srbtaw
+      stopifnot(R6::is.R6(srbtaw) && inherits(srbtaw, srBTAW$classname))
+      srbtaw$setParams(params = params)
       invisible(self)
     },
     
@@ -1561,15 +1571,15 @@ srBTAW_Loss_Rss <- R6Class(
         # whatever we want.
         
         continuous <- private$continuous
-        mlm <- private$srbtaw
+        srbtaw <- private$srbtaw
         qs <- private$intervals
         
         err <- 0
-        res <- mlm$residuals(loss = self)
+        res <- srbtaw$residuals(loss = self)
         idx <- 1
         for (q in qs) {
           t <- res[[q]]
-          wc <- if (mlm$isBawEnabled()) t$nqc else t$mqc
+          wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
           
           if (continuous) {
             err <- err + cubature::cubintegrate(
@@ -1584,7 +1594,7 @@ srBTAW_Loss_Rss <- R6Class(
           idx <- idx + 1
         }
         
-        `names<-`(c(log(1 + err)), mlm$getOutputNames())
+        `names<-`(c(log(1 + err)), srbtaw$getOutputNames())
       }
     }
   )
@@ -1748,19 +1758,14 @@ srBTAW <- R6Class(
     
     data = NULL, dataWeights = NULL,
     
+    requireOneInstance = function() {
+      stopifnot(length(private$instances) > 0)
+      useName <- strsplit(x = names(private$instances)[1], split = "|", fixed = TRUE)[[1]]
+      self$getInstance(wpName = useName[1], wcName = useName[2])
+    },
+    
     requireObjective = function() {
       if (!self$hasObjective()) stop("No Objective present.")
-    },
-    
-    hasInstance = function(wpName, wcName) {
-      key <- paste(wpName, wcName, sep = "|")
-      key %in% names(private$instances)
-    },
-    
-    getInstance = function(wpName, wcName) {
-      stopifnot(private$hasInstance(wpName = wpName, wcName = wcName))
-      key <- paste(wpName, wcName, sep = "|")
-      private$instances[[key]]
     },
     
     addInstance = function(wpName, wcName, instance) {
@@ -1894,12 +1899,23 @@ srBTAW <- R6Class(
       R6::is.R6(private$objective) && inherits(private$objective, Objective$classname)
     },
     
+    hasInstance = function(wpName, wcName) {
+      key <- paste(wpName, wcName, sep = "|")
+      key %in% names(private$instances)
+    },
+    
+    getInstance = function(wpName, wcName) {
+      stopifnot(self$hasInstance(wpName = wpName, wcName = wcName))
+      key <- paste(wpName, wcName, sep = "|")
+      private$instances[[key]]
+    },
+    
     addLoss = function(loss) {
       stopifnot(R6::is.R6(loss) && inherits(loss, srBTAW_Loss$classname))
       
       wpName <- loss$getWpName()
       wcName <- loss$getWcName()
-      if (!private$hasInstance(wpName = wpName, wcName = wcName)) {
+      if (!is.null(wpName) && !is.null(wcName) && !self$hasInstance(wpName = wpName, wcName = wcName)) {
         wpSig <- self$getSignal(name = wpName)
         stopifnot(wpSig$isWarpingPattern())
         wcSig <- self$getSignal(name = wcName)
@@ -1914,7 +1930,7 @@ srBTAW <- R6Class(
         self$setParams(params = self$getParams())
       }
       
-      loss$setSrBtaw(self)
+      loss$setSrBtaw(srbtaw = self)
       invisible(self)
     },
     # region Model
@@ -1971,7 +1987,7 @@ srBTAW <- R6Class(
       qs <- loss$getIntervals()
       stopifnot(length(qs) > 0) # You can request multiple q!
       
-      instance <- private$getInstance(
+      instance <- self$getInstance(
         wpName = loss$getWpName(), wcName = loss$getWcName())
       
       res <- list()
@@ -1990,13 +2006,14 @@ srBTAW <- R6Class(
       fr$start()
       
       # Bounds: for SRBTWBAW, params is vartheta_l, [, b [, e [, v, vartheta_y]]]
+      vtl <- private$requireOneInstance()$getVarthetaL()
       bb_lower <- c(private$lambda,
                     (if (private$openBegin) private$gamma_bed[1] else c()),
                     (if (private$openEnd) private$gamma_bed[1] + private$gamma_bed[3] else c()),
                     (if (private$useAmplitudeWarping)
                       c(rep(min(private$lambda_ymin) - 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
                             length(private$theta_b))) else c()))
-      bb_upper <- c(rep(max(private$varthetaL), length(private$lambda)), # remember vartheta_l are ratios ideally
+      bb_upper <- c(rep(max(vtl), length(private$lambda)), # remember vartheta_l are ratios ideally
                     (if (private$openBegin) private$gamma_bed[2] - private$gamma_bed[3] else c()),
                     (if (private$openEnd) private$gamma_bed[2] else c()),
                     (if (private$useAmplitudeWarping)
@@ -2094,6 +2111,8 @@ TimeWarpRegularization <- R6Class(
     exintKappa = NULL
   ),
   
+  #' The names of the signals are required so that we know which
+  #' model's parameters to retrieve.
   public = list(
     initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("exsupp", "exint"), exintKappa = NULL) {
       super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight)
@@ -2102,31 +2121,46 @@ TimeWarpRegularization <- R6Class(
       
       if (private$use == "exint") {
         stopifnot(is.null(exintKappa) || (is.numeric(exintKappa) && !any(is.na(exintKappa))))
+        stopifnot(length(intervals) > 0)
+      } else {
+        if (length(intervals) > 0) {
+          warning("The regularizer for extreme supports does not use intervals.")
+        }
       }
     },
     
     funcExsupp = function() {
-      mlm <- head(private$srbtaw$.__enclos_env__$private$instances, 1)[[1]]
-      gamma_bed <- mlm$getgamma_bed()
-      beta_l <- mlm$getBeta_l()
-      beta_u <- mlm$getBeta_u()
+      srbtaw <- private$srbtaw
+      mod <- srbtaw$getInstance(wpName = self$getWpName(), wcName = self$getWcName())
+      gamma_bed <- mod$getgamma_bed()
+      beta_l <- mod$getBeta_l()
+      beta_u <- mod$getBeta_u()
       
-      -log((beta_u - beta_l) / (gamma_bed[2] - gamma_bed[1] - gamma_bed[3]))
+      `names<-`(
+        c(-log((beta_u - beta_l) / (gamma_bed[2] - gamma_bed[1] - gamma_bed[3]))),
+        srbtaw$getOutputNames())
     },
     
     funcExint = function() {
-      mlm <- head(private$srbtaw$.__enclos_env__$private$instances, 1)[[1]]
-      vtl <- private$srbtaw$getParams()[grep(pattern = "vtl_", x = private$srbtaw$getParamNames())]
+      srbtaw <- private$srbtaw
+      mod <- srbtaw$getInstance(wpName = self$getWpName(), wcName = self$getWcName())
+      vtl <- mod$getVarthetaL()
       
       exintKappa <- private$exintKappa
       if (is.null(exintKappa)) {
-        gamma_bed <- mlm$getgamma_bed()
+        gamma_bed <- mod$getgamma_bed()
         exintKappa <- rep((gamma_bed[2] - gamma_bed[1]) / length(vtl), length(vtl))
       }
       stopifnot(length(exintKappa) == length(vtl))
       
-      r <- sum((vtl - exintKappa)^2)
-      log(1 + r)
+      qs <- private$intervals
+      ints <- c()
+      res <- srbtaw$residuals(loss = self)
+      for (q in qs) {
+        ints <- c(ints, (vtl[q] - exintKappa[q])^2)
+      }
+      
+      `names<-`(c(log(1 + sum(ints))), srbtaw$getOutputNames())
     },
     
     getNumOutputs = function() {
@@ -2157,7 +2191,22 @@ YTransRegularization <- R6Class(
   public = list(
     initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("trapezoid", "tikhonov", "avgout")) {
       super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight)
+      
       private$use <- match.arg(use)
+      
+      # For Average-out regularization, wpName & wcName are required,
+      # because it requires access to the underlying SRBTW/SRBTWBAW's M-function.
+      # They are also required for trapezoidal regularization, as we need to get
+      # the residuals, which always require a specific model (even though any
+      # model would do here).
+      if (private$use == "avgout" || private$use == "trapezoid") {
+        stopifnot(is.character(wpName) && nchar(wpName) > 0)
+        stopifnot(is.character(wcName) && nchar(wcName) > 0)
+      } else {
+        # For the others, they better be NULL, because the others are
+        # NOT specific to any one model.
+        stopifnot(is.null(wpName) && is.null(wcName))
+      }
     },
     
     getNumOutputs = function() {
@@ -2165,16 +2214,16 @@ YTransRegularization <- R6Class(
     },
     
     funcTrapezoid = function() {
-      mlm <- private$srbtaw
+      srbtaw <- private$srbtaw
       qs <- private$intervals
       
       ratios <- 0
-      res <- mlm$residuals(loss = self)
-      params <- mlm$getParams()
+      res <- srbtaw$residuals(loss = self)
+      params <- srbtaw$getParams()
       v <- params["v"]
       for (q in qs) {
         t <- res[[q]]
-        wc <- if (mlm$isBawEnabled()) t$nqc else t$mqc
+        wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
         o_q <- v + t$phi_y_q
         beta_l <- t$lambda_ymin_q
         beta_u <- t$lambda_ymax_q
@@ -2219,24 +2268,32 @@ YTransRegularization <- R6Class(
         ratios <- c(ratios, min(1, max(0, delta_q / delta_max_q)))
       }
       
-      `names<-`(c(-log(1 - mean(ratios))), mlm$getOutputNames())
+      `names<-`(c(-log(1 - mean(ratios))), srbtaw$getOutputNames())
     },
     
     funcTikhonov = function() {
-      mlm <- private$srbtaw
-      v <- mlm$getParams()[grep(pattern = "v$", x = names(mlm$getParams()))]
-      vty <- mlm$getParams()[grep(pattern = "vty_", x = names(mlm$getParams()))]
-      log(1 + sqrt(sum(c(v, vty)^2)))
+      srbtaw <- private$srbtaw
+      v <- srbtaw$getParams()[grep(pattern = "v$", x = names(srbtaw$getParams()))]
+      vty <- srbtaw$getParams()[grep(pattern = "vty_", x = names(srbtaw$getParams()))]
+      `names<-`(c(log(1 + sqrt(sum(c(v, vty)^2)))), srbtaw$getOutputNames())
     },
     
     funcAvgout = function() {
-      mlm <- private$srbtaw
-      mod <- head(mlm$.__enclos_env__$private$instances)[[1]]
-      beta_l <- min(mod$getLambdaYmin())
-      beta_u <- max(mod$getLambdaYmax())
-      mu <- cubature::cubintegrate(f = mod$M, lower = 0, upper = 1)$integral
-      ravg <- (1/2 * (beta_u - beta_l) - mu)^2
-      -log(1 - ravg)
+      srbtaw <- private$srbtaw
+      mod <- srbtaw$getInstance(wpName = self$getWpName(), wcName = self$getWcName())
+      
+      qs <- private$intervals
+      avgs <- c()
+      res <- srbtaw$residuals(loss = self)
+      for (q in qs) {
+        t <- res[[q]]
+        lb <- t$lambda_ymin_q
+        ub <- t$lambda_ymax_q
+        mu <- cubature::cubintegrate(f = mod$M, lower = 0, upper = 1)$integral
+        avgs <- c(avgs, 2 * sqrt((1/2 * (ub - lb) - mu)^2))
+      }
+      
+      `names<-`(c(-log(1 - mean(avgs))), srbtaw$getOutputNames())
     },
     
     get0Function = function() {
