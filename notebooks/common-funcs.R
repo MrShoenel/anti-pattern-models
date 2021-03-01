@@ -1384,12 +1384,12 @@ get_dtw_scorable_functions <- function(dtwAlign, signalRef = NULL, signalQuery =
 }
 
 
-densitySafe <- function(data, ratio = 1, kernel = "gauss", bw = "SJ", from = 0, to = 1) {
+densitySafe <- function(data, ratio = 1, kernel = "gauss", bw = "SJ", from = 0, to = 1, safeVal = 0) {
   d <- stats::density(x = data, from = from, to = to, kernel = kernel, bw = bw, n = 2^max(10, ceiling(log2(length(data)))))
   f <- stats::approxfun(x = d$x, y = d$y)
   r <- range(d$x)
   f1 <- Vectorize(function(x) {
-    if (x < r[1] || x > r[2]) 0 else f(x) * ratio
+    if (x < r[1] || x > r[2]) safeVal else f(x) * ratio
   })
   attributes(f1) <- list(
     min = r[1], max = r[2], ratio = ratio, ymax = max(d$y) * ratio,
@@ -1420,7 +1420,7 @@ poly_autofit <- function(yData, xData = 1:length(yData), maxDegree = 5, method =
   
   while (TRUE && degree <= maxDegree) {
     tempModel <- stats::lm(
-      formula = data ~ stats::poly(xData, degree = degree))
+      formula = yData ~ stats::poly(xData, degree = degree))
     
     newVal <- methodFunc(tempModel) * minimizeMult
     if (newVal < startVal) {
@@ -1435,7 +1435,24 @@ poly_autofit <- function(yData, xData = 1:length(yData), maxDegree = 5, method =
   
   # We tested all, so let's return the best:
   stats::lm(
-    formula = data ~ stats::poly(xData, degree = degreeBest))
+    formula = yData ~ stats::poly(xData, degree = degreeBest))
+}
+
+poly_autofit_max <- function(x, y, startDeg = 10) {
+  p <- NULL
+  while (TRUE) {
+    temp <- tryCatch({
+      stats::lm(formula = y ~ stats::poly(x = x, degree = startDeg))
+    }, error = function(cond) FALSE)
+    
+    if (is.logical(temp) && temp == FALSE) {
+      break
+    } else {
+      p <- temp
+      startDeg <- startDeg + 1
+    }
+  }
+  p
 }
 
 

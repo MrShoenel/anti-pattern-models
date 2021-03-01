@@ -1,0 +1,373 @@
+---
+title: "Detecting the Fire Drill anti-pattern using Source Code -- Technical Report"
+author: "Sebastian Hönel"
+bibliography: ../inst/REFERENCES.bib
+output:
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
+  md_document:
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+    df_print: kable
+  word_document: default
+  pdf_document:
+    toc: yes
+    toc_depth: '6'
+header-includes:
+- \usepackage{bm}
+- \usepackage{mathtools}
+---
+
+\newcommand*\mean[1]{\overline{#1}}
+\newcommand{\norm}[1]{\left\lvert#1\right\rvert}
+\newcommand{\infdiv}[2]{#1\;\|\;#2}
+
+```{r echo=FALSE, warning=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+# Introduction
+
+This is the complementory technical report for the paper/article tentatively entitled "Detection of Project Management Anti-Patterns through Source Code". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
+
+All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the results. The canonical URL to this notebook is `https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd`, with a rendered markdown version at `https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md`. All code can be found in this repository, too.
+
+# Data
+
+We have $9$ projects conducted by students, and two raters have __independently__, i.e., without prior communication, assessed to what degree the AP is present in each project. This was done using a scale from zero to ten, where zero means that the AP was not present, and ten would indicate a strong manifestation.
+
+## The Ground Truth
+
+```{r}
+ground_truth <- read.csv(file = "../data/ground-truth.csv", sep = ";")
+```
+
+```{r echo=FALSE}
+knitr::kable(
+  x = ground_truth,
+  booktabs = TRUE,
+  caption = "Entire ground truth as of both raters",
+  label = "groundtruth"
+)
+```
+
+
+Using the _quadratic weighted Kappa_ [@cohen1968weighted], we can report an unadjusted agreement of __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = ground_truth$rater.a, rater.b = ground_truth$rater.b, min.rating = 0, max.rating = 10), 3)`__ for both raters. A Kappa value in the range $[0.6,0.8]$ is considered _substantial_, and values beyond that as _almost perfect_ [@landis1977application]. As for the Pearson-correlation, we report a slightly higher value of __`r round(cor(x = ground_truth$rater.a, y = ground_truth$rater.b), 3)`__. The entire ground truth is shown in table \ref{tab:groundtruth}. The final consensus was reached after both raters exchanged their opinions, and it is the consensus that we will use as the actual ground truth from here on and out.
+
+
+## The Student Projects
+
+The ground truth was extracted from nine student-conducted projects. Seven of these were implemented simultaneously between March and June 2020, and two the year before in a similar timeframe.
+
+```{r echo=FALSE, eval=FALSE}
+# TODO: deleteme -- this MUST NOT END UP IN THE FINAL NOTEBOOK
+temp <- (function() {
+  repos <- c("Anonymous", "BHVS", "HKMM", "HOANG", "Horky", "Medici", "Merlot", "QWERTY", "VLDC")
+  
+  idx <- 1
+  all <- NULL
+  for (repo in repos) {
+    temp <- read.csv(file = paste0("D:/repos/", repo, ".csv"))
+    temp <- cbind(data.frame(Project = rep(paste0("p", idx), nrow(temp))), temp)
+    all <- rbind(all, temp) 
+    idx <- idx + 1
+  }
+  
+  # Remove cols:
+  all <- all[, colnames(all)[!(colnames(all) %in% c("SHA1", "RepoPathOrUrl", "AuthorName", "CommitterName", "Message", "AuthorEmail", "CommitterEmail"))]]
+  
+  # Predict labels:
+  p <- final_model$predict(data = all, type = "both")
+  colnames(p) <- c("label", paste0("prob_", colnames(p)[2:4]))
+  all <- as.data.frame(cbind(all, p))
+  
+  all
+})()
+write.table(x = temp, file = "../data/student-projects.csv", row.names = FALSE, fileEncoding = "utf-8", sep = ";")
+```
+
+```{r}
+student_projects <- read.csv(file = "../data/student-projects.csv", sep = ";")
+```
+
+We have a total of:
+
+* Nine projects,
+* `r length(unique(student_projects$AuthorNominalLabel))` authors that authored `r nrow(student_projects)` commits total which are of type
+* Adaptive / Corrective / Perfective (`a/c/p`) commits: `r sum(student_projects$label == "a")` / `r sum(student_projects$label == "c")` / `r sum(student_projects$label == "p")`
+
+We have a complete breakdown of all activities across all projects in figure \ref{fig:project-activity}.
+
+```{r echo=FALSE}
+student_projects_info <- NULL
+
+for (pId in unique(student_projects$Project)) {
+  temp <- student_projects[student_projects$Project == pId, ]
+  student_projects_info <- rbind(student_projects_info, data.frame(
+    project = pId,
+    authors = length(unique(temp$AuthorNominalLabel)),
+    commits = nrow(temp),
+    a = nrow(temp[temp$label == "a", ]),
+    c = nrow(temp[temp$label == "c", ]),
+    p = nrow(temp[temp$label == "p", ]),
+    avgDens = round(mean(temp$Density), 3)
+  ))
+}
+
+if (!interactive()) {
+  knitr::kable(
+    x = student_projects_info,
+    booktabs = TRUE,
+    caption = "Per-project overview of the student projects",
+    label = "studentprojects"
+  )
+}
+```
+
+```{r project-activity, echo=FALSE, fig.cap="Commit activities across projects", fig.align="top", fig.pos="ht!"}
+ggplot(data = student_projects, aes(x = length(label), fill = label)) +
+  geom_bar() + facet_grid(label ~ Project) +
+  theme_light() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    strip.background = element_rect(fill="#dfdfdf"),
+    strip.text = element_text(color="black"),
+    legend.position = "none")
+```
+
+We have slightly different begin- and end-times in each project. However, the data for all projects was previously cropped, so that each project's extent marks the absolute begin and end of it -- it starts with the first commit and ends with the last. As for our methods here, we only need to make sure that we scale the timestamps into a relative $[0,1]$-range, where $1$ marks the project's end.
+
+For each project, we model __four__ variables: The activities __adaptive__ (__`A`__), __corrective+perfective__ (__`CP`__), the frequency of all activities, regardless of their type (__`FREQ`__), and the __source code density__ (__`SCD`__) [@honel2020using]. While for the first three variables we estimate a Kernel density, the last variable is a metric collected with each commit.
+
+Technically, we will compose each variable into an instance of our `Signal`-class. Before we start, we will do some normalizations and conversions, like converting the timestamps. This has to be done on a per-project basis.
+
+```{r}
+student_projects$label <- as.factor(student_projects$label)
+student_projects$Project <- as.factor(student_projects$Project)
+student_projects$AuthorTimeNormalized <- NA_real_
+```
+
+```{r echo=FALSE}
+for (pId in levels(student_projects$Project)) {
+  student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized <-
+    (student_projects[student_projects$Project == pId, ]$AuthorTimeUnixEpochMilliSecs -
+      min(student_projects[student_projects$Project == pId, ]$AuthorTimeUnixEpochMilliSecs))
+  student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized <-
+    (student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized /
+      max(student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized))
+}
+```
+
+And now for the actual signals: Since the timestamps have been normalized for each project, we model each variable to actually start at $0$ and end at $1$ (the support). We will begin with activity-related variables before we model the source code density, as the process is different. When using Kernel density estimation (KDE), we obtain an empirical probability density function (PDF) that integrates to $1$. This is fine when looking at all activities combined (__`FREQ`__). However, when we are interested in a specific fraction of the activities, say __`A`__, then we should scale its activities according to its overall ratio. Adding all scaled activities together should again integrate to $1$. When this is done, we scale one last time such that no empirical PDF has a co-domain larger than $1$.
+
+```{r}
+project_signals <- list()
+
+# passed to stats::density
+use_kernel <- "gauss" # "rect"
+
+for (pId in levels(student_projects$Project)) {
+  temp <- student_projects[student_projects$Project == pId, ]
+  
+  # We'll need these for the densities:
+  acp_ratios <- table(temp$label) / sum(table(temp$label))
+  
+  dens_a <- densitySafe(
+    from = 0, to = 1, safeVal = NA_real_,
+    data = temp[temp$label == "a", ]$AuthorTimeNormalized,
+    ratio = acp_ratios[["a"]], kernel = use_kernel)
+  
+  dens_cp <- densitySafe(
+    from = 0, to = 1, safeVal = NA_real_,
+    data = temp[temp$label == "c" | temp$label == "p", ]$AuthorTimeNormalized,
+    ratio = acp_ratios[["c"]] + acp_ratios[["p"]], kernel = use_kernel)
+  
+  dens_freq <- densitySafe(
+    from = 0, to = 1, safeVal = NA_real_,
+    data = temp$AuthorTimeNormalized, ratio = 1, kernel = use_kernel)
+  
+  # All densities need to be scaled together once more, by dividing
+  # for the maximum value of the FREQ-variable.
+  ymax <- max(c(attr(dens_a, "ymax"), attr(dens_cp, "ymax"), attr(dens_freq, "ymax")))
+  dens_a <- stats::approxfun(
+    x = attr(dens_a, "x"), y = sapply(X = attr(dens_a, "x"), FUN = dens_a) / ymax)
+  dens_cp <- stats::approxfun(
+    x = attr(dens_cp, "x"), y = sapply(X = attr(dens_cp, "x"), FUN = dens_cp) / ymax)
+  dens_freq <- stats::approxfun(
+    x = attr(dens_freq, "x"), y = sapply(X = attr(dens_freq, "x"), FUN = dens_freq) / ymax)
+  
+  project_signals[[pId]] <- list(
+    A = Signal$new(name = "A", func = dens_a, support = c(0, 1), isWp = FALSE),
+    CP = Signal$new(name = "CP", func = dens_cp, support = c(0, 1), isWp = FALSE),
+    FREQ = Signal$new(name = "FREQ", func = dens_freq, support = c(0, 1), isWp = FALSE)
+  )
+}
+```
+
+Now, for each project, we estimate the variable for the source code density as follows:
+
+```{r warning=FALSE}
+for (pId in levels(student_projects$Project)) {
+  temp <- data.frame(
+    x = student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized,
+    y = student_projects[student_projects$Project == pId, ]$Density)
+  temp <- temp[with(temp, order(x)), ]
+  ry <- range(temp$y)
+  
+  # Using a polynomial with maximum possible degree, we smooth the
+  # SCD-data, as it can be quite "peaky"
+  temp_poly <- poly_autofit_max(x = temp$x, y = temp$y, startDeg = 13)
+  
+  dens_scd <- (function() {
+    r <- range(temp$x)
+    poly_y <- stats::predict(temp_poly, x = temp$x)
+    tempf <- stats::approxfun(x = temp$x, y = poly_y, ties = "ordered")
+    Vectorize(function(x) {
+      if (x < r[1] || x > r[2]) {
+        return(NA_real_)
+      }
+      max(ry[1], min(ry[2], tempf(x)))
+    })
+  })()
+  
+  project_signals[[pId]][["SCD"]] <- Signal$new(
+    name = "SCD", func = dens_scd, support = c(0, 1), isWp = FALSE)
+}
+```
+
+Let's plot all the projects:
+
+```{r echo=FALSE}
+tempdf <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(tempdf) <- c("x", "y", "p", "v")
+
+n <- 500
+x <- seq(from = 0, to = 1, length.out = n)
+for (pId in levels(student_projects$Project)) {
+  for (v in c("A", "CP", "FREQ", "SCD")) {
+    tempdf <- rbind(tempdf, data.frame(
+      x = x,
+      y = sapply(X = x, FUN = project_signals[[pId]][[v]]$get0Function()),
+      p = pId,
+      v = v
+    ))
+  }
+}
+```
+
+
+```{r project-vars, echo=FALSE, fig.cap="All variables over each project's time span", fig.align="top", fig.pos="ht!"}
+ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
+  geom_line() +
+  facet_wrap(p ~.) +
+  theme_light() +
+  labs(color = "Variable") + xlab("Relative Time") + ylab("Value") +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_rect(fill="#dfdfdf"),
+    strip.text = element_text(color="black"))
+
+```
+
+# Patterns for scoring the projects
+
+Our overall goal is to propose a single model that is able to detect the presence of the Fire Drill AP, and how strong its manifestation is. In order to do that, we require a pattern that defines how a Fire Drill looks in practice. Any real-world project can never follow such a pattern perfectly, because of, e.g., time dilation and compression. Even after correcting these, some distance between the project and the pattern will remain. The projects from figure \ref{fig:project-vars} indicate that certain phases occur, but that their occurrence happens at different points in time, and lasts for various durations.
+
+Given some pattern, we first attempt to remove any distortions in the data, by using our new model _self-regularizing Boundary Time Warping_ (sr-BTW). This model takes a pattern that is subdivided into one or more intervals, and aligns the project data such that the loss in each interval is minimized. After alignment, we calculate a score that quantifies the remaining differences. Ideally, we hope to find a (strong) positive correlation of these scores with the ground truth.
+
+
+## Pattern I: Initial best guess
+
+```{r}
+fd_data_concat <- readRDS("../data/fd_data_concat.rds")
+```
+
+This pattern was created based on all available literature, __without__ inspecting any of the projects. It is subdivided into four intervals:
+
+1. Begin -- Short project warm-up phase
+2. Long Stretch -- The longest phase in the project, about which we do not know much about, except for that there should be a rather constant amount of activities over time.
+3. Fire Drill -- Characteristic is a sudden and steep increase of adaptive activities. This phase is over once these activities reached their apex.
+4. Aftermath -- Everything after the apex. We should see even steeper declines.
+
+
+@brown1998refactoring describe a typical scenario where about six months are spent on non-developmental activities, and the actual software is then developed in less than four weeks. If we were to include some of the aftermath, the above first guess would describe a project of about eight weeks.
+
+We define the boundaries as follows (there are three boundaries to split the pattern into four intervals):
+
+```{r}
+fd_data_boundaries <- c(
+  "b1" = 0.085,
+  "b2" = 0.625,
+  "b3" = 0.875
+)
+```
+
+The pattern and its boundaries look like this:
+
+```{r}
+plot_project_data(data = fd_data_concat, boundaries = fd_data_boundaries)
+```
+
+
+
+## Pattern II: Adaptation of best guess
+
+The second pattern is a compromise between the first and the third: While we want to keep as much of the initial best guess, we also want to adjust the pattern based on the projects and the ground truth. Adjusting means, that we will keep what is in each interval, but we allow each interval to stretch and compress, and we allow each interval to impose a vertical translation both at then begin and end (a somewhat trapezoidal translation). In any case, each such alteration is a linear affine transformation. Additionally to sr-BTW, we will also apply __sr-BAW__ (self-regularizing Boundary Amplitude Warping) to accomplish this. This model is called __sr-BTAW__ and the process is the following:
+
+* The pattern is decomposed into its four variables first, as we can adapt these (almost) independently from each other.
+* Then, for each type of variable, an instance of sr-BTAW is created. As __Warping Candidates__ (WC) we add all of the projects' corresponding variables. The __Warping Pattern__ (WP) is the single variable from the pattern in this case -- again, we warp the project data, however, eventually the learned warping gets inversed and applied to the WC.
+* All four sr-BTAW instances are then fitted simultaneously: While we allow the y-translations to adapt independently for each type of variable, all instances share the same intervals, as eventually we have to assemble the variables back into a common pattern.
+
+
+## Pattern III: Evidence-based
+
+A third kind of pattern is produced by starting with an empty pattern and having it adapt to the available ground truth. Here we inverse the relation WP-WC: All data is becoming the constant Warping Pattern, and we warp an empty pattern as candidate to it. Empty means that we will start with a flat line located at $0.5$ for each pattern. To find the optimum amount of intervals, we try all values in a certain range and compute a fit, and then use an information criterion to decide which of the produced patterns provides the best trade-off between number of parameters and goodness-of-fit.
+
+The process is very similar to the one for pattern II: Using a set of sr-BTAW instances (one instance per variable type) that all share the same intervals, we allow each to produce individual amplitude warpings.
+
+
+
+
+# References {-}
+
+<div id="refs"></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1620,7 +1620,7 @@ Signal <- R6Class(
   public = list(
     initialize = function(name, func, support, isWp) {
       stopifnot(is.character(name) && nchar(name) > 0)
-      stopifnot(is.function(func) && all(methods::formalArgs(func) == "x"))
+      stopifnot(is.function(func) && length(methods::formalArgs(func)) == 1)
       stopifnot(is.numeric(support) && length(support) == 2 && !any(is.na(support)))
       stopifnot(is.logical(isWp))
       
@@ -2095,6 +2095,18 @@ srBTAW <- R6Class(
       do.call(what = self$getObjective()$get2ndOrderPd, args = list(name = name))
     }
     # endregion Differentiable
+  )
+)
+
+
+
+srBTAW_MultiVariate <- R6Class(
+  "srBTAW_MultiVar",
+  
+  inherit = MultiObjective,
+  
+  public = list(
+    
   )
 )
 
