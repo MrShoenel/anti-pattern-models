@@ -1353,6 +1353,7 @@ srBTAW_LossLinearScalarizer <- R6Class(
           srbtaw <- private$requireOneObjective()$getSrBtaw()$clone()
           srbtaw$setObjective(obj = copy)
           
+          # TODO: this requires nested parallelization..
           copy$setComputeParallel(computeParallel = private$computeWithinGradientParallel)
           params <- srbtaw$getParams()
 
@@ -1533,6 +1534,244 @@ srBTAW_Loss <- R6Class(
     
     getParams = function() {
       self$getSrBtaw()$getParams()
+    }
+  )
+)
+
+
+srBTAW_LossWrapper <- R6Class(
+  "srBTAW_LossWrapper",
+  
+  inherit = srBTAW_Loss,
+  
+  private = list(
+    objective = NULL
+  ),
+  
+  public = list(
+    initialize = function(objective, weight = 1, minimize = TRUE) {
+      super$initialize(
+        wpName = NULL, wcName = NULL, weight = weight, intervals = c(1))
+      stopifnot(R6::is.R6(objective) && inherits(obj, Objective$classname))
+      private$objective <- objective
+      
+      self$setMinimization(val = minimize)
+    },
+    
+    get0Function = function() {
+      private$objective$get0Function()
+    },
+    
+    get1stOrderPd = function(name = c()) {
+      private$objective$get1stOrderPd(name = name)
+    },
+    
+    get2ndOrderPd = function(name = c()) {
+      private$objective$get2ndOrderPd(name = name)
+    },
+    
+    compute0 = function() {
+      private$objective$compute0()
+    },
+    
+    getNumOutputs = function() {
+      private$objective$getNumOutputs()
+    },
+    
+    getNumParams = function() {
+      private$objective$getNumParams()
+    },
+    
+    getOutputNames = function() {
+      private$objective$getOutputNames()
+    },
+    
+    getParamNames = function() {
+      private$objective$getParamNames()
+    },
+    
+    getParams = function() {
+      private$objective$getParams()
+    },
+    
+    setParams = function(params) {
+      private$objective$setParams(params = params)
+    }
+  )
+)
+
+
+
+srBTAW_Loss2Curves <- R6Class(
+  "srBTAW_Loss2Curves",
+  
+  inherit = srBTAW_Loss,
+  
+  private = list(
+    continuous = NULL,
+    numSamples = NULL,
+    use = NULL
+  ),
+  
+  
+  public = list(
+    initialize = function(
+      srbtaw, wpName, wcName, weight = 1, intervals = c(),
+      use = c("area", "rss", "corr", "arclen", "jsd"),
+      continuous = FALSE, numSamples = rep(if (continuous) NA_real_ else 1e3, length(intervals))
+    ) {
+      super$initialize(
+        wpName = wpName, wcName = wcName, weight = weight, intervals = intervals)
+      self$setSrBtaw(srbtaw = srbtaw)
+      
+      stopifnot(is.logical(continuous) && is.numeric(numSamples))
+      
+      private$continuous <- continuous
+      private$numSamples <- numSamples
+      private$use <- match.arg(use)
+    },
+    
+    getNumOutputs = function() {
+      1
+    },
+    
+    funcArea = function() {
+      continuous <- private$continuous
+      srbtaw <- private$srbtaw
+      qs <- private$intervals
+      
+      err <- 0
+      res <- srbtaw$residuals(loss = self)
+      idx <- 1
+      for (q in qs) {
+        t <- res[[q]]
+        wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
+        
+        if (continuous) {
+          temp <- cubature::cubintegrate(
+            f = function(x) abs(t$wp(x) - wc(x)), lower = t$tb_q, upper = t$te_q)$integral
+          err <- err + (temp / (t$te_q - t$tb_q)) # normalize to interval-length
+        } else {
+          X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
+          y <- sapply(X = X, FUN = t$wp)
+          y_hat <- sapply(X = X, FUN = wc)
+          temp <- sum(abs(y - y_hat))
+          err <- err + (temp / (t$te_q - t$tb_q))
+        }
+        
+        idx <- idx + 1
+      }
+      
+      `names<-`(c(log(1 + err)), srbtaw$getOutputNames())
+      
+    },
+    
+    funcCorr = function() {
+      continuous <- private$continuous
+      stopifnot(!continuous) # not currently supported/used here
+      
+      srbtaw <- private$srbtaw
+      qs <- private$intervals
+      
+      corrs <- c() # we will calculate the mean correlation
+      res <- srbtaw$residuals(loss = self)
+      idx <- 1
+      for (q in qs) {
+        t <- res[[q]]
+        wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
+        
+        X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
+        y <- sapply(X = X, FUN = t$wp)
+        y_hat <- sapply(X = X, FUN = wc)
+        temp <- suppressWarnings(expr = {
+          stats::cor(x = y, y = y_hat)
+        })
+        if (is.na(temp)) {
+          temp <- -1 # worst possible correlation
+        }
+        corrs <- c(corrs, temp)
+        
+        idx <- idx + 1
+      }
+      
+      err <- 0.5 * (1 - mean(corrs)) # \mapsto [0,1], where 1 is the highest possible loss
+      # re-scale error so it is < 1 (otherwise we'll get infinity)
+      err <- err * (1 - sqrt(.Machine$double.eps))
+      
+      `names<-`(c(-log(1 - err)), srbtaw$getOutputNames())
+    },
+    
+    funcArclen = function() {
+      arclen <- function(func, from, to) {
+        func <- Vectorize(FUN = func)
+        pracma::arclength(f = function(k) c(func(k), k), a = from, b = to)$length
+      }
+      
+      srbtaw <- private$srbtaw
+      qs <- private$intervals
+      
+      arclens <- c() # we will calculate the mean arclength ratio
+      res <- srbtaw$residuals(loss = self)
+      for (q in qs) {
+        t <- res[[q]]
+        wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
+        #t$wp(x) - wc(x)
+        
+        arclen_wp <- arclen(func = t$wp, from = t$tb_q, to = t$te_q)
+        arclen_wc <- arclen(func = wc, from = t$tb_q, to = t$te_q)
+        temp <- 1 - (min(arclen_wp, arclen_wc) / max(arclen_wp, arclen_wc))
+        # \mapsto [0,1], where 1 is the maximum possible loss (0 means a perfect ratio)
+        
+        arclens <- c(arclens, temp)
+      }
+      
+      `names<-`(c(-log(1 - mean(arclens))), srbtaw$getOutputNames())
+    },
+    
+    funcRss = function() {
+      continuous <- private$continuous
+      srbtaw <- private$srbtaw
+      qs <- private$intervals
+      
+      err <- 0
+      res <- srbtaw$residuals(loss = self)
+      idx <- 1
+      for (q in qs) {
+        t <- res[[q]]
+        wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
+        
+        if (continuous) {
+          temp <- cubature::cubintegrate(
+            f = function(x) (t$wp(x) - wc(x))^2, lower = t$tb_q, upper = t$te_q)$integral
+          err <- err + (temp / (t$te_q - t$tb_q)) # normalize to interval-length
+        } else {
+          X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
+          y <- sapply(X = X, FUN = t$wp)
+          y_hat <- sapply(X = X, FUN = wc)
+          temp <- sum((y - y_hat)^2)
+          err <- err + (temp / (t$te_q - t$tb_q))
+        }
+        
+        idx <- idx + 1
+      }
+      
+      `names<-`(c(log(1 + err)), srbtaw$getOutputNames())
+    },
+    
+    get0Function = function() {
+      if (private$use == "rss") {
+        self$funcRss
+      } else if (private$use == "area") {
+        self$funcArea
+      } else if (private$use == "corr") {
+        self$funcCorr
+      } else if (private$use == "arclen") {
+        self$funcArclen
+      } else if (private$use == "jsd") {
+        self$funcJsd
+      } else {
+        stop(paste0("Should not get here.."))
+      }
     }
   )
 )
@@ -2103,13 +2342,92 @@ srBTAW <- R6Class(
 
 
 
-srBTAW_MultiVariate <- R6Class(
-  "srBTAW_MultiVar",
+srBTAW_MultiVartype <- R6Class(
+  "srBTAW_MultiVartype",
   
-  inherit = MultiObjective,
+  inherit = Model,
+  
+  private = list(
+    instances = NULL,
+    
+    requireOneInstance = function() {
+      stopifnot(length(private$instances) > 0)
+      private$instances[[names(private$instances)[1]]]
+    }
+  ),
   
   public = list(
+    initialize = function() {
+      super$initialize()
+      
+      private$instances <- list()
+    },
     
+    setSrbtaw = function(varName, srbtaw) {
+      stopifnot(is.character(varName) && length(varName) == 1)
+      stopifnot(grepl(pattern = "^[a-z][a-z0-9]*$", x = varName, ignore.case = TRUE))
+      stopifnot(R6::is.R6(srbtaw) && inherits(srbtaw, srBTAW$classname))
+      
+      if (length(private$instances) > 0) {
+        # All need to have the same amount of parameters, and
+        # their names must be the same.
+        temp <- private$requireOneInstance()
+        allEq <- all.equal(temp$getParamNames(), srbtaw$getParamNames())
+        stopifnot(is.logical(allEq) && allEq)
+      }
+      
+      private$instances[[varName]] <- srbtaw
+      invisible(self)
+    },
+    
+    # region Differentiable
+    getParamNames = function() {
+      temp <- private$requireOneInstance()
+      
+      # We have equally many vtl and vty, and one additional v
+      # per instance. All instances share vtl, but not v, vty_*
+      pn <- temp$getParamNames()
+      pn <- pn[2:(1 + ((length(pn) - 1) / 2))] # vtl's
+      
+      for (name in sort(names(private$instances))) {
+        pn <- c(pn, paste(c(temp$getParamNames()[1],
+          utils::tail(temp$getParamNames(), (temp$getNumParams() - 1) / 2)), name, sep = "_"))
+      }
+      
+      sort(pn)
+    },
+    # endregion
+    
+    # region Objective
+    setParams = function(params) {
+      stopifnot(is.vector(params) && length(params) == self$getNumParams())
+      stopifnot(is.numeric(params) && !any(is.na(params)))
+      allEq <- all.equal(self$getParamNames(), names(params))
+      stopifnot(is.logical(allEq) && allEq)
+      
+      # params must be an ordered and named vector, and we expect these params:
+      # v_[varname], vtl_1 .. vtl_n, vty_1_[varname] .. vty_n_[varname]
+      # (the vty-subvector is repeated for each instance)
+      
+      pAll <- params[grepl(pattern = "^vtl_\\d+", x = names(params))]
+      pAll <- pAll[sort(names(pAll))]
+      
+      for (name in names(private$instances)) {
+        p_v_vty <- params[grepl(pattern = paste0("_", name, "$"), x = names(params))]
+        p_v_vty <- p_v_vty[sort(names(p_v_vty))]
+        names(p_v_vty) <- gsub(pattern = paste0("_", name, "$"), replacement = "", x = names(p_v_vty))
+        useParams <- c(pAll, p_v_vty)
+        useParams <- useParams[order(names(useParams))]
+        
+        do.call(what = private$instances[[name]]$setParams,
+                args = list(params = useParams))
+      }
+      
+      private$params <- params
+      
+      invisible(self)
+    }
+    # endregion
   )
 )
 
@@ -2135,6 +2453,7 @@ TimeWarpRegularization <- R6Class(
       private$exintKappa <- exintKappa
       
       if (private$use == "exint") {
+        stopifnot(is.character(wpName) && is.character(wcName))
         stopifnot(is.null(exintKappa) || (is.numeric(exintKappa) && !any(is.na(exintKappa))))
         stopifnot(length(intervals) > 0)
       } else {
@@ -2331,6 +2650,7 @@ residuals.srBTAW <- function(model, loss) {
 
 
 
+# srBTAW_Loss2Curves$debug("funcCorr")
 # srBTAW$debug("fit")
 # srBTAW_Loss_Rss$debug("get0Function")
 # srBTAW$debug("residuals")
