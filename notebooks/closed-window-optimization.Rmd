@@ -1325,7 +1325,7 @@ $$
   \\[1ex]
   \rho_q=&\;\delta_q\times\big(y_q^{\max}-y_q^{\min}\big)\;\text{, the total area of that interval,}
   \\[1ex]
-  \rho_q^{(\text{WP})}=&\;\int\displaylimits_{\mathbf{x}_q^{(\text{WP})}}\,r(x)\;\text{, note that}\;\forall\,x\to y_q^{\min}\leq r(x)\leq y_q^{\max}\text{, or}
+  \rho_q^{(\text{WP})}=&\;\int\displaylimits_{\mathbf{x}_q^{(\text{WP})}}\,r(x)-y_q^{\min}\,dx\;\text{, note that}\;\forall\,x\to y_q^{\min}\leq r(x)\leq y_q^{\max}\text{, or}
   \\[1ex]
   \rho_q^{(\text{WP}_d)}=&\;\frac{1}{N}\sum_{i=1}^{N}\,r\Big(\mathbf{x}_{q,i}^{(\text{WP})}\Big)\;\text{,}
   \\[0ex]

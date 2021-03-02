@@ -27,6 +27,7 @@ output:
 header-includes:
 - \usepackage{bm}
 - \usepackage{mathtools}
+- \usepackage{xurl}
 ---
 
 \newcommand*\mean[1]{\overline{#1}}
@@ -47,7 +48,10 @@ library(ggpubr)
 
 This is the complementory technical report for the paper/article tentatively entitled "Detection of Project Management Anti-Patterns through Source Code". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
 
-All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the results. The canonical URL to this notebook is `https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd`, with a rendered markdown version at `https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md`. All code can be found in this repository, too.
+All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the results. The canonical URL to this notebook is[^1], with a rendered markdown version at[^2]. All code can be found in this repository, too.
+
+[^1]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd
+[^2]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md
 
 # Data
 
@@ -85,7 +89,7 @@ temp <- (function() {
   all <- NULL
   for (repo in repos) {
     temp <- read.csv(file = paste0("D:/repos/", repo, ".csv"))
-    temp <- cbind(data.frame(Project = rep(paste0("p", idx), nrow(temp))), temp)
+    temp <- cbind(data.frame(project = rep(paste0("project_", idx), nrow(temp))), temp)
     all <- rbind(all, temp) 
     idx <- idx + 1
   }
@@ -118,8 +122,8 @@ We have a complete breakdown of all activities across all projects in figure \re
 ```{r echo=FALSE}
 student_projects_info <- NULL
 
-for (pId in unique(student_projects$Project)) {
-  temp <- student_projects[student_projects$Project == pId, ]
+for (pId in unique(student_projects$project)) {
+  temp <- student_projects[student_projects$project == pId, ]
   student_projects_info <- rbind(student_projects_info, data.frame(
     project = pId,
     authors = length(unique(temp$AuthorNominalLabel)),
@@ -143,7 +147,7 @@ if (!interactive()) {
 
 ```{r project-activity, echo=FALSE, fig.cap="Commit activities across projects", fig.align="top", fig.pos="ht!"}
 ggplot(data = student_projects, aes(x = length(label), fill = label)) +
-  geom_bar() + facet_grid(label ~ Project) +
+  geom_bar() + facet_grid(label ~ project) +
   theme_light() +
   theme(
     axis.title.x = element_blank(),
@@ -155,24 +159,26 @@ ggplot(data = student_projects, aes(x = length(label), fill = label)) +
 
 We have slightly different begin- and end-times in each project. However, the data for all projects was previously cropped, so that each project's extent marks the absolute begin and end of it -- it starts with the first commit and ends with the last. As for our methods here, we only need to make sure that we scale the timestamps into a relative $[0,1]$-range, where $1$ marks the project's end.
 
-For each project, we model __four__ variables: The activities __adaptive__ (__`A`__), __corrective+perfective__ (__`CP`__), the frequency of all activities, regardless of their type (__`FREQ`__), and the __source code density__ (__`SCD`__) [@honel2020using]. While for the first three variables we estimate a Kernel density, the last variable is a metric collected with each commit.
+For each project, we model __four__ variables: The activities __adaptive__ (__`A`__), __corrective+perfective__ (__`CP`__), the frequency of all activities, regardless of their type (__`FREQ`__), and the __source code density__ (__`SCD`__). While for the first three variables we estimate a Kernel density, the last variable is a metric collected with each commit. The data for it is mined using `Git-Density` [@honel2020gitdens], and we use a highly efficient commit classification model[^3] ($\approx83.6\%$ accuracy, $\approx0.745$ Kappa) [@honel2020using] to attach maintenance activity labels to each commit, based on size- and keyword-data only.
+
+[^3]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.md
 
 Technically, we will compose each variable into an instance of our `Signal`-class. Before we start, we will do some normalizations and conversions, like converting the timestamps. This has to be done on a per-project basis.
 
 ```{r}
 student_projects$label <- as.factor(student_projects$label)
-student_projects$Project <- as.factor(student_projects$Project)
+student_projects$project <- as.factor(student_projects$project)
 student_projects$AuthorTimeNormalized <- NA_real_
 ```
 
 ```{r echo=FALSE}
-for (pId in levels(student_projects$Project)) {
-  student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized <-
-    (student_projects[student_projects$Project == pId, ]$AuthorTimeUnixEpochMilliSecs -
-      min(student_projects[student_projects$Project == pId, ]$AuthorTimeUnixEpochMilliSecs))
-  student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized <-
-    (student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized /
-      max(student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized))
+for (pId in levels(student_projects$project)) {
+  student_projects[student_projects$project == pId, ]$AuthorTimeNormalized <-
+    (student_projects[student_projects$project == pId, ]$AuthorTimeUnixEpochMilliSecs -
+      min(student_projects[student_projects$project == pId, ]$AuthorTimeUnixEpochMilliSecs))
+  student_projects[student_projects$project == pId, ]$AuthorTimeNormalized <-
+    (student_projects[student_projects$project == pId, ]$AuthorTimeNormalized /
+      max(student_projects[student_projects$project == pId, ]$AuthorTimeNormalized))
 }
 ```
 
@@ -184,8 +190,8 @@ project_signals <- list()
 # passed to stats::density
 use_kernel <- "gauss" # "rect"
 
-for (pId in levels(student_projects$Project)) {
-  temp <- student_projects[student_projects$Project == pId, ]
+for (pId in levels(student_projects$project)) {
+  temp <- student_projects[student_projects$project == pId, ]
   
   # We'll need these for the densities:
   acp_ratios <- table(temp$label) / sum(table(temp$label))
@@ -215,9 +221,12 @@ for (pId in levels(student_projects$Project)) {
     x = attr(dens_freq, "x"), y = sapply(X = attr(dens_freq, "x"), FUN = dens_freq) / ymax)
   
   project_signals[[pId]] <- list(
-    A = Signal$new(name = "A", func = dens_a, support = c(0, 1), isWp = FALSE),
-    CP = Signal$new(name = "CP", func = dens_cp, support = c(0, 1), isWp = FALSE),
-    FREQ = Signal$new(name = "FREQ", func = dens_freq, support = c(0, 1), isWp = FALSE)
+    A = Signal$new(name = paste(pId, "A", sep = "_"),
+                   func = dens_a, support = c(0, 1), isWp = FALSE),
+    CP = Signal$new(name = paste(pId, "CP", sep = "_"),
+                    func = dens_cp, support = c(0, 1), isWp = FALSE),
+    FREQ = Signal$new(name = paste(pId, "FREQ", sep = "_"),
+                      func = dens_freq, support = c(0, 1), isWp = FALSE)
   )
 }
 ```
@@ -225,31 +234,32 @@ for (pId in levels(student_projects$Project)) {
 Now, for each project, we estimate the variable for the source code density as follows:
 
 ```{r warning=FALSE}
-for (pId in levels(student_projects$Project)) {
+for (pId in levels(student_projects$project)) {
   temp <- data.frame(
-    x = student_projects[student_projects$Project == pId, ]$AuthorTimeNormalized,
-    y = student_projects[student_projects$Project == pId, ]$Density)
+    x = student_projects[student_projects$project == pId, ]$AuthorTimeNormalized,
+    y = student_projects[student_projects$project == pId, ]$Density)
   temp <- temp[with(temp, order(x)), ]
-  ry <- range(temp$y)
   
   # Using a polynomial with maximum possible degree, we smooth the
   # SCD-data, as it can be quite "peaky"
   temp_poly <- poly_autofit_max(x = temp$x, y = temp$y, startDeg = 13)
   
-  dens_scd <- (function() {
-    r <- range(temp$x)
+  dens_scd <- Vectorize((function() {
+    rx <- range(temp$x)
+    ry <- range(temp$y)
     poly_y <- stats::predict(temp_poly, x = temp$x)
     tempf <- stats::approxfun(x = temp$x, y = poly_y, ties = "ordered")
-    Vectorize(function(x) {
-      if (x < r[1] || x > r[2]) {
+    function(x) {
+      if (x < rx[1] || x > rx[2]) {
         return(NA_real_)
       }
       max(ry[1], min(ry[2], tempf(x)))
-    })
-  })()
+    }
+  })())
   
   project_signals[[pId]][["SCD"]] <- Signal$new(
-    name = "SCD", func = dens_scd, support = c(0, 1), isWp = FALSE)
+    name = paste(pId, "SCD", sep = "_"), func = dens_scd,
+    support = c(0, 1), isWp = FALSE)
 }
 ```
 
@@ -261,7 +271,7 @@ colnames(tempdf) <- c("x", "y", "p", "v")
 
 n <- 500
 x <- seq(from = 0, to = 1, length.out = n)
-for (pId in levels(student_projects$Project)) {
+for (pId in levels(student_projects$project)) {
   for (v in c("A", "CP", "FREQ", "SCD")) {
     tempdf <- rbind(tempdf, data.frame(
       x = x,
@@ -313,35 +323,286 @@ This pattern was created based on all available literature, __without__ inspecti
 We define the boundaries as follows (there are three boundaries to split the pattern into four intervals):
 
 ```{r}
-fd_data_boundaries <- c(
-  "b1" = 0.085,
-  "b2" = 0.625,
-  "b3" = 0.875
-)
+fd_data_boundaries <- c("b1" = 0.085, "b2" = 0.625, "b3" = 0.875)
 ```
 
 The pattern and its boundaries look like this:
 
-```{r}
+```{r pattern-1, fig.cap="The pattern that was our initial best guess", fig.align="top", fig.pos="ht!"}
 plot_project_data(data = fd_data_concat, boundaries = fd_data_boundaries)
+```
+
+### Initialize the pattern
+
+The pattern as shown in \ref{fig:pattern-1} is just a collection of x/y coordinate-data, and for us being able to use it, we need to instantiate it. We do this by storing each variable in an instance of `Signal`.
+
+```{r}
+p1_signals <- list(
+  A = Signal$new(name = "p1_A", support = c(0, 1), isWp = TRUE, func = 
+    stats::approxfun(
+      x = fd_data_concat[fd_data_concat$t == "A", ]$x,
+      y = fd_data_concat[fd_data_concat$t == "A", ]$y)),
+  CP = Signal$new(name = "p1_CP", support = c(0, 1), isWp = TRUE, func = 
+    stats::approxfun(
+      x = fd_data_concat[fd_data_concat$t == "CP", ]$x,
+      y = fd_data_concat[fd_data_concat$t == "CP", ]$y)),
+  FREQ = Signal$new(name = "p1_FREQ", support = c(0, 1), isWp = TRUE, func = 
+    stats::approxfun(
+      x = fd_data_concat[fd_data_concat$t == "FREQ", ]$x,
+      y = fd_data_concat[fd_data_concat$t == "FREQ", ]$y)),
+  SCD = Signal$new(name = "p1_SCD", support = c(0, 1), isWp = TRUE, func = 
+    stats::approxfun(
+      x = fd_data_concat[fd_data_concat$t == "SCD", ]$x,
+      y = fd_data_concat[fd_data_concat$t == "SCD", ]$y))
+)
+```
+
+```{r echo=FALSE, fig.height=1.8}
+ggarrange(
+  p1_signals$A$plot() + ylim(0,1), p1_signals$CP$plot() + ylim(0,1),
+  p1_signals$FREQ$plot() + ylim(0,1), p1_signals$SCD$plot() + ylim(0,1),
+  nrow = 1
+)
 ```
 
 
 
 ## Pattern II: Adaptation of best guess
 
-The second pattern is a compromise between the first and the third: While we want to keep as much of the initial best guess, we also want to adjust the pattern based on the projects and the ground truth. Adjusting means, that we will keep what is in each interval, but we allow each interval to stretch and compress, and we allow each interval to impose a vertical translation both at then begin and end (a somewhat trapezoidal translation). In any case, each such alteration is a linear affine transformation. Additionally to sr-BTW, we will also apply __sr-BAW__ (self-regularizing Boundary Amplitude Warping) to accomplish this. This model is called __sr-BTAW__ and the process is the following:
+The second pattern is a compromise between the first and the third: While we want to keep as much of the initial best guess, we also want to adjust the pattern based on the projects and the ground truth. Adjusting means, that we will keep what is in each interval, but we allow each interval to stretch and compress, and we allow each interval to impose a vertical translation both at then begin and end (a somewhat trapezoidal translation). In any case, each such alteration is a linear affine transformation. Additionally to sr-BTW, we will also apply __sr-BAW__ (self-regularizing Boundary Amplitude Warping) to accomplish this. This model is called __`srBTAW`__ and the process is the following:
 
 * The pattern is decomposed into its four variables first, as we can adapt these (almost) independently from each other.
-* Then, for each type of variable, an instance of sr-BTAW is created. As __Warping Candidates__ (WC) we add all of the projects' corresponding variables. The __Warping Pattern__ (WP) is the single variable from the pattern in this case -- again, we warp the project data, however, eventually the learned warping gets inversed and applied to the WC.
-* All four sr-BTAW instances are then fitted simultaneously: While we allow the y-translations to adapt independently for each type of variable, all instances share the same intervals, as eventually we have to assemble the variables back into a common pattern.
+* Then, for each type of variable, an instance of `srBTAW` is created. As __Warping Candidates__ (WC) we add all of the projects' corresponding variables. The __Warping Pattern__ (WP) is the single variable from the pattern in this case -- again, we warp the project data, however, eventually the learned warping gets inversed and applied to the WC.
+* All four `srBTAW` instances are then fitted simultaneously: While we allow the y-translations to adapt independently for each type of variable, all instances share the same intervals, as eventually we have to assemble the variables back into a common pattern.
+
+### Preparation
+
+We already have the `srBTAW` __Multilevel model__, which can keep track of arbitrary many variables and losses. The intention behind this however was, to track variables of the __same type__, i.e., signals that are logically of the same type. In our case this means that any single instance should only track variables that are either `A`, `CP`, `FREQ` or `SCD`. For this pattern, the WP is a single signal per variable, and the WC is the corresponding signal from each of the nine projects. This is furthermore important to give different weights to different variables. In our case, we want to give a lower weight to the `SCD`-variable.
+
+As for the loss, we will first test a combined loss that measures __`3`__ properties: The area between curves (or alternatively the residual sum of squares), the correlation between the curves, and the arc-length ratio between the curves. We will consider any of these to be equally important, i.e., no additional weights. Each loss shall cover all intervals with weight $=1$, except for the Long Stretch interval, where we will use a reduced weight.
+
+There are $4$ types of variables, $7$ projects (two projects have consensus $=0$, i.e., no weight) and $2\times 3$ single losses, resulting in $168$ losses to compute. The final weight for each loss is computed as: $\omega_i=\omega^{(\text{project})}\times\omega^{(\text{vartype})}\times\omega^{(\text{interval})}$. For the phase Long Stretch, the weight for any loss will $\frac{1}{2}$, and for the source code density we will chose $\frac{1}{2}$, too. The weight of each project is based on the consensus of the ground truth. The ordinal scale for that is $[0,10]$, so that we will divide the score by $10$ and use that as weight. Examples:
+
+* __A__ in Fire Drill in project $p3$: $\omega=0.6\times 1\times 1=0.6$ (consensus is $6$ in project $p3$)
+* __FREQ__ in Long Stretch in project $p7$: $\omega=0.3\times 0.5\times 1=0.15$ and
+* __SCD__ in Long Stretch in project $p4$: $\omega=0.8\times 0.5\times 0.5=0.2$.
+
+In table \ref{tab:groundtruth-score} we show all projects with a consensus-score $>0$, projects $2$ and $8$ are not included any longer.
+
+```{r}
+ground_truth$consensus_score <- ground_truth$consensus / 10
+weight_vartype <- c("A" = 1, "CP" = 1, "FREQ" = 1, "SCD" = 0.5)
+weight_interval <- c("Begin" = 1, "Long Stretch" = 0.5, "Fire Drill" = 1, "Aftermath" = 1)
+```
+
+```{r echo=FALSE}
+temp <- expand.grid(weight_interval, weight_vartype, ground_truth$consensus_score)
+temp$p <- temp$Var1 * temp$Var2 * temp$Var3
+weight_total <- sum(temp$p)
+```
+
+The sum of all weights combined is `r weight_total`.
+
+```{r echo=FALSE}
+knitr::kable(
+  x = ground_truth[ground_truth$consensus > 0, c("project", "consensus", "consensus_score")],
+  booktabs = TRUE,
+  caption = "Entire ground truth as of both raters",
+  label = "groundtruth-score"
+)
+```
+
+### Defining the losses
+
+For the optimization we will use mainly __`5`__ classes:
+
+* `srBTAW_MultiVartype`: One instance globally, that manages all parameters across all instances of `srBTAW`.
+* `srBTAW`: One instance per variable-type, so here we'll end up with four instances.
+* `srBTAW_LossLinearScalarizer`: A linear scalarizer that will take on all of the defined singular losses and compute and add them together according to their weight.
+* `srBTAW_Loss2Curves`: Used for each of the $168$ singular losses, and configured using a specific loss function, weight, and set of intervals where it ought to be used.
+* `TimeWarpRegularization`: One global instance for all `srBTAW` instances, to regularize extreme intervals. We chose a mild weight for this of just $1$, which is small compared to the sum of all other weights (`r weight_total`).
+
+```{r}
+p2_smv <- srBTAW_MultiVartype$new()
+
+p2_vars <- c("A", "CP", "FREQ", "SCD")
+p2_inst <- list()
+for (name in p2_vars) {
+  p2_inst[[name]] <- srBTAW$new(
+    theta_b = c(0, fd_data_boundaries, 1),
+    gamma_bed = c(0, 1, sqrt(.Machine$double.eps)),
+    lambda = rep(sqrt(.Machine$double.eps), length(p2_vars)),
+    begin = 0, end = 1, openBegin = FALSE, openEnd = FALSE,
+    useAmplitudeWarping = TRUE,
+    lambda_ymin = rep(0, length(p2_vars)),
+    lambda_ymax = rep(1, length(p2_vars)),
+    isObjectiveLogarithmic = TRUE,
+    paramNames = c("v",
+                   paste0("vtl_", seq_len(length.out = length(p2_vars))),
+                   paste0("vty_", seq_len(length.out = length(p2_vars)))))
+  
+  # We can already add the WP:
+  p2_inst[[name]]$setSignal(signal = p1_signals[[name]])
+  p2_smv$setSrbtaw(varName = name, srbtaw = p2_inst[[name]])
+  
+  # .. and also all the projects' signals:
+  for (project in ground_truth[ground_truth$consensus > 0, ]$project) {
+    p2_inst[[name]]$setSignal(signal = project_signals[[project]][[name]])
+  }
+}
+
+# We call this there so there are parameters present.
+p2_smv$setParams(params =
+                   `names<-`(x = runif(n = p2_smv$getNumParams()),
+                             value = p2_smv$getParamNames()))
+```
+
+We can already initialize the linear scalarizer. This includes also to set up some progress-callback. Even with massive parallelization, this process will take its time so it will be good to know where we are approximately.
+
+```{r}
+p2_lls <- srBTAW_LossLinearScalarizer$new(
+  computeParallel = TRUE, progressCallback = function(what, step, total) {
+    if (step == total) {
+      print(paste(what, step, total))
+    }
+  })
+
+for (name in names(p2_inst)) {
+  p2_inst[[name]]$setObjective(obj = p2_lls)
+}
+```
+
+The basic infrastructure stands, so now it's time to instantiate all of the singular losses. First we define a helper-function to do the bulk-work, then we iterate all projects, variables and intervals.
+
+```{r}
+#' This function creates a singular loss that is a linear combination
+#' of an area-, correlation- and arclength-loss (all with same weight).
+p2_attach_combined_loss <- function(project, vartype, intervals) {
+  weight_p <- ground_truth[ground_truth$project == project, ]$consensus_score
+  weight_v <- weight_vartype[[vartype]]
+  temp <- weight_interval[intervals]
+  stopifnot(length(unique(temp)) == 1)
+  weight_i <- unique(temp)
+  weight <- weight_p * weight_v * weight_i
+  
+  lossArea <- srBTAW_Loss2Curves$new(
+    srbtaw = p2_inst[[vartype]], wpName = paste0("p1_", vartype),
+    wcName = paste(project, vartype, sep = "_"), weight = weight,
+    intervals = intervals, use = "area", continuous = FALSE,
+    numSamples = rep(1e3, length(intervals)))
+  lossCorr <- srBTAW_Loss2Curves$new(
+    srbtaw = p2_inst[[vartype]], wpName = paste0("p1_", vartype),
+    wcName = paste(project, vartype, sep = "_"), weight = weight,
+    intervals = intervals, use = "corr", continuous = FALSE,
+    numSamples = rep(1e3, length(intervals)))
+  # lossArclen <- srBTAW_Loss2Curves$new(
+  #   srbtaw = p2_inst[[vartype]], wpName = paste0("p1_", vartype),
+  #   wcName = paste(project, vartype, sep = "_"), weight = weight,
+  #   intervals = intervals, use = "arclen")
+  
+  p2_lls$setObjective(
+    name = paste(project, vartype, paste(intervals, collapse = "_"),
+                 "area", sep = "_"), obj = lossArea)
+  p2_lls$setObjective(
+    name = paste(project, vartype, paste(intervals, collapse = "_"),
+                 "corr", sep = "_"), obj = lossCorr)
+  # p2_lls$setObjective(
+  #   name = paste(project, vartype, paste(intervals, collapse = "_"),
+  #                "arclen", sep = "_"), obj = lossArclen)
+  
+  p2_inst[[vartype]]$addLoss(loss = lossArea)
+  p2_inst[[vartype]]$addLoss(loss = lossCorr)
+  # p2_inst[[vartype]]$addLoss(loss = lossArclen)
+}
+```
+
+Let's call our helper in iteratively:
+
+```{r}
+interval_types <- list(A = c(1,3,4), B = 2)
+for (project in ground_truth[ground_truth$consensus > 0, ]$project) {
+  for (vartype in p2_vars) {
+    for (intervals in interval_types) {
+      p2_attach_combined_loss(
+        project = project, vartype = vartype, intervals = intervals)
+    }
+  }
+}
+```
+
+
+Finally, we add the regularizer for extreme intervals and extreme outputs:
+
+```{r}
+p2_lls$setObjective(name = "p2_reg_exint", obj = TimeWarpRegularization$new(
+  weight = 1, use = "exint",
+  wpName = p1_signals$A$getName(), wcName = project_signals$project_1$A$getName(),
+  intervals = seq_len(length.out = length(p2_vars))
+)$setSrBtaw(srbtaw = p2_inst$A))
+
+p2_lls$setObjective(name = "p2_reg_output", obj = YTransRegularization$new(
+  weight = .25, use = "tikhonov",
+  wpName = NULL, wcName = NULL, intervals = seq_len(length.out = length(p2_vars))
+)$setSrBtaw(srbtaw = p2_inst$A))
+
+# We add the regularizers to the first srBTAW, because it does not matter.
+```
+
+
+### Fitting the pattern
+
+```{r}
+# for (o in p2_lls$.__enclos_env__$private$objectives) {
+#   print(paste(o$.__enclos_env__$private$use, o$getWcName(), o$getWpName(), unname(o$compute0())))
+# }
+
+# p2_res <- loadResultsOrCompute(file = "../results/fdtr_p2_res.rds", computeExpr = {
+#   cl <- parallel::makePSOCKcluster(parallel::detectCores())
+#   doWithParallelClusterExplicit(cl = cl, expr = {
+#     fr <- FitResult$new(paramNames = c(p2_smv$getParamNames(), "loss"))
+#     fr$start()
+#   
+#     optR <- stats::optim(
+#       par = p2_smv$getParams(),
+#       method = "L-BFGS-B",
+#       lower = c(
+#         rep(0, length(p2_vars)), # v_[vartype]
+#         rep(sqrt(.Machine$double.eps), length(p2_vars)), # vtl
+#         rep(-.Machine$double.xmax, length(p2_vars) * length(weight_vartype))), # vty for each
+#       upper = c(
+#         rep(1, length(p2_vars)),
+#         rep(1, length(p2_vars)),
+#         rep(.Machine$double.xmax, length(p2_vars) * length(weight_vartype))),
+#       fn = function(x) {
+#         fr$startStep()
+#         p2_smv$setParams(params = x)
+#         loss <- p2_lls$compute0()
+#         fr$stopStep(resultParams = c(x, loss))
+#         loss
+#       },
+#       gr = function(x) {
+#         pracma::grad(f = function(x_) {
+#           p2_smv$setParams(params = x_)
+#           p2_lls$compute0()
+#         }, x0 = x)
+#       }
+#     )
+#     
+#     fr$setOptResult(optResult = optR)
+#     fr$finish()
+#   })
+# })
+```
+
+
+### Inversing the parameters
 
 
 ## Pattern III: Evidence-based
 
 A third kind of pattern is produced by starting with an empty pattern and having it adapt to the available ground truth. Here we inverse the relation WP-WC: All data is becoming the constant Warping Pattern, and we warp an empty pattern as candidate to it. Empty means that we will start with a flat line located at $0.5$ for each pattern. To find the optimum amount of intervals, we try all values in a certain range and compute a fit, and then use an information criterion to decide which of the produced patterns provides the best trade-off between number of parameters and goodness-of-fit.
 
-The process is very similar to the one for pattern II: Using a set of sr-BTAW instances (one instance per variable type) that all share the same intervals, we allow each to produce individual amplitude warpings.
+The process is very similar to the one for pattern II: Using a set of `srBTAW` instances (one instance per variable type) that all share the same intervals, we allow each to produce individual amplitude warpings.
 
 
 
