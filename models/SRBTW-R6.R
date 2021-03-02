@@ -977,7 +977,7 @@ Differentiable <- R6Class(
     },
     
     getNumParams = function() {
-      length(private$paramNames)
+      length(self$getParamNames())
     },
     
     getOutputNames = function() {
@@ -985,7 +985,7 @@ Differentiable <- R6Class(
     },
     
     getNumOutputs = function() {
-      private$numOuts
+      length(self$getOutputNames())
     },
     
     #' Returns a function that takes a single argument, x, that
@@ -1014,7 +1014,7 @@ Objective <- R6Class(
   lock_objects = FALSE,
   
   private = list(
-    zeroFunc = Vectorize(function(x) 0)
+    zeroFunc = function(x) rep(0, length(x))
   ),
   
   public = list(
@@ -1300,7 +1300,9 @@ srBTAW_LossLinearScalarizer <- R6Class(
     },
     
     setParams = function(params) {
-      private$requireOneObjective()$getSrBtaw()$setParams(params = params)
+      for (name in names(private$objectives)) {
+        private$objectives[[name]]$getSrBtaw()$setParams(params = params)
+      }
       invisible(self)
     },
     
@@ -1403,7 +1405,8 @@ Model <- R6Class(
     setParams = function(params) {
       stopifnot(is.vector(params) && length(params) == self$getNumParams())
       stopifnot(is.numeric(params) && !any(is.na(params)))
-      stopifnot(TRUE == all.equal(self$getParamNames(), names(params)))
+      allEq <- all.equal(self$getParamNames(), names(params))
+      stopifnot(is.logical(allEq) && allEq)
       private$params <- params
       invisible(self)
     },
