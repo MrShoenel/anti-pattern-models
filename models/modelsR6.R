@@ -27,6 +27,10 @@ FitResult <- R6Class(
       self$optResult <- NA
     },
     
+    getParamNames = function() {
+      colnames(private$fitHist)
+    },
+    
     start = function() {
       self$begin <- as.numeric(Sys.time())
       invisible(self)
@@ -85,6 +89,14 @@ FitResult <- R6Class(
       invisible(self)
     },
     
+    plot_loss = function() {
+      self$plot(paramNames = "loss", logY = FALSE)
+    },
+    
+    plot_logloss = function() {
+      self$plot(paramNames = "loss", logY = TRUE)
+    },
+    
     plot = function(paramNames = colnames(self$getFitHist()), logY = TRUE) {
       stopifnot(is.character(paramNames) && length(paramNames) > 0 && all(paramNames %in% colnames(self$getFitHist())))
       fh <- self$getFitHist()
@@ -103,6 +115,19 @@ FitResult <- R6Class(
       }
 
       g + ggplot2::labs(x = "Step", y = "Value", color = "Params", subtitle = "FitResult")
+    },
+    
+    #' Imports a result from optimParallel:
+    fromOptimParallel = function(optR) {
+      self$initialize(paramNames = c(names(optR$par), "loss"))
+      
+      for (idx in seq_len(nrow(optR$loginfo))) {
+        self$startStep()
+        self$stopStep(resultParams = optR$loginfo[
+          idx, c(paste0("par", seq_len(length.out = length(optR$par))), "fn")])
+      }
+      
+      invisible(self)
     }
   )
 )
