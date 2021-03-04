@@ -1683,7 +1683,7 @@ srBTAW_Loss2Curves <- R6Class(
           X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
           y <- sapply(X = X, FUN = t$wp)
           y_hat <- sapply(X = X, FUN = wc)
-          err <- err + (sum(abs(y - y_hat)) / private$numSamples[idx])
+          err <- err + (sum(abs(y - y_hat)) / private$numSamples[idx]) # =MAE
         }
         
         idx <- idx + 1
@@ -1784,13 +1784,13 @@ srBTAW_Loss2Curves <- R6Class(
         wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
         
         if (continuous) {
-          err <- err + cubature::cubintegrate(
+          err <- err + (private$numSamples[idx] / (t$te_q - t$tb_q)) * cubature::cubintegrate(
             f = function(x) (t$wp(x) - wc(x))^2, lower = t$tb_q, upper = t$te_q)$integral
         } else {
           X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
           y <- sapply(X = X, FUN = t$wp)
           y_hat <- sapply(X = X, FUN = wc)
-          err <- err + (sum((y - y_hat)^2) / private$numSamples[idx])
+          err <- err + sum((y - y_hat)^2)
         }
         
         idx <- idx + 1
