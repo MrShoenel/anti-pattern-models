@@ -461,6 +461,7 @@ We can already initialize the linear scalarizer. This includes also to set up so
 
 ```{r}
 p2_lls <- srBTAW_LossLinearScalarizer$new(
+  returnRaw = FALSE,
   computeParallel = TRUE, progressCallback = function(what, step, total) {
     if (step == total) {
       print(paste(what, step, total))
@@ -478,53 +479,22 @@ The basic infrastructure stands, so now it's time to instantiate all of the sing
 #' This function creates a singular loss that is a linear combination
 #' of an area-, correlation- and arclength-loss (all with same weight).
 p2_attach_combined_loss <- function(project, vartype, intervals) {
-  # weight_p <- ground_truth[ground_truth$project == project, ]$consensus_score
-  # weight_v <- weight_vartype[[vartype]]
-  # temp <- weight_interval[intervals]
-  # stopifnot(length(unique(temp)) == 1)
-  # weight_i <- unique(temp)
-  # weight <- weight_p * weight_v * weight_i
-  weight <- 1
+  weight_p <- ground_truth[ground_truth$project == project, ]$consensus_score
+  weight_v <- weight_vartype[[vartype]]
+  temp <- weight_interval[intervals]
+  stopifnot(length(unique(temp)) == 1)
+  weight_i <- unique(temp)
+  weight <- weight_p * weight_v * weight_i
   
-  lossRss <- srBTAW_Loss2Curves$new(
-    srbtaw = p2_inst[[vartype]], wpName = paste0("p1_", vartype),
-    wcName = paste(project, vartype, sep = "_"), weight = weight,
-    intervals = intervals, use = "rss", continuous = FALSE,
-    numSamples = rep(25e2, length(intervals)))
+  lossRss <- srBTAW_Loss_Rss$new(
+    wpName = paste0("p1_", vartype), wcName = paste(project, vartype, sep = "_"),
+    weight = weight, intervals = intervals, continuous = FALSE,
+    numSamples = rep(500, length(intervals)), returnRaw = TRUE)
   
+  p2_inst[[vartype]]$addLoss(loss = lossRss)
   p2_lls$setObjective(
     name = paste(project, vartype, paste(intervals, collapse = "_"),
                  "rss", sep = "_"), obj = lossRss)
-  
-  p2_inst[[vartype]]$addLoss(loss = lossRss)
-  
-  # lossArea <- srBTAW_Loss2Curves$new(
-  #   srbtaw = p2_inst[[vartype]], wpName = paste0("p1_", vartype),
-  #   wcName = paste(project, vartype, sep = "_"), weight = weight,
-  #   intervals = intervals, use = "area", continuous = TRUE)
-  # lossCorr <- srBTAW_Loss2Curves$new(
-  #   srbtaw = p2_inst[[vartype]], wpName = paste0("p1_", vartype),
-  #   wcName = paste(project, vartype, sep = "_"), weight = weight,
-  #   intervals = intervals, use = "corr", continuous = FALSE,
-  #   numSamples = rep(1e3, length(intervals)))
-  # lossArclen <- srBTAW_Loss2Curves$new(
-  #   srbtaw = p2_inst[[vartype]], wpName = paste0("p1_", vartype),
-  #   wcName = paste(project, vartype, sep = "_"), weight = weight,
-  #   intervals = intervals, use = "arclen")
-  # 
-  # p2_lls$setObjective(
-  #   name = paste(project, vartype, paste(intervals, collapse = "_"),
-  #                "area", sep = "_"), obj = lossArea)
-  # p2_lls$setObjective(
-  #   name = paste(project, vartype, paste(intervals, collapse = "_"),
-  #                "corr", sep = "_"), obj = lossCorr)
-  # p2_lls$setObjective(
-  #   name = paste(project, vartype, paste(intervals, collapse = "_"),
-  #                "arclen", sep = "_"), obj = lossArclen)
-  # 
-  # p2_inst[[vartype]]$addLoss(loss = lossArea)
-  # p2_inst[[vartype]]$addLoss(loss = lossCorr)
-  # p2_inst[[vartype]]$addLoss(loss = lossArclen)
 }
 ```
 
@@ -533,103 +503,51 @@ Let's call our helper in iteratively:
 ```{r}
 interval_types <- list(A = c(1,3,4), B = 2)
 
-for (project in ground_truth[ground_truth$consensus > 0, ]$project) {
-  for (vartype in p2_vars) {
+
+for (vartype in p2_vars) {
+  for (project in ground_truth[ground_truth$consensus > 0, ]$project) {
     for (intervals in interval_types) {
       p2_attach_combined_loss(
         project = project, vartype = vartype, intervals = intervals)
     }
   }
+  
+  # Add one per variable-pair:
+  lossYtrans <- YTransRegularization$new(
+    wpName = paste0("p1_", vartype), wcName = paste(project, vartype, sep = "_"),
+    intervals = seq_len(length.out = 4), returnRaw = TRUE,
+    weight = 1, use = "tikhonov")
+    
+  p2_inst[[vartype]]$addLoss(loss = lossYtrans)
+  p2_lls$setObjective(
+    name = paste(vartype, "p2_reg_output", sep = "_"),
+    obj = lossYtrans)
 }
 ```
 
 
-Finally, we add the regularizer for extreme intervals and extreme outputs:
+Finally, we add the regularizer for extreme intervals:
 
 ```{r}
-p2_lls$setObjective(name = "p2_reg_exint", obj = TimeWarpRegularization$new(
-  weight = 1, use = "exint",
+p2_lls$setObjective(name = "p2_reg_exint2", obj = TimeWarpRegularization$new(
+  weight = p2_lls$getNumObjectives() / 20, use = "exint2", returnRaw = TRUE,
   wpName = p1_signals$A$getName(), wcName = project_signals$project_1$A$getName(),
   intervals = seq_len(length.out = length(p2_vars))
 )$setSrBtaw(srbtaw = p2_inst$A))
-
-p2_lls$setObjective(name = "p2_reg_output", obj = YTransRegularization$new(
-  weight = .25, use = "tikhonov",
-  wpName = NULL, wcName = NULL, intervals = seq_len(length.out = length(p2_vars))
-)$setSrBtaw(srbtaw = p2_inst$A))
-
-# We add the regularizers to the first srBTAW, because it does not matter.
 ```
 
 
 ### Fitting the pattern
 
-```{r}
-cl <- parallel::makePSOCKcluster(parallel::detectCores())
-# parallel::clusterExport(cl, varlist = list("p2_smv", "p2_lls"))
-tempf <- tempfile()
-saveRDS(object = list(a = p2_smv, b = p2_lls), file = tempf)
-parallel::clusterExport(cl, varlist = list("tempf"))
-
-res <- doWithParallelClusterExplicit(cl = cl, expr = {
-  optimParallel::optimParallel(
-    par = p2_smv$getParams(),
-    method = "L-BFGS-B",
-    lower = c(
-      rep(0, length(p2_vars)), # v_[vartype]
-      rep(sqrt(.Machine$double.eps), length(p2_vars)), # vtl
-      rep(-.Machine$double.xmax, length(p2_vars) * length(weight_vartype))), # vty for each
-    upper = c(
-      rep(1, length(p2_vars)),
-      rep(1, length(p2_vars)),
-      rep(.Machine$double.xmax, length(p2_vars) * length(weight_vartype))),
-    fn = function(x) {
-      temp <- readRDS(file = tempf)
-      temp$a$setParams(params = x)
-      temp$b$compute0()
-      # p2_smv$setParams(params = x)
-      # p2_lls$compute0()
-    },
-    # gr = function(x) {
-    #   library(foreach)
-    #   cl_nested <- parallel::makePSOCKcluster(parallel::detectCores())
-    #   doSNOW::registerDoSNOW(cl = cl_nested)
-    #   
-    #   foreach::foreach(
-    #     pIdx = seq_len(length.out = length(x)),
-    #     .combine = c,
-    #     .inorder = TRUE,
-    #     .export = c("p2_smv", "p2_lls"),
-    #     .packages = c("pracma")
-    #   ) %dopar% {
-    #     pracma::grad(f = function(p) {
-    #       params <- x
-    #       params[pIdx] <- p
-    #       p2_smv$setParams(params = params)
-    #       p2_lls$compute0()
-    #     }, x0 = x[pIdx])
-    #   }
-    # },
-    parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
-  )
-})
-
-saveRDS(object = res, file = "../results/ser-test.rds")
-```
-
-
-```{r}
-# for (o in p2_lls$.__enclos_env__$private$objectives) {
-#   print(paste(o$.__enclos_env__$private$use, o$getWcName(), o$getWpName(), unname(o$compute0())))
-# }
-
-p2_res <- loadResultsOrCompute(file = "../results/fdtr_p2_res.rds", computeExpr = {
-  cl <- parallel::makePSOCKcluster(parallel::detectCores())
-  doWithParallelClusterExplicit(cl = cl, expr = {
-    fr <- FitResult$new(paramNames = c(p2_smv$getParamNames(), "loss"))
-    fr$start()
-
-    optR <- stats::optim(
+```{r p2-params}
+p2_params <- loadResultsOrCompute(file = "../results/p2_params.rds", computeExpr = {
+  cl <- parallel::makePSOCKcluster(min(64, parallel::detectCores()))
+  tempf <- tempfile()
+  saveRDS(object = list(a = p2_smv, b = p2_lls), file = tempf)
+  parallel::clusterExport(cl, varlist = list("tempf"))
+  
+  res <- doWithParallelClusterExplicit(cl = cl, expr = {
+    optimParallel::optimParallel(
       par = p2_smv$getParams(),
       method = "L-BFGS-B",
       lower = c(
@@ -641,26 +559,15 @@ p2_res <- loadResultsOrCompute(file = "../results/fdtr_p2_res.rds", computeExpr 
         rep(1, length(p2_vars)),
         rep(.Machine$double.xmax, length(p2_vars) * length(weight_vartype))),
       fn = function(x) {
-        fr$startStep()
-        p2_smv$setParams(params = x)
-        loss <- p2_lls$compute0()
-        fr$stopStep(resultParams = c(x, loss))
-        loss
-      # },
-      # gr = function(x) {
-      #   pracma::grad(f = function(x_) {
-      #     p2_smv$setParams(params = x_)
-      #     p2_lls$compute0()
-      #   }, x0 = x)
-      }
+        temp <- readRDS(file = tempf)
+        temp$a$setParams(params = x)
+        temp$b$compute0()
+      },
+      parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
     )
-
-    fr$setOptResult(optResult = optR)
-    fr$finish()
   })
 })
 ```
-
 
 ### Inversing the parameters
 
@@ -670,6 +577,8 @@ p2_res <- loadResultsOrCompute(file = "../results/fdtr_p2_res.rds", computeExpr 
 A third kind of pattern is produced by starting with an empty pattern and having it adapt to the available ground truth. Here we inverse the relation WP-WC: All data is becoming the constant Warping Pattern, and we warp an empty pattern as candidate to it. Empty means that we will start with a flat line located at $0.5$ for each pattern. To find the optimum amount of intervals, we try all values in a certain range and compute a fit, and then use an information criterion to decide which of the produced patterns provides the best trade-off between number of parameters and goodness-of-fit.
 
 The process is very similar to the one for pattern II: Using a set of `srBTAW` instances (one instance per variable type) that all share the same intervals, we allow each to produce individual amplitude warpings.
+
+TODO: Remember to always use constant amount of samples if discrete, i.e., amount per interval = total amount / intervals!
 
 
 # Scoring of projects
@@ -693,7 +602,7 @@ time_warp_project_p1 <- function(project) {
   stopifnot(is.logical(all.equal(names(p1_signals), names(project))))
   
   obj <- srBTAW_LossLinearScalarizer$new(
-    computeParallel = TRUE, gradientParallel = TRUE)
+    computeParallel = TRUE, gradientParallel = TRUE, returnRaw = FALSE)
   
   inst <- srBTAW$new(
     theta_b = c(0, fd_data_boundaries, 1),
@@ -707,57 +616,58 @@ time_warp_project_p1 <- function(project) {
     inst$setSignal(signal = p1_signals[[vartype]])
     inst$setSignal(signal = project[[vartype]])
     
-    # loss <- srBTAW_Loss_JSD$new(
-    #   intervals = seq_len(length.out = 4), weight = 1,
-    #   wpName = p1_signals[[vartype]]$getName(), wcName = project[[vartype]]$getName())
-    # 
-    # inst$addLoss(loss = loss)
-    # obj$setObjective(name = paste("jsd", vartype, sep = "_"), obj = loss)
-    
-    loss <- srBTAW_Loss_Rss$new(intervals = seq_len(length.out = 4),
+    loss <- srBTAW_Loss_Rss$new(
+      intervals = seq_len(length.out = 4), returnRaw = TRUE, # NOT logarithmic!
       wpName = p1_signals[[vartype]]$getName(), wcName = project[[vartype]]$getName(),
-      weight = 1, continuous = FALSE, numSamples = rep(250, length(names(project))))
+      weight = 1, continuous = FALSE, numSamples = rep(1e3, length(names(project))))
     inst$addLoss(loss = loss)
     obj$setObjective(name = paste("rss", vartype, sep = "_"), obj = loss)
-    
-    # loss <- srBTAW_Loss2Curves$new(srbtaw = inst, wpName = p1_signals[[vartype]]$getName(),
-    #   wcName = project[[vartype]]$getName(), weight = .25, intervals = seq_len(length.out = 4),
-    #   use = "corr", numSamples = rep(250, 4))
-    # inst$addLoss(loss = loss)
-    # obj$setObjective(name = paste("corr", vartype, sep = "_"), obj = loss)
   }
   
-  # for (varName in names(p1_signals)) {
-  #   inst$setSignal(signal = p1_signals[[varName]])
-  #   inst$setSignal(signal = project[[varName]])
-  #   
-  #   for (intervals in interval_types) {
-  #     loss <- srBTAW_Loss_Rss$new(intervals = intervals,
-  #       wpName = p1_signals[[varName]]$getName(), wcName = project[[varName]]$getName(),
-  #       weight = weight_vartype[varName] * unique(weight_interval[intervals]),
-  #       continuous = TRUE)#, numSamples = rep(1e3, length(names(project))))
-  #     
-  #     inst$addLoss(loss)
-  #     obj$setObjective(name = paste(
-  #       "rss", varName, paste(intervals, collapse = "_"), sep = "_"), obj = loss)
-  #   }
-  # }
-  # 
   # Add a time-warp regularizer:
   reg <- TimeWarpRegularization$new(
-    weight = .05, use = "exint2", wpName = p1_signals$A$getName(), wcName = project$A$getName(),
-    intervals = seq_len(length.out = length(names(project))))
+    weight = 1/2, use = "exint2", wpName = p1_signals$A$getName(), wcName = project$A$getName(),
+    returnRaw = TRUE, intervals = seq_len(length.out = length(names(project))))
   inst$addLoss(loss = reg)
-  obj$setObjective(name = "reg_exint", obj = reg)
+  obj$setObjective(name = "reg_exint2", obj = reg)
 
   inst$setObjective(obj = obj)
 }
 ```
 
-```{r}
-res16 <- doWithParallelCluster(expr = {
-  temp <- time_warp_project_p1(project = project_signals$project_1)
-  temp$fit(verbose = TRUE)
+```{r echo=FALSE, eval=FALSE}
+# doWithParallelCluster({
+#   temp <- time_warp_project_p1(project = project_signals$project_1)
+#   temp$fit(verbose = TRUE)
+# })
+```
+
+
+```{r scores-p1}
+library(foreach)
+
+scores_p1 <- loadResultsOrCompute(file = "../results/p1_scores.rds", computeExpr = {
+  # Let's compute all projects in parallel!
+  cl <- parallel::makePSOCKcluster(length(project_signals))
+  unlist(doWithParallelClusterExplicit(cl = cl, expr = {
+    foreach::foreach(
+      projectName = names(project_signals),
+      .inorder = FALSE,
+      .packages = c("parallel")
+    ) %dopar% {
+      source("./common-funcs.R")
+      source("../models/modelsR6.R")
+      source("../models/SRBTW-R6.R")
+      
+      # There are 5 objectives that can be computed in parallel!
+      cl_nested <- parallel::makePSOCKcluster(5)
+      `names<-`(list(doWithParallelClusterExplicit(cl = cl_nested, expr = {
+        temp <- time_warp_project_p1(project = project_signals[[projectName]])
+        temp$fit(verbose = TRUE)
+        temp # return the instance, it includes the FitResult
+      })), projectName)
+    }
+  }))
 })
 ```
 

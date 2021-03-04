@@ -1231,6 +1231,8 @@ srBTAW_LossLinearScalarizer <- R6Class(
     gradientParallel = NULL,
     computeWithinGradientParallel = NULL,
     
+    returnRaw = NULL,
+    
     isComputingGrad = NULL,
     
     computeFunc = NULL,
@@ -1256,19 +1258,22 @@ srBTAW_LossLinearScalarizer <- R6Class(
       computeParallel = TRUE,
       gradientParallel = TRUE,
       computeWithinGradientParallel = FALSE,
-      progressCallback = function(what = c("Compute", "Gradient")[1], step, total) { }
+      progressCallback = function(what = c("Compute", "Gradient")[1], step, total) { },
+      returnRaw = FALSE
     ) {
       stopifnot(is.logical(computeParallel))
       stopifnot(is.logical(gradientParallel))
       stopifnot(is.logical(computeWithinGradientParallel))
       stopifnot(is.function(progressCallback))
       stopifnot(TRUE == all.equal(c("what", "step", "total"), methods::formalArgs(progressCallback)))
+      stopifnot(is.logical(returnRaw))
       super$initialize()
       
       private$computeParallel <- computeParallel
       private$gradientParallel <- gradientParallel
       private$computeWithinGradientParallel <- computeWithinGradientParallel
       private$progressCallback <- progressCallback
+      private$returnRaw <- returnRaw
       private$isComputingGrad <- FALSE
       
       private$computeFunc <- function() {
@@ -1292,7 +1297,11 @@ srBTAW_LossLinearScalarizer <- R6Class(
           obj$getWeight() * obj$compute0()
         }
         
-        sum(losses)
+        err <- sum(losses)
+        if (!private$returnRaw) {
+          err <- log(1 + err)
+        }
+        err
       }
     },
     
@@ -1435,13 +1444,14 @@ Model <- R6Class(
       2 * self$getNumParams() - 2 * log(self$likelihood())
     },
     
-    BIC = function() {
-      # k*ln(n) - 2*ln(L),
+    AICc = function(numObs = self$getAllSignals(wp = FALSE, wc = TRUE)) {
+      aic <- self$AIC()
       k <- self$getNumParams()
-      L <- self$likelihood()
-      # n = the number of data points, the number of observations, or equivalently, the sample size ->
-      # n probably only makes sense for when all associated objectives are finite and discrete..
-      stop("Abstract method 13")
+      denom <- numObs - k - 1
+      if (denom == 0) {
+        denom <- .Machine$double.eps
+      }
+      aic + ((2 * k^2 + 2 * k) / denom)
     }
   )
 )
@@ -1458,25 +1468,31 @@ srBTAW_Loss <- R6Class(
     wcName = NULL,
     weight = NULL,
     intervals = NULL,
-    minimize = NULL
+    minimize = NULL,
+    returnRaw = NULL
   ),
   
   #' Arguments for the names of the signals should be NULL if the loss
   #' is not specific to a pair of variables.
+  #' 
+  #' @param returnRaw If true, the score should return its actual value,
+  #' i.e., not logarithmic!
   public = list(
-    initialize = function(wpName = NULL, wcName = NULL, weight = 1, intervals = c(), minimize = TRUE) {
+    initialize = function(wpName = NULL, wcName = NULL, weight = 1, intervals = c(), minimize = TRUE, returnRaw = FALSE) {
       stopifnot(is.null(wpName) || (is.character(wpName) && nchar(wpName) > 0))
       stopifnot(is.null(wcName) || (is.character(wcName) && nchar(wcName) > 0))
-      stopifnot(is.numeric(weight) && !is.na(weight) && weight > 0 && weight <= 1)
+      stopifnot(is.numeric(weight) && !is.na(weight) && weight > 0)# && weight <= 1)
       stopifnot(is.numeric(intervals) && !any(is.na(intervals)) && all(intervals >= 1))
       stopifnot(!is.unsorted(intervals))
       stopifnot(is.logical(minimize))
+      stopifnot(is.logical(returnRaw))
       
       private$wpName <- wpName
       private$wcName <- wcName
       private$weight <- weight
       private$intervals <- intervals
       private$minimize <- minimize
+      private$returnRaw <- returnRaw
     },
     
     setParams = function(params) {
@@ -1519,6 +1535,16 @@ srBTAW_Loss <- R6Class(
     
     isMinimization = function() {
       private$minimze
+    },
+    
+    setReturnRaw = function(val) {
+      stopifnot(is.logical(val))
+      private$returnRaw <- val
+      invisible(self)
+    },
+    
+    isReturnRaw = function() {
+      private$returnRaw
     },
     
     
@@ -1618,12 +1644,13 @@ srBTAW_Loss2Curves <- R6Class(
   
   public = list(
     initialize = function(
-      srbtaw, wpName, wcName, weight = 1, intervals = c(),
+      srbtaw, wpName, wcName, weight = 1, intervals = c(), returnRaw = FALSE,
       use = c("area", "rss", "corr", "arclen", "jsd"),
       continuous = FALSE, numSamples = rep(if (continuous) NA_real_ else 1e3, length(intervals))
     ) {
       super$initialize(
-        wpName = wpName, wcName = wcName, weight = weight, intervals = intervals)
+        wpName = wpName, wcName = wcName, weight = weight,
+        intervals = intervals, returnRaw = returnRaw)
       self$setSrBtaw(srbtaw = srbtaw)
       
       stopifnot(is.logical(continuous) && is.numeric(numSamples))
@@ -1662,7 +1689,11 @@ srBTAW_Loss2Curves <- R6Class(
         idx <- idx + 1
       }
       
-      `names<-`(c(log(1 + err)), srbtaw$getOutputNames())
+      if (!self$isReturnRaw()) {
+        err <- log(1 + err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
       
     },
     
@@ -1702,7 +1733,11 @@ srBTAW_Loss2Curves <- R6Class(
       # re-scale error so it is < 1 (otherwise we'll get infinity)
       err <- err * (1 - sqrt(.Machine$double.eps))
       
-      `names<-`(c(-log(1 - err)), srbtaw$getOutputNames())
+      if (!self$isReturnRaw()) {
+        err <- -log(1 - err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     funcArclen = function() {
@@ -1728,7 +1763,12 @@ srBTAW_Loss2Curves <- R6Class(
         arclens <- c(arclens, temp)
       }
       
-      `names<-`(c(-log(1 - mean(arclens))), srbtaw$getOutputNames())
+      err <- mean(arclens)
+      if (!self$isReturnRaw()) {
+        err <- -log(1 - err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     funcRss = function() {
@@ -1756,7 +1796,11 @@ srBTAW_Loss2Curves <- R6Class(
         idx <- idx + 1
       }
       
-      `names<-`(c(log(1 + err)), srbtaw$getOutputNames())
+      if (!self$isReturnRaw()) {
+        err <- log(1 + err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     get0Function = function() {
@@ -1846,7 +1890,13 @@ srBTAW_Loss_JSD <- R6Class(
         # }) / log(2)
 
         # 'jsd' is a divergence, \mapsto [0,1], where 1 is the worst
-        `names<-`(c(-log(1 - jsd)), srbtaw$getOutputNames())
+        
+        err <- jsd
+        if (!self$isReturnRaw()) {
+          err <- -log(1 - jsd)
+        }
+        
+        `names<-`(c(err), srbtaw$getOutputNames())
       }
     }
   )
@@ -1865,11 +1915,12 @@ srBTAW_Loss_Rss <- R6Class(
   
   public = list(
     initialize = function(
-      wpName, wcName, weight = 1, intervals = c(),
+      wpName, wcName, weight = 1, intervals = c(), returnRaw = FALSE,
       continuous = FALSE, numSamples = rep(if (continuous) NA_real_ else 1e3, length(intervals))
     ) {
       super$initialize(
-        wpName = wpName, wcName = wcName, weight = weight, intervals = intervals)
+        wpName = wpName, wcName = wcName, weight = weight,
+        intervals = intervals, returnRaw = returnRaw)
       
       stopifnot(is.logical(continuous) && is.numeric(numSamples))
       
@@ -1900,19 +1951,23 @@ srBTAW_Loss_Rss <- R6Class(
           wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
           
           if (continuous) {
-            err <- err + cubature::cubintegrate(
+            err <- err + (private$numSamples[idx] / (t$te_q - t$tb_q)) * cubature::cubintegrate(
               f = function(x) (t$wp(x) - wc(x))^2, lower = t$tb_q, upper = t$te_q)$integral
           } else {
             X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
             y <- sapply(X = X, FUN = t$wp)
             y_hat <- sapply(X = X, FUN = wc)
-            err <- err + (sum((y - y_hat)^2) / private$numSamples[idx])
+            err <- err + sum((y - y_hat)^2)
           }
           
           idx <- idx + 1
         }
         
-        `names<-`(c(log(1 + err)), srbtaw$getOutputNames())
+        if (!self$isReturnRaw()) {
+          err <- log(1 + err)
+        }
+        
+        `names<-`(c(err), srbtaw$getOutputNames())
       }
     }
   )
@@ -2188,6 +2243,17 @@ srBTAW <- R6Class(
       stop(paste0("The signal ", name, " was not previously added."))
     },
     
+    getAllSignals = function(wp = TRUE, wc = TRUE) {
+      temp <- list()
+      if (wp) {
+        temp <- append(temp, private$signals_wp)
+      }
+      if (wc) {
+        temp <- append(temp, private$signals_wc)
+      }
+      temp
+    },
+    
     removeSignal = function(nameOrSignal) {
       stopifnot(is.character(nameOrSignal) || (R6::is.R6(signal) && inherits(signal, Signal$classname)))
       
@@ -2283,12 +2349,25 @@ srBTAW <- R6Class(
       stopifnot(R6::is.R6(fr) && inherits(fr, FitResult$classname))
       
       # Likelihood and loss are anti-proportional, the lower
-      # the loss, the higher the likelihood.
+      # the loss, the higher the likelihood. Also recall that
+      # the likelihood is only defined for strictly positive
+      # losses
       bestLoss <- fr$getBest(paramName = "loss", lowest = TRUE)[, "loss"]
-      # The following has limit \infty for loss -> 0 and limit 0
-      # for loss -> \infty (what we want)
-      # TODO: Check if Objective is logarithmic
-      -log(1 - 1/(1 + bestLoss))
+      if (self$getIsObjectiveLogarithmic()) {
+        bestLoss <- exp(bestLoss)
+      }
+      if (bestLoss < 0) {
+        stop("Likelihood is only defined for strictly positive losses.")
+        # Allow bestLoss=0, however.
+      }
+      
+      # \mapsto [0,\infty], where larger values mean larger likelihood
+      likelihood <- 1 / (.Machine$double.eps + bestLoss)
+      `names<-`(c(likelihood), "likelihood")
+    },
+    
+    logLik = function() {
+      `names<-`(c(log(self$likelihood())), "log_likelihood")
     },
     
     #' This method is the most important for computing Objectives and Losses,
@@ -2520,8 +2599,9 @@ TimeWarpRegularization <- R6Class(
   #' The names of the signals are required so that we know which
   #' model's parameters to retrieve.
   public = list(
-    initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("exsupp", "exint", "exint2"), exintKappa = NULL) {
-      super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight)
+    initialize = function(wpName, wcName, intervals = c(), returnRaw = FALSE, weight = 1, use = c("exsupp", "exint", "exint2"), exintKappa = NULL) {
+      super$initialize(wpName = wpName, wcName = wcName, returnRaw = returnRaw,
+                       intervals = intervals, weight = weight)
       private$use <- match.arg(use)
       private$exintKappa <- exintKappa
       
@@ -2543,9 +2623,12 @@ TimeWarpRegularization <- R6Class(
       beta_l <- mod$getBeta_l()
       beta_u <- mod$getBeta_u()
       
-      `names<-`(
-        c(-log((beta_u - beta_l) / (gamma_bed[2] - gamma_bed[1] - gamma_bed[3]))),
-        srbtaw$getOutputNames())
+      err <- (beta_u - beta_l) / (gamma_bed[2] - gamma_bed[1] - gamma_bed[3])
+      if (!self$isReturnRaw()) {
+        err <- -log(err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     funcExint = function() {
@@ -2566,7 +2649,12 @@ TimeWarpRegularization <- R6Class(
         ints <- c(ints, (vtl[q] - exintKappa[q])^2)
       }
       
-      `names<-`(c(log(1 + sum(ints))), srbtaw$getOutputNames())
+      err <- sum(ints)
+      if (!self$isReturnRaw()) {
+        err < -log(1 + err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     funcExint2 = function() {
@@ -2587,7 +2675,12 @@ TimeWarpRegularization <- R6Class(
         losses[idx] <- min(max(losses[idx], lambda[idx]), 1 - lambda[idx])
       }
       
-      `names<-`(c(sum(-log(1 - losses))), srbtaw$getOutputNames())
+      err <- mean(-log(1 - losses))
+      if (self$isReturnRaw()) {
+        err <- exp(err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     getNumOutputs = function() {
@@ -2618,24 +2711,13 @@ YTransRegularization <- R6Class(
   ),
   
   public = list(
-    initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("trapezoid", "tikhonov", "avgout")) {
-      super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight)
+    initialize = function(wpName, wcName, intervals = c(), returnRaw = FALSE, weight = 1, use = c("trapezoid", "tikhonov", "avgout")) {
+      stopifnot(is.character(wpName) && nchar(wpName) > 0)
+      stopifnot(is.character(wcName) && nchar(wcName) > 0)
+      
+      super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight, returnRaw = returnRaw)
       
       private$use <- match.arg(use)
-      
-      # For Average-out regularization, wpName & wcName are required,
-      # because it requires access to the underlying SRBTW/SRBTWBAW's M-function.
-      # They are also required for trapezoidal regularization, as we need to get
-      # the residuals, which always require a specific model (even though any
-      # model would do here).
-      if (private$use == "avgout" || private$use == "trapezoid") {
-        stopifnot(is.character(wpName) && nchar(wpName) > 0)
-        stopifnot(is.character(wcName) && nchar(wcName) > 0)
-      } else {
-        # For the others, they better be NULL, because the others are
-        # NOT specific to any one model.
-        stopifnot(is.null(wpName) && is.null(wcName))
-      }
     },
     
     getNumOutputs = function() {
@@ -2697,14 +2779,25 @@ YTransRegularization <- R6Class(
         ratios <- c(ratios, min(1, max(0, delta_q / delta_max_q)))
       }
       
-      `names<-`(c(-log(1 - mean(ratios))), srbtaw$getOutputNames())
+      err <- -log(1 - mean(ratios))
+      if (self$isReturnRaw()) {
+        err <- exp(err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     funcTikhonov = function() {
       srbtaw <- private$srbtaw
       v <- srbtaw$getParams()[grep(pattern = "v$", x = names(srbtaw$getParams()))]
       vty <- srbtaw$getParams()[grep(pattern = "vty_", x = names(srbtaw$getParams()))]
-      `names<-`(c(log(1 + sqrt(sum(c(v, vty)^2)))), srbtaw$getOutputNames())
+      
+      err <- sqrt(sum(c(v, vty)^2))
+      if (!self$isReturnRaw()) {
+        err <- log(1 + err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     funcAvgout = function() {
@@ -2722,7 +2815,12 @@ YTransRegularization <- R6Class(
         avgs <- c(avgs, 2 * sqrt((1/2 * (ub - lb) - mu)^2))
       }
       
-      `names<-`(c(-log(1 - mean(avgs))), srbtaw$getOutputNames())
+      err <- -log(1 - mean(avgs))
+      if (self$isReturnRaw()) {
+        err <- exp(err)
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     get0Function = function() {

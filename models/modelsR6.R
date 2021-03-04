@@ -74,7 +74,7 @@ FitResult <- R6Class(
       func <- if (lowest) which.min else which.max
       fh <- self$getFitHist()
       stopifnot(is.character(paramName) && paramName %in% colnames(fh))
-      fh[func(fh[, paramName]), ]
+      fh[func(fh[, paramName]),, drop = FALSE]
     },
     
     clearFitHist = function() {
