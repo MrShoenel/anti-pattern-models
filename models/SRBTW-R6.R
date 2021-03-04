@@ -2445,12 +2445,12 @@ TimeWarpRegularization <- R6Class(
   #' The names of the signals are required so that we know which
   #' model's parameters to retrieve.
   public = list(
-    initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("exsupp", "exint"), exintKappa = NULL) {
+    initialize = function(wpName, wcName, intervals = c(), weight = 1, use = c("exsupp", "exint", "exint2"), exintKappa = NULL) {
       super$initialize(wpName = wpName, wcName = wcName, intervals = intervals, weight = weight)
       private$use <- match.arg(use)
       private$exintKappa <- exintKappa
       
-      if (private$use == "exint") {
+      if (private$use == "exint" || private$use == "exint2") {
         stopifnot(is.character(wpName) && is.character(wcName))
         stopifnot(is.null(exintKappa) || (is.numeric(exintKappa) && !any(is.na(exintKappa))))
         stopifnot(length(intervals) > 0)
@@ -2487,12 +2487,32 @@ TimeWarpRegularization <- R6Class(
       
       qs <- private$intervals
       ints <- c()
-      res <- srbtaw$residuals(loss = self)
       for (q in qs) {
         ints <- c(ints, (vtl[q] - exintKappa[q])^2)
       }
       
       `names<-`(c(log(1 + sum(ints))), srbtaw$getOutputNames())
+    },
+    
+    funcExint2 = function() {
+      srbtaw <- private$srbtaw
+      mod <- srbtaw$getInstance(wpName = self$getWpName(), wcName = self$getWcName())
+      gamma_bed <- mod$getgamma_bed()
+      lambda <- mod$getLambda()
+      vtl <- mod$getVarthetaL()
+      
+      vtlR <- vtl / sum(vtl) # normalize to ratios
+      E <- (gamma_bed[2] - gamma_bed[1]) / length(vtlR)
+      
+      losses <- sapply(vtlR, function(v) {
+        # For each parameter, computes a loss between 0 and 1
+        if (v <= E) 1 - (v / E) else ((v - E) / (1 - E))
+      })
+      for (idx in seq_len(length.out = length(losses))) {
+        losses[idx] <- min(max(losses[idx], lambda[idx]), 1 - lambda[idx])
+      }
+      
+      `names<-`(c(sum(-log(1 - losses))), srbtaw$getOutputNames())
     },
     
     getNumOutputs = function() {
@@ -2502,6 +2522,8 @@ TimeWarpRegularization <- R6Class(
     get0Function = function() {
       if (private$use == "exsupp") {
         self$funcExsupp
+      } else if (private$use == "exint2") {
+        self$funcExint2
       } else {
         self$funcExint
       }
