@@ -1778,6 +1778,81 @@ srBTAW_Loss2Curves <- R6Class(
 )
 
 
+srBTAW_Loss_JSD <- R6Class(
+  "srBTAW_Loss_JSD",
+  
+  inherit = srBTAW_Loss,
+  
+  private = list(
+    numSamples = NULL
+  ),
+  
+  public = list(
+    initialize = function(
+      wpName, wcName, weight = 1, intervals = c(), numSamples = 2e3
+    ) {
+      super$initialize(
+        wpName = wpName, wcName = wcName, weight = weight, intervals = intervals)
+      private$numSamples <- numSamples
+    },
+    
+    getNumOutputs = function() {
+      1
+    },
+    
+    get0Function = function() {
+      # This class is a stand-alone version of the the Jenson-Shannon
+      # divergence that ALWAYS USES THE ENTIRE warping pattern and
+      # warped candidate, i.e., it is not meant to be used on single
+      # intervals.
+      
+      srbtaw <- private$srbtaw
+      mod <- srbtaw$getInstance(wpName = self$getWpName(), wcName = self$getWcName())
+      
+      function() {
+        Q <- mod$getQ()
+        # Make sure that we are in fact covering all intervals!
+        stopifnot(all.equal(private$intervals, Q))
+        # This only works for this support at the moment..
+        stopifnot(mod$getTb_q(min(Q)) == 0 && mod$getTe_q(max(Q)) == 1)
+        
+        # jsd <- stat_diff_2_functions_symmetric_JSD(
+        #   f1 = mod$getWP(), f2 = mod$M, numSamples = private$numSamples,
+        #   sampleOnError = TRUE, useCubintegrate = TRUE)$value / log(2)
+        
+        # As score (lower is worse):
+        jsd <- stat_diff_2_functions_symmetric_JSD_score(
+          numSamples = private$numSamples, sensitivityExponent = 2)(f1 = mod$getWP(), f2 = mod$M)
+        
+        
+        
+        # X <- seq(from = mod$getTb_q(min(Q)), to = mod$getTe_q(max(Q)), length.out = private$numSamples)
+        # 
+        # y <- sapply(X = X, FUN = mod$getWP())
+        # y_hat <- sapply(X = X, FUN = mod$M)
+        # 
+        # # normalize both vectors:
+        # y <- y - min(y) + .1
+        # y <- y / max(y)
+        # y_hat <- y_hat - min(y_hat) + .1
+        # y_hat <- y_hat / max(y_hat)
+        # 
+        # # For log base e, or ln, which is commonly used in statistical
+        # # thermodynamics, the upper bound is ln(2):
+        # jsd <- suppressMessages({
+        #   philentropy::distance(
+        #     x = matrix(data = c(y, y_hat), nrow = 2, byrow = TRUE),
+        #     method = "jensen-shannon", unit = "log")
+        # }) / log(2)
+
+        # 'jsd' is a divergence, \mapsto [0,1], where 1 is the worst
+        `names<-`(c(-log(1 - jsd)), srbtaw$getOutputNames())
+      }
+    }
+  )
+)
+
+
 srBTAW_Loss_Rss <- R6Class(
   "srBTAW_Loss_Rss",
   
