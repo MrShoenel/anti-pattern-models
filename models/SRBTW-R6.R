@@ -1286,6 +1286,7 @@ srBTAW_LossLinearScalarizer <- R6Class(
             private$reportProgress(n)
           })
         ) %parop% {
+          source("./common-funcs.R")
           source("../models/SRBTW-R6.R")
           obj <- private$objectives[[objName]] # instance of 'srBTAW_Loss'
           obj$getWeight() * obj$compute0()
@@ -1346,6 +1347,7 @@ srBTAW_LossLinearScalarizer <- R6Class(
             private$reportProgress(n)
           })
         ) %parop% {
+          source("./common-funcs.R")
           source("../models/SRBTW-R6.R")
           # The following is not very elegant but it works!
           # We need to make a clone of the model and this objective:
@@ -1648,15 +1650,13 @@ srBTAW_Loss2Curves <- R6Class(
         wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
         
         if (continuous) {
-          temp <- cubature::cubintegrate(
+          err <- err + cubature::cubintegrate(
             f = function(x) abs(t$wp(x) - wc(x)), lower = t$tb_q, upper = t$te_q)$integral
-          err <- err + (temp / (t$te_q - t$tb_q)) # normalize to interval-length
         } else {
           X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
           y <- sapply(X = X, FUN = t$wp)
           y_hat <- sapply(X = X, FUN = wc)
-          temp <- sum(abs(y - y_hat))
-          err <- err + (temp / (t$te_q - t$tb_q))
+          err <- err + (sum(abs(y - y_hat)) / private$numSamples[idx])
         }
         
         idx <- idx + 1
@@ -1687,7 +1687,11 @@ srBTAW_Loss2Curves <- R6Class(
           stats::cor(x = y, y = y_hat)
         })
         if (is.na(temp)) {
-          temp <- -1 # worst possible correlation
+          # Happens when stddev is 0; this happens when one (or both)
+          # signal(s) is constant (straight line). In this case, we
+          # apply the rule of interpreting this as no correlation, as
+          # it could be even worse (negative correlation).
+          temp <- 0
         }
         corrs <- c(corrs, temp)
         
@@ -1715,7 +1719,6 @@ srBTAW_Loss2Curves <- R6Class(
       for (q in qs) {
         t <- res[[q]]
         wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
-        #t$wp(x) - wc(x)
         
         arclen_wp <- arclen(func = t$wp, from = t$tb_q, to = t$te_q)
         arclen_wc <- arclen(func = wc, from = t$tb_q, to = t$te_q)
@@ -1741,15 +1744,13 @@ srBTAW_Loss2Curves <- R6Class(
         wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
         
         if (continuous) {
-          temp <- cubature::cubintegrate(
+          err <- err + cubature::cubintegrate(
             f = function(x) (t$wp(x) - wc(x))^2, lower = t$tb_q, upper = t$te_q)$integral
-          err <- err + (temp / (t$te_q - t$tb_q)) # normalize to interval-length
         } else {
           X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
           y <- sapply(X = X, FUN = t$wp)
           y_hat <- sapply(X = X, FUN = wc)
-          temp <- sum((y - y_hat)^2)
-          err <- err + (temp / (t$te_q - t$tb_q))
+          err <- err + (sum((y - y_hat)^2) / private$numSamples[idx])
         }
         
         idx <- idx + 1
@@ -1830,7 +1831,7 @@ srBTAW_Loss_Rss <- R6Class(
             X <- seq(from = t$tb_q, to = t$te_q, length.out = private$numSamples[idx])
             y <- sapply(X = X, FUN = t$wp)
             y_hat <- sapply(X = X, FUN = wc)
-            err <- err + sum((y - y_hat)^2)
+            err <- err + (sum((y - y_hat)^2) / private$numSamples[idx])
           }
           
           idx <- idx + 1
@@ -2244,30 +2245,27 @@ srBTAW <- R6Class(
       private$requireObjective()
       obj <- self$getObjective()
       
+      vtl <- private$requireOneInstance()$getVarthetaL()
+      if (sum(vtl) > 1) {
+        stop("To begin fitting, vartheta_l should sum up to 1.")
+      }
+      
       fr <- FitResult$new(paramNames = c(self$getParamNames(), "loss"))
       fr$start()
       
       # Bounds: for SRBTWBAW, params is vartheta_l, [, b [, e [, v, vartheta_y]]]
-      vtl <- private$requireOneInstance()$getVarthetaL()
       bb_lower <- c(private$lambda,
                     (if (private$openBegin) private$gamma_bed[1] else c()),
                     (if (private$openEnd) private$gamma_bed[1] + private$gamma_bed[3] else c()),
                     (if (private$useAmplitudeWarping)
                       c(rep(min(private$lambda_ymin) - 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
                             length(private$theta_b))) else c()))
-      bb_upper <- c(rep(max(vtl), length(private$lambda)), # remember vartheta_l are ratios ideally
+      bb_upper <- c(rep(1, length(private$lambda)), # remember vartheta_l are ratios ideally
                     (if (private$openBegin) private$gamma_bed[2] - private$gamma_bed[3] else c()),
                     (if (private$openEnd) private$gamma_bed[2] else c()),
                     (if (private$useAmplitudeWarping)
                       c(rep(max(private$lambda_ymax) + 1e3 * (max(private$lambda_ymax) - min(private$lambda_ymin)),
                             length(private$theta_b))) else c()))
-      
-      # l <- -.Machine$double.xmax
-      # u <- .Machine$double.xmax
-      # # bb_lower <- c(l, 0, 0, 0, 0, l, l, l, l)
-      # # bb_upper <- c(u, 1, 1, 1, 1, u, u, u, u)
-      # bb_lower <- c(l, l, l, l, l, l, l, l, l)
-      # bb_upper <- c(u, u, u, u, u, u, u, u, u)
       
       optR <- stats::optim(
         par = self$getParams(),
