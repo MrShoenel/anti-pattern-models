@@ -434,8 +434,9 @@ for (name in p2_vars) {
     lambda = rep(sqrt(.Machine$double.eps), length(p2_vars)),
     begin = 0, end = 1, openBegin = FALSE, openEnd = FALSE,
     useAmplitudeWarping = TRUE,
-    lambda_ymin = rep(0, length(p2_vars)),
-    lambda_ymax = rep(1, length(p2_vars)),
+    # We allow these to be larger; however, the final result should be within [0,1]
+    lambda_ymin = rep(-10, length(p2_vars)),
+    lambda_ymax = rep( 10, length(p2_vars)),
     isObjectiveLogarithmic = TRUE,
     paramNames = c("v",
                    paste0("vtl_", seq_len(length.out = length(p2_vars))),
@@ -463,9 +464,9 @@ We can already initialize the linear scalarizer. This includes also to set up so
 p2_lls <- srBTAW_LossLinearScalarizer$new(
   returnRaw = FALSE,
   computeParallel = TRUE, progressCallback = function(what, step, total) {
-    if (step == total) {
-      print(paste(what, step, total))
-    }
+    # if (step == total) {
+    #   print(paste(what, step, total))
+    # }
   })
 
 for (name in names(p2_inst)) {
@@ -511,12 +512,12 @@ for (vartype in p2_vars) {
     }
   }
   
-  # Add one per variable-pair:
+  # Add one per variable-type:
   lossYtrans <- YTransRegularization$new(
     wpName = paste0("p1_", vartype), wcName = paste(project, vartype, sep = "_"),
     intervals = seq_len(length.out = 4), returnRaw = TRUE,
     weight = 1, use = "tikhonov")
-    
+
   p2_inst[[vartype]]$addLoss(loss = lossYtrans)
   p2_lls$setObjective(
     name = paste(vartype, "p2_reg_output", sep = "_"),
@@ -529,7 +530,7 @@ Finally, we add the regularizer for extreme intervals:
 
 ```{r}
 p2_lls$setObjective(name = "p2_reg_exint2", obj = TimeWarpRegularization$new(
-  weight = 0.1 * p2_lls$getNumObjectives(), use = "exint2", returnRaw = TRUE,
+  weight = 0.25 * p2_lls$getNumObjectives(), use = "exint2", returnRaw = TRUE,
   wpName = p1_signals$A$getName(), wcName = project_signals$project_1$A$getName(),
   intervals = seq_len(length.out = length(p2_vars))
 )$setSrBtaw(srbtaw = p2_inst$A))
@@ -550,11 +551,11 @@ p2_params <- loadResultsOrCompute(file = "../results/p2_params.rds", computeExpr
       par = p2_smv$getParams(),
       method = "L-BFGS-B",
       lower = c(
-        rep(0, length(p2_vars)), # v_[vartype]
+        rep(-.Machine$double.xmax, length(p2_vars)), # v_[vartype]
         rep(sqrt(.Machine$double.eps), length(p2_vars)), # vtl
         rep(-.Machine$double.xmax, length(p2_vars) * length(weight_vartype))), # vty for each
       upper = c(
-        rep(1, length(p2_vars)),
+        rep(.Machine$double.xmax, length(p2_vars)),
         rep(1, length(p2_vars)),
         rep(.Machine$double.xmax, length(p2_vars) * length(weight_vartype))),
       fn = function(x) {
@@ -656,7 +657,8 @@ for (vartype in names(weight_vartype)) {
     lambda = rep(0, 4), begin = 0, end = 1,
     lambda_ymin = rep(0, 4), lambda_ymax = rep(1, 4)) # not important here
   # That's still the same:
-  temp$setParams(vartheta_l = p2_ex_varthetaL, v = p2_best[paste0("v_", vartype)],
+  temp$setParams(vartheta_l = p2_ex_varthetaL,
+                 v = -1 * p2_best[paste0("v_", vartype)],
                  vartheta_y = -1 * p2_best[paste0("vty_", 1:4, "_", vartype)])
   
   p2_signals[[vartype]] <- Signal$new(
@@ -709,11 +711,84 @@ The true main-purpose of our work is to take a pattern and check it against any 
 
 How it works: Given some pattern that consists of one or arbitrary many signals, the pattern is added to a single instance of `srBTAW` as __Warping Pattern__. The project's signals are added as __Warping Candidates__ to the same instance.
 
-To compute a score, we need to define how to measure the distance between the WP and the WC (between each pair of signals and each interval). In the notebooks for sr-BTW we have previously defined some suitable losses with either __global__ or __local__ finite upper bounds. Currently, only the Jenson--Shannon divergence has a global upper bound of $\ln{2}$. Losses with local finite upper bound are, for example, the area between curves, the residual sum of squares, the correlation, and the arc-length ratio between two curves. For some of the patterns, we have used a combination of such losses with local bounds. In general, it is not necessary to fit a pattern with the same kinds of losses that are later on used for scoring, but it is recommended to avoid confusing may results.
+To compute a score, we need to define how to measure the distance between the WP and the WC (between each pair of signals and each interval). In the notebooks for sr-BTW we have previously defined some suitable losses with either __global__ or __local__ finite upper bounds. Currently, the Jenson--Shannon divergence (JSD), as well as the ratio-metrics (correlation, arc-lengths) have global upper bounds. For the JSD, it is $\ln{2}$. Losses with local finite upper bound are, for example, the area between curves, the residual sum of squares, the Euclidean distance etc., basically any metric that has a limit within the rectangle demarcated by one or more intervals. For some of the patterns, we have used a combination of such losses with local bounds. In general, it is not necessary to fit a pattern with the same kinds of losses that are later on used for scoring, but it is recommended to avoid confusing may results.
 
-For scoring a single project, we first warp it to the pattern, then we measure the remaining distance. We only do time-warping.
+## Scoring mechanisms
 
-## Pattern I
+For scoring a single project, we first warp it to the pattern, then we measure the remaining distance. We only do time-warping of the projects to the pattern. We could compute a score for each interval. However, the ground truth does not yield this, so we will only compute a scores for entire signals, i.e., over all intervals. Once aligned, computing scores is cheap, so we will try a variety of scores and see what works best.
+
+```{r score-mech}
+score_variable_alignment = function(alignment, use = c("area", "corr", "jsd", "arclen", "signals")) {
+  use <- match.arg(use)
+  sigs <- alignment$getAllSignals()
+  vartypes <- names(weight_vartype)
+  
+  scores <- c()
+  for (vartype in vartypes) {
+    # The names of the 2 variables to compare. Which one is WP
+    # and which one is WC does not matter for our purpose.
+    sigNames <- names(sigs)[grepl(pattern = paste0(vartype, "$"), x = names(sigs))]
+    sig1 <- sigs[[sigNames[1]]]
+    sig2 <- sigs[[sigNames[2]]]
+    stopifnot(all.equal(sig1$getSupport(), sig2$getSupport()))
+    stopifnot(sig1$getSupport()[1] == 0 && sig1$getSupport()[2] == 1)
+    temp <- NA_real_
+    
+    if (use == "area") {
+      temp <- area_diff_2_functions_score()(
+        f1 = sig1$get0Function(), f2 = sig2$get0Function())
+    } else if (use == "corr") {
+      tempsd <- stat_diff_2_functions(f1 = sig1$get0Function(), f2 = sig2$get0Function())
+      temp <- stats::cor(x = tempsd$dataF1, y = tempsd$dataF2)
+      if (is.na(temp)) {
+        temp <- 0
+      }
+      temp <- (temp + 1) / 2 # move from [-1,1] \to [0,1]
+    } else if (use == "jsd") {
+      temp <- stat_diff_2_functions_symmetric_JSD_score()(
+        f1 = sig1$get0Function(), f2 = sig2$get0Function())
+    } else if (use == "arclen") {
+      temp <- stat_diff_2_functions_arclen_score()(
+        f1 = sig1$get0Function(), f2 = sig2$get0Function())
+    } else if (use == "signals") {
+      temp <- prod(stat_diff_2_functions_signals_score()(
+        f1 = sig1$get0Function(), f2 = sig2$get0Function()))
+    }
+    
+    scores <- c(scores, `names<-`(c(temp), vartype))
+  }
+  scores
+}
+```
+
+We define a parallelized function to compute all scores of a project:
+
+```{r}
+compute_all_scores <- function(alignment) {
+  useScores <- c("area", "corr", "jsd", "arclen", "signals")
+  
+  cl <- parallel::makePSOCKcluster(length(alignment))
+  `rownames<-`(doWithParallelClusterExplicit(cl = cl, expr = {
+    foreach::foreach(
+      projectName = sort(names(alignment)),
+      .inorder = TRUE,
+      .combine = rbind
+    ) %dopar% {
+      scores <- c()
+      for (score in useScores) {
+        temp <- score_variable_alignment(
+          alignment = alignment[[projectName]], use = score)
+        scores <- c(scores, `names<-`(
+          c(mean(temp), prod(temp)), paste0(score, c("_m", "_p"))))
+      }
+      scores
+    }
+  }), sort(names(alignment)))
+}
+```
+
+
+We also need to define a function for warping a project to the pattern:
 
 ```{r}
 #' This function creates a new instance of \code{srBTAW} and adds all
@@ -757,6 +832,10 @@ time_warp_project <- function(pattern, project) {
 }
 ```
 
+## Pattern I
+
+First we compute the alignment for all projects, then all scores.
+
 ```{r echo=FALSE, eval=FALSE}
 # doWithParallelCluster({
 #   temp <- time_warp_project(pattern = p1_signals, project = project_signals$project_1)
@@ -764,11 +843,10 @@ time_warp_project <- function(pattern, project) {
 # })
 ```
 
-
-```{r scores-p1}
+```{r align-p1}
 library(foreach)
 
-scores_p1 <- loadResultsOrCompute(file = "../results/p1_scores.rds", computeExpr = {
+p1_align <- loadResultsOrCompute(file = "../results/p1_align.rds", computeExpr = {
   # Let's compute all projects in parallel!
   cl <- parallel::makePSOCKcluster(length(project_signals))
   unlist(doWithParallelClusterExplicit(cl = cl, expr = {
@@ -794,13 +872,39 @@ scores_p1 <- loadResultsOrCompute(file = "../results/p1_scores.rds", computeExpr
 })
 ```
 
+```{r score-p1}
+p1_scores <- loadResultsOrCompute(file = "../results/p1_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores(alignment = p1_align))
+})
+```
+
+```{r echo=FALSE}
+knitr::kable(
+  x = p1_scores,
+  booktabs = TRUE,
+  caption = "Scores for the aligned projects with pattern I (p=product, m=mean).",
+  label = "p1-scores"
+)
+```
+
+Let's show a correlation matrix:
+
+```{r}
+temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p1_scores[,])
+
+corrplot::corrplot(corr = stats::cor(temp), type = "upper", order = "hclust",
+                   tl.col = "black", tl.srt = 35)
+```
+
+
+
 ## Pattern II\label{ssec:score-pattern2}
 
 
-```{r scores-p2}
+```{r align-p2}
 library(foreach)
 
-scores_p2 <- loadResultsOrCompute(file = "../results/p2_scores.rds", computeExpr = {
+p2_align <- loadResultsOrCompute(file = "../results/p2_align.rds", computeExpr = {
   # Let's compute all projects in parallel!
   cl <- parallel::makePSOCKcluster(length(project_signals))
   unlist(doWithParallelClusterExplicit(cl = cl, expr = {
