@@ -2487,8 +2487,33 @@ srBTAW <- R6Class(
     get2ndOrderPd = function(name = c()) {
       private$requireObjective()
       do.call(what = self$getObjective()$get2ndOrderPd, args = list(name = name))
-    }
+    },
     # endregion Differentiable
+    
+    plot = function() {
+      # Here, we should show all WPs, as well as each instance's M-function.
+      p <- ggplot2::ggplot()
+      
+      for (signal in self$getAllSignals(wp = TRUE, wc = FALSE)) {
+        p <- p + ggplot2::stat_function(
+          fun = signal$get0Function(), xlim = signal$getSupport(),
+          mapping = ggplot2::aes(color = signal$getName()))
+      }
+      
+      for (name in names(private$instances)) {
+        inst <- private$instances[[name]]
+        supp <- c(inst$getTb_q(q = 1), inst$getTe_q(q = max(inst$getQ())))
+        func <- Vectorize(inst$M)
+        p <- p + ggplot2::stat_function(
+          fun = func, xlim = supp,
+          mapping = ggplot2::aes(color = paste0("WC_", name)))
+      }
+      
+      p + ggplot2::scale_color_brewer("Signals", palette = "Set1") +
+        ggplot2::theme(
+          axis.title.x = ggplot2::element_blank(),
+          axis.title.y = ggplot2::element_blank())
+    }
   )
 )
 
