@@ -48,7 +48,7 @@ library(ggpubr)
 
 This is the complementory technical report for the paper/article tentatively entitled "Detection of Project Management Anti-Patterns through Source Code". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
 
-All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the results. The canonical URL to this notebook is[^1], with a rendered markdown version at[^2]. All code can be found in this repository, too.
+All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the results. This notebook has a canonical URL[^1] and can be read online as a rendered markdown[^2] version. All code can be found in this repository, too.
 
 [^1]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd
 [^2]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md
@@ -636,6 +636,7 @@ p2_best
 All of the initial translations ($v$) are zero. The learned lengths converted to boundaries are:
 
 ```{r}
+# Here, we transform the learned lengths to boundaries.
 p2_best_varthetaL <- p2_best[names(p2_best) %in% paste0("vtl_", 1:4)] /
   sum(p2_best[names(p2_best) %in% paste0("vtl_", 1:4)])
 p2_best_varthetaL
@@ -656,13 +657,14 @@ for (vartype in names(weight_vartype)) {
     wp = p1_signals[[vartype]]$get0Function(), wc = p1_signals[[vartype]]$get0Function(),
     lambda = rep(0, 4), begin = 0, end = 1,
     lambda_ymin = rep(0, 4), lambda_ymax = rep(1, 4)) # not important here
-  # That's still the same:
+  # That's still the same ('p2_ex_varthetaL' is the original
+  # boundaries of Pattern I transformed to lengths):
   temp$setParams(vartheta_l = p2_ex_varthetaL,
                  v = -1 * p2_best[paste0("v_", vartype)],
                  vartheta_y = -1 * p2_best[paste0("vty_", 1:4, "_", vartype)])
   
   p2_signals[[vartype]] <- Signal$new(
-    name = paste0("p2_", vartype), support = c(0, 1), isWp = TRUE, func = temp$M)
+    name = paste0("p2_", vartype), support = c(0, 1), isWp = TRUE, func = Vectorize(temp$M))
 }
 ```
 
@@ -670,7 +672,7 @@ for (vartype in names(weight_vartype)) {
 temp <- NULL
 
 for (vartype in names(weight_vartype)) {
-  f <- Vectorize(p2_signals[[vartype]]$get0Function())
+  f <- p2_signals[[vartype]]$get0Function()
   x <- seq(from = 0, to = 1, length.out = 1e3)
   y <- f(x)
   li <- levels(fd_data_concat$interval)
@@ -686,23 +688,338 @@ for (vartype in names(weight_vartype)) {
 }
 ```
 
-The 2nd pattern, as derived from the ground truth, is shown in \ref{fig:p2-signals}.
+The 2nd pattern, as derived from the ground truth, is shown in figure \ref{fig:p2-signals}.
 
-```{r p2-signals, echo=FALSE, fig.cap="Second pattern as aligned by the ground truth."}
+```{r p2-signals, echo=FALSE, fig.cap="Second pattern as aligned by the ground truth.", fig.align="top", fig.pos="ht!"}
 plot_project_data(data = temp, boundaries = p2_best_thetaB[2:4])
 ```
 
-While this worked I suppose it is fair to say that our initial pattern is hardly recognizable. Since we expected this, we planned for a third kind of pattern in section \ref{sec:pattern2}, that is purely evidence-based. It appears that, in order to match the ground truths we have at our disposal, projects register some kind of initial peak, that is followed by a somewhat uneventful second and third interval. Interestingly, the optimization seemed to have used to mostly straight lines in the Long Stretch phase to model linear declines and increases, before distorting what was the Fire Drill phase into a new kind of Long Stretch. The new Aftermath phase is just as long, with all activities increasing to their maximum, and without the chance of any decline before the last observed commit. We will check how this adapted pattern fares in section \ref{ssec:score-pattern2}.
+While this worked I suppose it is fair to say that our initial pattern is hardly recognizable. Since we expected this, we planned for a third kind of pattern in section \ref{sec:pattern3}, that is purely evidence-based. It appears that, in order to match the ground truths we have at our disposal, projects register some kind of weak initial peak for the maintenance activities, that is followed by a somewhat uneventful second and third interval. Interestingly, the optimization seemed to have used to mostly straight lines in the Long Stretch phase to model linear declines and increases. The new Aftermath phase is the longest, so it is clear that the original pattern and its subdivision into phases is not a good mapping any longer. Instead of a sharp decline in the Aftermath, we now see an increase of all variables, without the chance of any decline before the last observed commit. We will check how this adapted pattern fares in section \ref{ssec:score-pattern2}.
+
+
+## Pattern III: Averaging the ground truth
+
+We can produce a pattern by computing a weighted average over all available ground truth. As weight, we can use either rater's score, their mean or consensus (default).
+
+```{r}
+gt_weighted_avg <- function(vartype, wtype = c("consensus", "rater.a", "rater.b", "rater.mean")) {
+  wtype <- match.arg(wtype)
+  gt <- ground_truth[ground_truth[[wtype]] > 0, ]
+  wTotal <- sum(gt[[wtype]])
+  proj <- gt$project
+  weights <- `names<-`(gt[[wtype]], gt$project)
+  
+  funcs <- lapply(
+    project_signals, function(ps) ps[[vartype]]$get0Function())
+  
+  Vectorize(function(x) {
+    val <- 0
+    for (p in proj) {
+      val <- val + weights[[p]] * funcs[[p]](x)
+    }
+    val / wTotal
+  })
+}
+```
+
+Now we can easily call above function to produce a weighted average of each signal:
+
+```{r}
+p3_avg_signals <- list()
+
+for (vartype in names(weight_vartype)) {
+  p3_avg_signals[[vartype]] <- Signal$new(
+    name = paste0("p3_avg_", vartype), support = c(0, 1), isWp = TRUE,
+    func = gt_weighted_avg(vartype = vartype))
+}
+```
+
+```{r echo=FALSE}
+temp <- NULL
+
+for (vartype in names(weight_vartype)) {
+  f <- p3_avg_signals[[vartype]]$get0Function()
+  x <- seq(from = 0, to = 1, length.out = 1e3)
+  y <- f(x)
+  
+  temp <- rbind(temp, data.frame(
+    x = x,
+    y = y,
+    t = vartype
+  ))
+}
+```
+
+The 2nd pattern, as derived from the ground truth, is shown in figure \ref{fig:p3-avg-signals}.
+
+```{r p3-avg-signals, echo=FALSE, fig.cap="The third kind of pattern as weighted average over all ground truth.", fig.align="top", fig.pos="ht!"}
+plot_project_data(data = temp)
+```
 
 
 
-## Pattern III: Evidence-based\label{sec:pattern2}
 
-A third kind of pattern is produced by starting with an empty pattern and having it adapt to the available ground truth. Here we inverse the relation WP-WC: All data is becoming the constant Warping Pattern, and we warp an empty pattern as candidate to it. Empty means that we will start with a flat line located at $0.5$ for each pattern. To find the optimum amount of intervals, we try all values in a certain range and compute a fit, and then use an information criterion to decide which of the produced patterns provides the best trade-off between number of parameters and goodness-of-fit.
+## Pattern III (b): Evidence-based\label{sec:pattern3}
 
-The process is very similar to the one for pattern II: Using a set of `srBTAW` instances (one instance per variable type) that all share the same intervals, we allow each to produce individual amplitude warpings.
+A third kind of pattern is produced by starting with an empty warping pattern and having all available ground truth adapt to it. Empty means that we will start with a flat line located at $0.5$ for each variable. Finally, the parameters are inversed. While we could do this the other way round, we have two reasons to do it this way, which is the same as we used for pattern II. First of all if the warping candidate was a perfectly flat line, it would be very difficult for the gradient to converge towards some alignment. Secondly, we want to use equidistantly-spaced boundaries (resulting in equal-length intervals) and using this approach, we can guarantee the interval lengths. To find the optimum amount of intervals, we try all values in a certain range and compute a fit, and then use an information criterion to decide which of the produced patterns provides the best trade-off between number of parameters and goodness-of-fit.
 
-TODO: Remember to always use constant amount of samples if discrete, i.e., amount per interval = total amount / intervals!
+The process is the same as for pattern II: Using an instance of `srBTAW_MultiVartype` that holds one instance of an `srBTAW` per variable-type. We will choose equidistantly-spaced boundaries over the WP, and start with just $1$ interval, going up to some two-digit number. The best amount of parameters (intervals) is then determined using the Akaike Information Criterion [@akaike1981likelihood], which is directly implemented in `srBTAW`. We either have to use continuous losses or make sure to __always__ use the exact same amount of samples total. The amount per interval is determined by dividing by the number of intervals. This is important, as otherwise the information criterion will not work. We will do a single RSS-loss that covers all intervals. We will also use an instance of `TimeWarpRegularization` with the `exint2`-regularizer, as it scales with arbitrary many intervals (important!). I do not suppose that regularization for the y-values is needed, so we will not have this. This means that the resulting objective has just two losses.
+
+For a set of equal-length number of intervals, we will fit such a multiple variable-type model. This also means we can do this in parallel. However, models with more intervals and hence more parameters will considerable take longer during gradient iterations. The more parameters, the fewer of these models should be fit simultaneously. We have access to 128-thread machine (of which about 125 thread can be used). Gradients are computed in parallel as well.
+
+
+### Preparation
+
+We define a single function that encapsulates the multiple variable-type model, losses and objectives and returns them, so that we can just fit them in a loop. The only configurable parameters is the amount of intervals.
+
+```{r}
+p3_prepare_mvtypemodel <- function(numIntervals) {
+  eps <- sqrt(.Machine$double.eps)
+  p3_smv <- srBTAW_MultiVartype$new()
+  
+  p3_vars <- c("A", "CP", "FREQ", "SCD")
+  p3_inst <- list()
+  
+  # The objective:
+  p3_lls <- srBTAW_LossLinearScalarizer$new(
+    returnRaw = FALSE, computeParallel = TRUE, gradientParallel = TRUE)
+  
+  for (name in p3_vars) {
+    p3_inst[[name]] <- srBTAW$new(
+      # Always includes 0,1 - just as we need it! Works for values >= 1
+      theta_b = seq(from = 0, to = 1, by = 1 / numIntervals),
+      gamma_bed = c(0, 1, eps),
+      lambda = rep(eps, numIntervals),
+      begin = 0, end = 1, openBegin = FALSE, openEnd = FALSE,
+      useAmplitudeWarping = TRUE,
+      # We allow these to be larger; however, the final result should be within [0,1]
+      lambda_ymin = rep(-10, numIntervals),
+      lambda_ymax = rep( 10, numIntervals),
+      isObjectiveLogarithmic = TRUE,
+      paramNames = c("v",
+        paste0("vtl_", seq_len(length.out = length(p3_vars))),
+        paste0("vty_", seq_len(length.out = length(p3_vars)))))
+    
+    # The WP is a flat line located at 0.5:
+    p3_inst[[name]]$setSignal(signal = Signal$new(
+      func = function(x) .5, isWp = TRUE, support = c(0, 1), name = paste0("p3_", name)))
+    
+    # Set the common objective:
+    p3_inst[[name]]$setObjective(obj = p3_lls)
+    
+    # .. and also all the projects' signals:
+    for (project in ground_truth[ground_truth$consensus > 0, ]$project) {
+      p3_inst[[name]]$setSignal(signal = project_signals[[project]][[name]])
+    }
+    
+    p3_smv$setSrbtaw(varName = name, srbtaw = p3_inst[[name]])
+  }
+
+  # We call this there so there are parameters present.
+  set.seed(1337 * numIntervals)
+  p3_smv$setParams(params =
+    `names<-`(x = runif(n = p3_smv$getNumParams()), value = p3_smv$getParamNames()))
+  
+  for (name in p3_vars) {
+    # Add RSS-loss per variable-pair:
+    for (project in ground_truth[ground_truth$consensus > 0, ]$project) {
+      # The RSS-loss:
+      lossRss <- srBTAW_Loss_Rss$new(
+        wpName = paste0("p3_", name), wcName = paste(project, name, sep = "_"),
+        weight = 1, intervals = seq_len(length.out = numIntervals), continuous = FALSE,
+        numSamples = rep(round(5000 / numIntervals), numIntervals), returnRaw = TRUE)
+      p3_inst[[name]]$addLoss(loss = lossRss)
+      p3_lls$setObjective(
+        name = paste(project, name, "rss", sep = "_"), obj = lossRss)
+    }
+  }
+  
+  # This has a much higher weight than we had for pattern II
+  # because we are using many more samples in the RSS-loss.
+  p3_lls$setObjective(name = "p3_reg_exint2", obj = TimeWarpRegularization$new(
+    weight = p3_lls$getNumObjectives(), use = "exint2", returnRaw = TRUE,
+    wpName = "p3_A", wcName = project_signals$project_1$A$getName(),
+    intervals = seq_len(numIntervals)
+  )$setSrBtaw(srbtaw = p3_inst$A))
+  
+  list(smv = p3_smv, lls = p3_lls)
+}
+```
+
+
+Now we can compute these in parallel:
+
+```{r p3-compute}
+for (numIntervals in c(1:16)) {
+  loadResultsOrCompute(file = paste0("../results/p3-compute/i_", numIntervals, ".rds"), computeExpr = {
+    p3_vars <- c("A", "CP", "FREQ", "SCD")
+    temp <- p3_prepare_mvtypemodel(numIntervals = numIntervals)
+    tempf <- tempfile()
+    saveRDS(object = temp, file = tempf)
+    
+    # It does not scale well beyond that.
+    cl <- parallel::makePSOCKcluster(min(32, parallel::detectCores()))
+    parallel::clusterExport(cl = cl, varlist = list("tempf"))
+    
+    optR <- doWithParallelClusterExplicit(cl = cl, expr = {
+      optimParallel::optimParallel(
+        par = temp$smv$getParams(),
+        method = "L-BFGS-B",
+        lower = c(
+          rep(-.Machine$double.xmax, length(p3_vars)), # v_[vartype]
+          rep(sqrt(.Machine$double.eps), length(p3_vars)), # vtl
+          rep(-.Machine$double.xmax, length(p3_vars) * length(weight_vartype))), # vty for each
+        upper = c(
+          rep(.Machine$double.xmax, length(p3_vars)),
+          rep(1, length(p3_vars)),
+          rep(.Machine$double.xmax, length(p3_vars) * length(weight_vartype))),
+        fn = function(x) {
+          temp <- readRDS(file = tempf)
+          temp$smv$setParams(params = x)
+          temp$lls$compute0()
+        },
+        parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
+      )
+    })
+    list(optR = optR, smv = temp$smv, lls = temp$lls)
+  })
+}
+```
+
+### Finding the best fit
+
+We will load all the results previously computed and compute an information criterion to compare fits, and then choose the best model.
+
+```{r}
+p3_params <- NULL
+for (tempPath in gtools::mixedsort(
+  Sys.glob(paths = paste0(getwd(), "/../results/p3-compute/*.rds")))
+) {
+  temp <- readRDS(file = tempPath)
+  p3_params <- rbind(p3_params, data.frame(
+    numInt = (temp$lls$getNumParams() - 1) / 2,
+    numPar = temp$smv$getNumParams(),
+    numParSrBTAW = temp$lls$getNumParams(),
+    neglogLik = -log(1 / (.Machine$double.eps + exp(temp$optR$value))),
+    # This AIC would the original one!
+    AIC = 2 * temp$smv$getNumParams() - 2 * log(1 / exp(temp$optR$value)),
+    # This AIC is based on the number of intervals, not parameters!
+    AIC1 = (temp$lls$getNumParams() - 1) - 2 * log(1 / exp(temp$optR$value)),
+    # This AIC is based on the amount of parameters per srBTAW instance:
+    AIC2 = 2 * temp$lls$getNumParams() - 2 * log(1 / exp(temp$optR$value)),
+    logLoss = temp$optR$value,
+    loss = exp(temp$optR$value)
+  ))
+}
+```
+
+In table \ref{tab:p3-params}, we show computed fits for various models, where the only difference is the number of intervals. Each interval comes with two degrees of freedom: its length and terminal y-translation. Recall that each computed fit concerns four variables. For example, the first model with just one interval per variable has nine parameters: All of the variables share the interval's length, the first parameter. Then, each variable has one $v$-parameter, the global y-translation. For each interval, we have one terminal y-translation. For example, the model with $7$ intervals has $7 + 4 + (4\times7)=39$ parameters.
+
+We compute the AIC for each fit, which is formulated as in the following. The parameter $k$ is the number of parameters in the model, i.e., as described, it refers to all the parameters in the `srBTAW_MultiVartype`-model. The second AIC-alternative uses the parameter $p$ instead, which refers to the number of variables per `srBTAW`-instance.
+
+$$
+\begin{aligned}
+  \operatorname{AIC}=&\;2\times k - 2\times\log{(\mathcal{\hat{L}})}\;\text{, where}\;\mathcal{\hat{L}}\;\text{is the maximum log-likelihood of the model,}
+  \\[1ex]
+  \mathcal{\hat{L}}=&\;\frac{1}{\exp{\big(\;\text{lowest loss of the model}\;\big)}}\;\text{, since we use logarithmic losses.}
+  \\[1em]
+  \text{The alternatives}&\;\operatorname{AIC^1}\;\text{and}\;\operatorname{AIC^2}\;\text{ are defined as:}
+  \\[1ex]
+  \operatorname{AIC^1}=&\;k-2\times\log{(\mathcal{\hat{L}})}-1\;\text{, which is based on the number of intervals, and}
+  \\[1ex]
+  \operatorname{AIC^2}=&\;2\times p - 2\times\log{(\mathcal{\hat{L}})}\;\text{, where}\;p\;\text{is the amount of params per}\;\operatorname{srBTAW}\text{-instance.}
+\end{aligned}
+$$
+
+```{r echo=FALSE}
+if (interactive()) {
+  p3_params
+} else {
+  knitr::kable(
+    x = round(p3_params, 3),
+    booktabs = TRUE,
+    caption = "Likelihood and Akaike information criteria (AIC) for computed models.",
+    label = "p3-params"
+  )
+}
+```
+
+### Create pattern from best fit
+
+This is the same process as for pattern II, as the parameters need inversion. We will reconstruct the warped signals according to the inversed parameters to produce the third pattern. According to the overview above, the best model is the one with __`r p3_params[which.min(p3_params$AIC), ]$numIntervals`__ intervals. Its parameters are the following:
+
+```{r}
+p3_best <- readRDS(file = paste0(getwd(), "/../results/p3-compute/i_",
+                     p3_params[which.min(p3_params$loss), ]$numInt, ".rds"))
+p3_best$optR$par
+```
+
+First we have to inverse the parameters before we can reconstruct the signals:
+
+```{r}
+p3_best_varthetaL <- p3_best$optR$par[
+  grepl(pattern = "^vtl_", x = names(p3_best$optR$par))]
+p3_best_varthetaL <- p3_best_varthetaL / sum(p3_best_varthetaL)
+
+p3_best_thetaB <- c(0)
+for (idx in seq_len(length.out = length(p3_best_varthetaL))) {
+  p3_best_thetaB <- c(p3_best_thetaB, sum(p3_best_varthetaL[1:idx]))
+}
+p3_best_thetaB[length(p3_best_thetaB)] <- 1 # numeric stability
+
+p3_best_varthetaL
+p3_best_thetaB
+```
+
+
+```{r echo=FALSE}
+p3_best_numInt <- length(p3_best_varthetaL)
+p3_signals <- list()
+
+for (vartype in names(weight_vartype)) {
+  emptySig <- Signal$new(
+    isWp = TRUE, # does not matter here
+      func = function(x) .5, support = c(0, 1), name = paste0("p3_", vartype))
+  
+  temp <- SRBTWBAW$new(
+    theta_b = unname(p3_best_thetaB), gamma_bed = c(0, 1, 0),
+    wp = emptySig$get0Function(), wc = emptySig$get0Function(),
+    lambda = rep(0, p3_best_numInt), begin = 0, end = 1,
+    lambda_ymin = rep(0, p3_best_numInt), lambda_ymax = rep(1, p3_best_numInt))
+  
+  # Recall that originally we used equidistantly-spaced boundaries:
+  temp$setParams(vartheta_l = rep(1 / p3_best_numInt, p3_best_numInt),
+                 v = -1 * p3_best$optR$par[paste0("v_", vartype)],
+                 vartheta_y = -1 * p3_best$optR$par[paste0("vty_", 1:p3_best_numInt, "_", vartype)])
+  
+  p3_signals[[vartype]] <- Signal$new(
+    name = paste0("p3_", vartype), support = c(0, 1), isWp = TRUE, func = Vectorize(temp$M))
+}
+```
+
+
+```{r echo=FALSE}
+temp <- NULL
+
+for (vartype in names(weight_vartype)) {
+  f <- p3_signals[[vartype]]$get0Function()
+  x <- seq(from = 0, to = 1, length.out = 1e3)
+  y <- f(x)
+  
+  temp <- rbind(temp, data.frame(
+    x = x,
+    y = y,
+    t = vartype
+  ))
+}
+```
+
+The 2nd pattern, as derived from the ground truth, is shown in figure \ref{fig:p3-signals}.
+
+```{r p3-signals, echo=FALSE, fig.cap="Third pattern as aligned by the ground truth only.", fig.align="top", fig.pos="ht!"}
+plot_project_data(data = temp, boundaries = p3_best_thetaB[2:(length(p3_best_thetaB) - 1)])
+```
+
 
 
 # Scoring of projects
@@ -718,42 +1035,46 @@ To compute a score, we need to define how to measure the distance between the WP
 For scoring a single project, we first warp it to the pattern, then we measure the remaining distance. We only do time-warping of the projects to the pattern. We could compute a score for each interval. However, the ground truth does not yield this, so we will only compute a scores for entire signals, i.e., over all intervals. Once aligned, computing scores is cheap, so we will try a variety of scores and see what works best.
 
 ```{r score-mech}
-score_variable_alignment = function(alignment, use = c("area", "corr", "jsd", "arclen", "signals")) {
+score_variable_alignment <- function(alignment, patternName, projectName, use = c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae", "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
   use <- match.arg(use)
   sigs <- alignment$getAllSignals()
   vartypes <- names(weight_vartype)
   
   scores <- c()
   for (vartype in vartypes) {
-    # The names of the 2 variables to compare. Which one is WP
-    # and which one is WC does not matter for our purpose.
-    sigNames <- names(sigs)[grepl(pattern = paste0(vartype, "$"), x = names(sigs))]
-    sig1 <- sigs[[sigNames[1]]]
-    sig2 <- sigs[[sigNames[2]]]
-    stopifnot(all.equal(sig1$getSupport(), sig2$getSupport()))
-    stopifnot(sig1$getSupport()[1] == 0 && sig1$getSupport()[2] == 1)
+    inst <- alignment$getInstance(
+      wpName = paste0(patternName, "_", vartype),
+      wcName = paste0(projectName, "_", vartype))
+    supp <- c(inst$getTb_q(q = 1), inst$getTe_q(q = max(inst$getQ())))
+    stopifnot(supp[1] == 0 && supp[2] == 1)
+    # Now the two functions/signals: The first is the unchanged WP,
+    # the second is the warped M function of the SRBTW/SRBTWBAW!
+    f1 <- inst$getWP()
+    f2 <- Vectorize(inst$M)
     temp <- NA_real_
     
     if (use == "area") {
-      temp <- area_diff_2_functions_score()(
-        f1 = sig1$get0Function(), f2 = sig2$get0Function())
+      temp <- area_diff_2_functions_score()(f1 = f1, f2 = f2)
     } else if (use == "corr") {
-      tempsd <- stat_diff_2_functions(f1 = sig1$get0Function(), f2 = sig2$get0Function())
+      tempsd <- stat_diff_2_functions(f1 = f1, f2 = f2)
       temp <- stats::cor(x = tempsd$dataF1, y = tempsd$dataF2)
       if (is.na(temp)) {
         temp <- 0
       }
       temp <- (temp + 1) / 2 # move from [-1,1] \to [0,1]
     } else if (use == "jsd") {
-      temp <- stat_diff_2_functions_symmetric_JSD_score()(
-        f1 = sig1$get0Function(), f2 = sig2$get0Function())
+      temp <- stat_diff_2_functions_symmetric_JSD_score()(f1 = f1, f2 = f2)
+    } else if (use == "kl") {
+      temp <- stat_diff_2_functions_symmetric_KL_sampled(f1 = f1, f2 = f2)
+      temp <- stat_diff_2_functions_mutual_information_score(
+        sensitivityExponent = 5)(f1 = f1, f2 = f2)$value
     } else if (use == "arclen") {
-      temp <- stat_diff_2_functions_arclen_score()(
-        f1 = sig1$get0Function(), f2 = sig2$get0Function())
-    } else if (use == "signals") {
-      temp <- prod(stat_diff_2_functions_signals_score()(
-        f1 = sig1$get0Function(), f2 = sig2$get0Function()))
-    }
+      temp <- stat_diff_2_functions_arclen_score()(f1 = f1, f2 = f2)
+    } else if (use %in% c("RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
+      temp <- stat_diff_2_functions_signals_score(use = use)(f1 = f1, f2 = f2)
+    } else if (use %in% c("sd", "var", "mae", "rmse")) {
+      temp <- stat_diff_2_functions_sd_var_mae_rmse_score(use = use)(f1 = f1, f2 = f2)
+    } else stop(paste0("Don't know score ", use))
     
     scores <- c(scores, `names<-`(c(temp), vartype))
   }
@@ -764,24 +1085,29 @@ score_variable_alignment = function(alignment, use = c("area", "corr", "jsd", "a
 We define a parallelized function to compute all scores of a project:
 
 ```{r}
-compute_all_scores <- function(alignment) {
-  useScores <- c("area", "corr", "jsd", "arclen", "signals")
+compute_all_scores <- function(alignment, patternName) {
+  useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae", "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
   
-  cl <- parallel::makePSOCKcluster(length(alignment))
-  `rownames<-`(doWithParallelClusterExplicit(cl = cl, expr = {
+  `rownames<-`(doWithParallelCluster(numCores = length(alignment), expr = {
     foreach::foreach(
-      projectName = sort(names(alignment)),
+      projectName = names(alignment),
       .inorder = TRUE,
-      .combine = rbind
+      .combine = rbind,
+      .export = c("score_variable_alignment", "weight_vartype")
     ) %dopar% {
+      source("./common-funcs.R")
+      source("../models/modelsR6.R")
+      source("../models/SRBTW-R6.R")
+      
       scores <- c()
       for (score in useScores) {
         temp <- score_variable_alignment(
+          patternName = patternName, projectName = projectName,
           alignment = alignment[[projectName]], use = score)
         scores <- c(scores, `names<-`(
-          c(mean(temp), prod(temp)), paste0(score, c("_m", "_p"))))
+          c(mean(temp), prod(temp)), c(paste0(score, c("_m", "_p")))))
       }
-      scores
+      `colnames<-`(matrix(data = scores, nrow = 1), names(scores))
     }
   }), sort(names(alignment)))
 }
@@ -795,7 +1121,7 @@ We also need to define a function for warping a project to the pattern:
 #' the signals of pattern 1 and the given project to it. Then it creates
 #' a single RSS-loss per variable pair and adds it to the model and a
 #' linear scalarizer that is used as objective.
-time_warp_project <- function(pattern, project) {
+time_warp_project <- function(pattern, project, thetaB = c(0, fd_data_boundaries, 1)) {
   stopifnot(is.logical(all.equal(names(pattern), names(project))))
   
   obj <- srBTAW_LossLinearScalarizer$new(
@@ -836,14 +1162,7 @@ time_warp_project <- function(pattern, project) {
 
 First we compute the alignment for all projects, then all scores.
 
-```{r echo=FALSE, eval=FALSE}
-# doWithParallelCluster({
-#   temp <- time_warp_project(pattern = p1_signals, project = project_signals$project_1)
-#   temp$fit(verbose = TRUE)
-# })
-```
-
-```{r align-p1}
+```{r p1-align}
 library(foreach)
 
 p1_align <- loadResultsOrCompute(file = "../results/p1_align.rds", computeExpr = {
@@ -872,36 +1191,70 @@ p1_align <- loadResultsOrCompute(file = "../results/p1_align.rds", computeExpr =
 })
 ```
 
-```{r score-p1}
+```{r p1-scores}
 p1_scores <- loadResultsOrCompute(file = "../results/p1_scores.rds", computeExpr = {
-  as.data.frame(compute_all_scores(alignment = p1_align))
+  as.data.frame(compute_all_scores(alignment = p1_align, patternName = "p1"))
 })
 ```
 
+Recall that we are obtaining scores for each interval. To aggregate them we build the product and the mean in the following table, there is no weighing applied.
+
 ```{r echo=FALSE}
-knitr::kable(
-  x = p1_scores,
-  booktabs = TRUE,
-  caption = "Scores for the aligned projects with pattern I (p=product, m=mean).",
-  label = "p1-scores"
-)
+if (interactive()) {
+  round(t(p1_scores), 4)
+} else {
+  knitr::kable(
+    x = round(`colnames<-`(t(p1_scores), paste0("pr_", 1:9)), 2),
+    booktabs = TRUE,
+    caption = "Scores for the aligned projects with pattern I (p=product, m=mean).",
+    label = "p1-scores"
+  )
+}
 ```
 
-Let's show a correlation matrix:
+```{r echo=FALSE}
+temp <- stats::cor(ground_truth$consensus, p1_scores)
 
-```{r}
+if (interactive()) {
+  temp[1, ]
+} else {
+  corr <- stats::cor(ground_truth$consensus, p1_scores)[1, ]
+  perCol <- ceiling(length(corr) / 3)
+  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
+  for (idx in 1:3) {
+    off <- (idx - 1) * perCol
+    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
+    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
+  }
+  colnames(temp) <- rep(c("Score", "Value"), 2)
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Correlation of the ground truth with all other scores for pattern I.",
+    label = "p1-corr")
+}
+```
+
+Let's show a correlation matrix in figure \ref{fig:p1-corr-mat}:
+
+```{r p1-corr-mat, echo=FALSE, fig.cap="Correlation matrix for scores using pattern I.", fig.align="top", fig.pos="ht!"}
 temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p1_scores[,])
+temp <- temp[, colSums(is.na(temp)) < nrow(temp)]
 
-corrplot::corrplot(corr = stats::cor(temp), type = "upper", order = "hclust",
-                   tl.col = "black", tl.srt = 35)
+corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
+                   tl.col = "black", tl.srt = 90)
 ```
 
+We appear to have mostly strongly negative correlations -- note that the measure using Kullback-Leibler is a divergence, not a similarity. Area and RMSE have a strong negative correlation, which suggests that whenever their score is high, the ground truth's consensus score is low. A high score for area or RMSE however means, that the distance between the signals is comparatively low, so we should have a good alignment, so how is this explained then?
 
+Going back to table \ref{tab:groundtruth}, we will notice that projects 2, 3 and 5 have somewhat similar courses for their variables, yet their consensus scores are 0, 6 and 1, respectively. In other words, only project 3 has had a Fire Drill. We can hence conclude that the visual distance and the ground truth consensus are __not__ proportional (at least not for the variables we chose to model). The visual similarity of a project to a pattern is just that; the score quantifies the deviation from the pattern, but it does not necessarily correlate with the ground truth. This however was our underlying assumption all along, hence the initial pattern. We deliberately chose to design patterns _without_ investigating any of the projects.
+
+Nevertheless, it does not hurt to check out patterns II and III, as we would like to achieve better matches. Eventually, the goal with this approach is to improve correlations and to get more accurate scores. The final stage then could be to compute, for example, a weighted consensus, based on the projects that we have, or to create a linear model that can regress to a value close to the ground truth by considering all the different scores.
 
 ## Pattern II\label{ssec:score-pattern2}
 
 
-```{r align-p2}
+```{r p2-align}
 library(foreach)
 
 p2_align <- loadResultsOrCompute(file = "../results/p2_align.rds", computeExpr = {
@@ -929,6 +1282,178 @@ p2_align <- loadResultsOrCompute(file = "../results/p2_align.rds", computeExpr =
   }))
 })
 ```
+
+
+```{r score-p2}
+p2_scores <- loadResultsOrCompute(file = "../results/p2_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores(alignment = p2_align, patternName = "p2"))
+})
+```
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  round(t(p2_scores), 4)
+} else {
+  knitr::kable(
+    x = round(`colnames<-`(t(p2_scores), paste0("pr_", 1:9)), 2),
+    booktabs = TRUE,
+    caption = "Scores for the aligned projects with pattern II (p=product, m=mean).",
+    label = "p2-scores"
+  )
+}
+```
+
+The correlation of just the ground truth with all scores is in table \ref{tab:p2-corr}.
+
+```{r echo=FALSE}
+corr <- stats::cor(ground_truth$consensus, p2_scores)[1, ]
+
+if (interactive()) {
+  corr[1, ]
+} else {
+  perCol <- ceiling(length(corr) / 3)
+  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
+  for (idx in 1:3) {
+    off <- (idx - 1) * perCol
+    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
+    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
+  }
+  colnames(temp) <- rep(c("Score", "Value"), 3)
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Correlation of the ground truth with all other scores for pattern II.",
+    label = "p2-corr")
+}
+```
+
+The correlation matrix looks as in figure \ref{fig:p2-corr-mat}.
+
+```{r p2-corr-mat, echo=FALSE, fig.cap="Correlation matrix for scores using pattern II.", fig.align="top", fig.pos="ht!"}
+temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p2_scores[,])
+
+corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
+                   tl.col = "black", tl.srt = 90)
+```
+
+With the second pattern we get much stronger correlations on average, meaning that the alignment of each project to the second pattern is better. While some correlations with the ground truth remain similar, we get strong positive correlations with the signal-measures _Impulse-factor_ (`r round(temp[, "ImpulseFactor_m"], 3)`) and _Peak_ (`r round(temp[, "Peak_m"], 3)`) [@xi2000bearing].
+
+
+## Pattern III (average)
+
+The 3rd pattern that was produced as weighted average over all ground truth is scored in this section. __Note!__ There is one important difference here: the weighted-average pattern does not have the same intervals as our initial pattern -- in fact, we cannot make any assumptions about any of the intervals. Therefore, we will compute this align with __ten equally-long__ intervals.
+
+```{r p3-avg-align}
+library(foreach)
+
+p3_avg_align <- loadResultsOrCompute(file = "../results/p3_avg_align.rds", computeExpr = {
+  # Let's compute all projects in parallel!
+  cl <- parallel::makePSOCKcluster(length(project_signals))
+  unlist(doWithParallelClusterExplicit(cl = cl, expr = {
+    foreach::foreach(
+      projectName = names(project_signals),
+      .inorder = FALSE,
+      .packages = c("parallel")
+    ) %dopar% {
+      source("./common-funcs.R")
+      source("../models/modelsR6.R")
+      source("../models/SRBTW-R6.R")
+      
+      cl_nested <- parallel::makePSOCKcluster(4)
+      `names<-`(list(doWithParallelClusterExplicit(cl = cl_nested, expr = {
+        temp <- time_warp_project(
+          thetaB = seq(from = 0, to = 1, by = 0.1), # important!
+          pattern = p3_avg_signals, project = project_signals[[projectName]])
+        temp$fit(verbose = TRUE)
+        temp # return the instance, it includes the FitResult
+      })), projectName)
+    }
+  }))
+})
+```
+
+
+
+```{r score-p3_avg}
+p3_avg_scores <- loadResultsOrCompute(file = "../results/p3_avg_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores(alignment = p3_avg_align, patternName = "p3_avg"))
+})
+```
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  round(t(p3_avg_scores), 4)
+} else {
+  knitr::kable(
+    x = round(`colnames<-`(t(p3_avg_scores), paste0("pr_", 1:9)), 2),
+    booktabs = TRUE,
+    caption = "Scores for the aligned projects with pattern III (average ground truth).",
+    label = "p3-avg-scores"
+  )
+}
+```
+
+The correlation of just the ground truth with all scores is in table \ref{tab:p3-avg-corr}.
+
+```{r echo=FALSE}
+corr <- stats::cor(ground_truth$consensus, p3_avg_scores)[1, ]
+
+if (interactive()) {
+  corr[1, ]
+} else {
+  perCol <- ceiling(length(corr) / 3)
+  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
+  for (idx in 1:3) {
+    off <- (idx - 1) * perCol
+    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
+    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
+  }
+  colnames(temp) <- rep(c("Score", "Value"), 3)
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Correlation of the ground truth with all other scores for pattern II.",
+    label = "p3-avg-corr")
+}
+```
+
+The correlation matrix looks as in figure \ref{fig:p3-avg-corr-mat}.
+
+```{r p3-avg-corr-mat, echo=FALSE, fig.cap="Correlation matrix for scores using pattern III (average).", fig.align="top", fig.pos="ht!"}
+temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p3_avg_scores[,])
+
+corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
+                   tl.col = "black", tl.srt = 90)
+```
+
+Before we go any further, I would also like to compute the scores for this data-driven pattern __without__ having the projects aligned. After manually inspecting some of these alignments, it turns out that some are quite extreme. Since this pattern is a weighted average over all ground truth, not much alignment should be required.
+
+```{r}
+# We'll have to mimic an 'aligned' object, which is a list
+# of srBTAW_MultiVartype instances. We can clone it and just
+# undo the time warping.
+p3_avg_no_align <- list()
+
+for (project in ground_truth$project) {
+  temp <- p3_avg_align[[project]]$clone()
+  temp$setParams(params = `names<-`(rep(1 / temp$getNumParams(),
+                  temp$getNumParams()), temp$getParamNames()))
+  p3_avg_align[[project]] <- temp
+}
+```
+
+```{r score-p3_avg_no}
+p3_avg_no_scores <- loadResultsOrCompute(file = "../results/p3_avg_no_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores(alignment = p3_avg_no_align, patternName = "p3_avg"))
+})
+```
+
+
+## Pattern III (b)\label{ssec:score-pattern3}
+
+The third and last pattern is based on the ground truth only. Starting with straight lines and equally long intervals, a pattern was generated and selected using a best trade-off between number of parameters and highest _likelihood_.
 
 
 
