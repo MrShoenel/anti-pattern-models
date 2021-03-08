@@ -1427,6 +1427,10 @@ Model <- R6Class(
       stop("Abstract method 10")
     },
     
+    logLik = function() {
+      `names<-`(c(log(self$likelihood())), "log_likelihood")
+    },
+    
     residuals = function(...) {
       stop("Abstract method 11")
     },
@@ -2364,10 +2368,6 @@ srBTAW <- R6Class(
       # \mapsto [0,\infty], where larger values mean larger likelihood
       likelihood <- 1 / (.Machine$double.eps + bestLoss)
       `names<-`(c(likelihood), "likelihood")
-    },
-    
-    logLik = function() {
-      `names<-`(c(log(self$likelihood())), "log_likelihood")
     },
     
     #' This method is the most important for computing Objectives and Losses,
