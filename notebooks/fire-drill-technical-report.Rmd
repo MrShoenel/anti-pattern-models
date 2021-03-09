@@ -80,33 +80,6 @@ Using the _quadratic weighted Kappa_ [@cohen1968weighted], we can report an unad
 
 The ground truth was extracted from nine student-conducted projects. Seven of these were implemented simultaneously between March and June 2020, and two the year before in a similar timeframe.
 
-```{r echo=FALSE, eval=FALSE}
-# TODO: deleteme -- this MUST NOT END UP IN THE FINAL NOTEBOOK
-temp <- (function() {
-  repos <- c("Anonymous", "BHVS", "HKMM", "HOANG", "Horky", "Medici", "Merlot", "QWERTY", "VLDC")
-  
-  idx <- 1
-  all <- NULL
-  for (repo in repos) {
-    temp <- read.csv(file = paste0("D:/repos/", repo, ".csv"))
-    temp <- cbind(data.frame(project = rep(paste0("project_", idx), nrow(temp))), temp)
-    all <- rbind(all, temp) 
-    idx <- idx + 1
-  }
-  
-  # Remove cols:
-  all <- all[, colnames(all)[!(colnames(all) %in% c("SHA1", "RepoPathOrUrl", "AuthorName", "CommitterName", "Message", "AuthorEmail", "CommitterEmail"))]]
-  
-  # Predict labels:
-  p <- final_model$predict(data = all, type = "both")
-  colnames(p) <- c("label", paste0("prob_", colnames(p)[2:4]))
-  all <- as.data.frame(cbind(all, p))
-  
-  all
-})()
-write.table(x = temp, file = "../data/student-projects.csv", row.names = FALSE, fileEncoding = "utf-8", sep = ";")
-```
-
 ```{r}
 student_projects <- read.csv(file = "../data/student-projects.csv", sep = ";")
 ```
@@ -119,7 +92,7 @@ We have a total of:
 
 We have a complete breakdown of all activities across all projects in figure \ref{fig:project-activity}.
 
-```{r echo=FALSE}
+```{r}
 student_projects_info <- NULL
 
 for (pId in unique(student_projects$project)) {
@@ -134,8 +107,13 @@ for (pId in unique(student_projects$project)) {
     avgDens = round(mean(temp$Density), 3)
   ))
 }
+```
 
-if (!interactive()) {
+
+```{r echo=FALSE}
+if (interactive()) {
+  student_projects_info
+} else {
   knitr::kable(
     x = student_projects_info,
     booktabs = TRUE,
@@ -171,7 +149,7 @@ student_projects$project <- as.factor(student_projects$project)
 student_projects$AuthorTimeNormalized <- NA_real_
 ```
 
-```{r echo=FALSE}
+```{r}
 for (pId in levels(student_projects$project)) {
   student_projects[student_projects$project == pId, ]$AuthorTimeNormalized <-
     (student_projects[student_projects$project == pId, ]$AuthorTimeUnixEpochMilliSecs -
@@ -395,7 +373,7 @@ weight_vartype <- c("A" = 1, "CP" = 1, "FREQ" = 1, "SCD" = 0.5)
 weight_interval <- c("Begin" = 1, "Long Stretch" = 0.5, "Fire Drill" = 1, "Aftermath" = 1)
 ```
 
-```{r echo=FALSE}
+```{r}
 temp <- expand.grid(weight_interval, weight_vartype, ground_truth$consensus_score)
 temp$p <- temp$Var1 * temp$Var2 * temp$Var3
 weight_total <- sum(temp$p)
@@ -404,12 +382,16 @@ weight_total <- sum(temp$p)
 The sum of all weights combined is `r weight_total`.
 
 ```{r echo=FALSE}
-knitr::kable(
-  x = ground_truth[ground_truth$consensus > 0, c("project", "consensus", "consensus_score")],
-  booktabs = TRUE,
-  caption = "Entire ground truth as of both raters",
-  label = "groundtruth-score"
-)
+if (interactive()) {
+  ground_truth[ground_truth$consensus > 0, c("project", "consensus", "consensus_score")]
+} else {
+  knitr::kable(
+    x = ground_truth[ground_truth$consensus > 0, c("project", "consensus", "consensus_score")],
+    booktabs = TRUE,
+    caption = "Entire ground truth as of both raters",
+    label = "groundtruth-score"
+  )
+}
 ```
 
 ### Defining the losses
@@ -851,7 +833,10 @@ Now we can compute these in parallel:
 
 ```{r p3-compute}
 for (numIntervals in c(1:16)) {
-  loadResultsOrCompute(file = paste0("../results/p3-compute/i_", numIntervals, ".rds"), computeExpr = {
+  loadResultsOrCompute(
+    file = paste0("../results/p3-compute/i_", numIntervals, ".rds"),
+    computeExpr =
+  {
     p3_vars <- c("A", "CP", "FREQ", "SCD")
     temp <- p3_prepare_mvtypemodel(numIntervals = numIntervals)
     tempf <- tempfile()
@@ -950,7 +935,7 @@ Comparing the results from table \ref{tab:p3-params}, it appears that no matter 
 
 This is the same process as for pattern II, as the parameters need inversion. We will reconstruct the warped signals according to the inversed parameters to produce the third pattern. According to the overview above, the best model (lowest loss, __not__ AIC) is the one with __`r p3_params[which.min(p3_params$loss), ]$numInt`__ intervals. Its parameters are the following:
 
-```{r echo=FALSE}
+```{r}
 # Let's first define a function that inverses the params and reconstructs the pattern.
 p3_pattern_from_fit <- function(whichNumIntervals) {
   res <- list()
@@ -1051,7 +1036,7 @@ p3_best_thetaB
 ```
 
 
-```{r echo=FALSE}
+```{r}
 p3_best_numInt <- length(p3_best_varthetaL)
 p3_signals <- list()
 
@@ -1348,13 +1333,12 @@ if (interactive()) {
 }
 ```
 
-```{r echo=FALSE}
-temp <- stats::cor(ground_truth$consensus, p1_scores)
+```{r}
+corr <- stats::cor(ground_truth$consensus, p1_scores)[1, ]
 
 if (interactive()) {
-  temp[1, ]
+  corr
 } else {
-  corr <- stats::cor(ground_truth$consensus, p1_scores)[1, ]
   perCol <- ceiling(length(corr) / 3)
   temp <- data.frame(matrix(ncol = 6, nrow = perCol))
   for (idx in 1:3) {
@@ -1442,7 +1426,7 @@ if (interactive()) {
 
 The correlation of just the ground truth with all scores is in table \ref{tab:p2-corr}.
 
-```{r echo=FALSE}
+```{r}
 corr <- stats::cor(ground_truth$consensus, p2_scores)[1, ]
 
 if (interactive()) {
@@ -1532,7 +1516,7 @@ if (interactive()) {
 
 The correlation of just the ground truth with all scores is in table \ref{tab:p3-avg-corr}.
 
-```{r echo=FALSE}
+```{r}
 corr <- stats::cor(ground_truth$consensus, p3_avg_scores)[1, ]
 
 if (interactive()) {
@@ -1601,7 +1585,7 @@ if (interactive()) {
 
 The correlation of just the ground truth with all scores is in table \ref{tab:p3-avg-corr}.
 
-```{r echo=FALSE}
+```{r}
 corr <- stats::cor(ground_truth$consensus, p3_avg_no_scores)[1, ]
 
 if (interactive()) {
