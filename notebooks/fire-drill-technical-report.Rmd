@@ -900,7 +900,6 @@ for (tempPath in gtools::mixedsort(
     numInt = (temp$lls$getNumParams() - 1) / 2,
     numPar = temp$smv$getNumParams(),
     numParSrBTAW = temp$lls$getNumParams(),
-    neglogLik = -log(1 / (.Machine$double.eps + exp(temp$optR$value))),
     # This AIC would the original one!
     AIC = 2 * temp$smv$getNumParams() - 2 * log(1 / exp(temp$optR$value)),
     # This AIC is based on the number of intervals, not parameters!
@@ -944,9 +943,89 @@ if (interactive()) {
 }
 ```
 
+Comparing the results from table \ref{tab:p3-params}, it appears that no matter how we define the AIC, it is increasing with the number of parameters, and it does so faster than the loss reduces. So, picking a model by AIC is not terribly useful, as the results suggest we would to go with the $1$-interval model. The model with the lowest loss is the one with `r p3_params[which.min(p3_params$loss), ]$numInt` intervals.
+
+
 ### Create pattern from best fit
 
-This is the same process as for pattern II, as the parameters need inversion. We will reconstruct the warped signals according to the inversed parameters to produce the third pattern. According to the overview above, the best model is the one with __`r p3_params[which.min(p3_params$AIC), ]$numIntervals`__ intervals. Its parameters are the following:
+This is the same process as for pattern II, as the parameters need inversion. We will reconstruct the warped signals according to the inversed parameters to produce the third pattern. According to the overview above, the best model (lowest loss, __not__ AIC) is the one with __`r p3_params[which.min(p3_params$loss), ]$numInt`__ intervals. Its parameters are the following:
+
+```{r echo=FALSE}
+# Let's first define a function that inverses the params and reconstructs the pattern.
+p3_pattern_from_fit <- function(whichNumIntervals) {
+  res <- list()
+  p3_i <- readRDS(file = paste0(getwd(), "/../results/p3-compute/i_", whichNumIntervals, ".rds"))
+  
+  # FitResult:
+  fr <- FitResult$new("foo")
+  fr$fromOptimParallel(optR = p3_i$optR)
+  res$fr <- fr
+  
+  # Inversion:
+  lambda <- p3_i$smv$.__enclos_env__$private$instances$A$.__enclos_env__$private$instances$`p3_A|project_1_A`$getLambda()
+  p3_i_varthetaL <- p3_i$optR$par[grepl(pattern = "^vtl_", x = names(p3_i$optR$par))]
+  for (q in seq_len(length.out = whichNumIntervals)) {
+    if (p3_i_varthetaL[q] < lambda[q]) {
+      p3_i_varthetaL[q] <- lambda[q]
+    }
+  }
+  p3_i_varthetaL <- p3_i_varthetaL / sum(p3_i_varthetaL)
+  
+  p3_i_thetaB <- c(0)
+  for (idx in seq_len(length.out = length(p3_i_varthetaL))) {
+    p3_i_thetaB <- c(p3_i_thetaB, sum(p3_i_varthetaL[1:idx]))
+  }
+  p3_i_thetaB[length(p3_i_thetaB)] <- 1 # numeric stability
+  
+  p3_i_varthetaL
+  p3_i_thetaB
+  res$varthetaL <- p3_i_varthetaL
+  res$thetaB <- p3_i_thetaB
+  
+  # Signals:
+  p3_i_numInt <- length(p3_i_varthetaL)
+  p3_i_signals <- list()
+  
+  for (vartype in names(weight_vartype)) {
+    emptySig <- Signal$new(
+      isWp = TRUE, # does not matter here
+        func = function(x) .5, support = c(0, 1), name = paste0("p3_", vartype))
+    
+    temp <- SRBTWBAW$new(
+      theta_b = unname(p3_i_thetaB), gamma_bed = c(0, 1, 0),
+      wp = emptySig$get0Function(), wc = emptySig$get0Function(),
+      lambda = rep(0, p3_i_numInt), begin = 0, end = 1,
+      lambda_ymin = rep(0, p3_i_numInt), lambda_ymax = rep(1, p3_i_numInt))
+    
+    # Recall that originally we used equidistantly-spaced boundaries:
+    temp$setParams(vartheta_l = rep(1 / p3_i_numInt, p3_i_numInt),
+                   v = -1 * p3_i$optR$par[paste0("v_", vartype)],
+                   vartheta_y = -1 * p3_i$optR$par[paste0("vty_", 1:p3_i_numInt, "_", vartype)])
+    
+    p3_i_signals[[vartype]] <- Signal$new(
+      name = paste0("p3_", vartype), support = c(0, 1), isWp = TRUE, func = Vectorize(temp$M))
+  }
+  res$signals <- p3_i_signals
+  
+  # Data:
+  temp <- NULL
+  for (vartype in names(weight_vartype)) {
+    f <- p3_i_signals[[vartype]]$get0Function()
+    x <- seq(from = 0, to = 1, length.out = 1e3)
+    y <- f(x)
+    
+    temp <- rbind(temp, data.frame(
+      x = x,
+      y = y,
+      t = vartype,
+      numInt = whichNumIntervals
+    ))
+  }
+  res$data <- temp
+  res
+}
+```
+
 
 ```{r}
 p3_best <- readRDS(file = paste0(getwd(), "/../results/p3-compute/i_",
@@ -1020,6 +1099,57 @@ The 2nd pattern, as derived from the ground truth, is shown in figure \ref{fig:p
 plot_project_data(data = temp, boundaries = p3_best_thetaB[2:(length(p3_best_thetaB) - 1)])
 ```
 
+Let's show all computed patterns in a grid:
+
+```{r echo=FALSE}
+p3b_all <- loadResultsOrCompute(file = "../results/p3b_all.rds", computeExpr = {
+  unlist(doWithParallelCluster(numCores = 16, expr = {
+    foreach::foreach(
+      numInt = 1:16,
+      .inorder = FALSE
+    ) %dopar% {
+      source("./common-funcs.R")
+      source("../models/modelsR6.R")
+      source("../models/SRBTW-R6.R")
+      `names<-`(list(p3_pattern_from_fit(whichNumIntervals = numInt)), paste0("i_", numInt))
+    }
+  }), recursive = FALSE)
+})
+```
+
+
+In figure \ref{fig:p3-all} we can clearly observe how the pattern evolves with growing number or parameters. Almost all patterns with sufficiently many degrees of freedom have some crack at about one quarter of the projects' time, a second crack is observed at about three quarter's time. In all patterns, it appears that adaptive activities are the least common. All patterns started with randomized coefficients, and something must have gone wrong for pattern $8$. From five and more intervals we can observe growing similarities with the weighted-average pattern, although it never comes really close. Even though we used a timewarp-regularizer with high weight, we frequently get extreme intervals.
+
+
+```{r p3-all, echo=FALSE, fig.height=6, fig.cap="Computed pattern by number of intervals.", fig.align="top", fig.pos="ht!"}
+temp <- NULL
+for (res in p3b_all) {
+  temp <- rbind(temp, res$data)
+}
+
+ggplot(data = temp, mapping = aes(x = x, y = y, color = t)) +
+  geom_line() +
+  facet_wrap(numInt ~., nrow = 4) +
+  theme_light() +
+  labs(color = "Variable") + xlab("Relative Time") + ylab("Value") +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_rect(fill="#dfdfdf"),
+    strip.text = element_text(color="black"))
+```
+
+
+In figure \ref{fig:p3b-all-fr} we can clearly see that each pattern was fit successfully to all data. The loss is logarithmic, so the progress is rather substantial. For example, going from $\log{(14)}\approx1.2e6$ to $\log{(8)}\approx3e3$ is a reduction by $3$ (!) orders of magnitude.
+
+
+```{r p3b-all-fr, echo=FALSE, fig.height=6, fig.cap="Losses for all computed pattern by number of intervals.", fig.align="top", fig.pos="ht!"}
+ggarrange(
+  plotlist = lapply(p3b_all, function(p) p$fr$plot_loss() + theme(axis.title.x.bottom = element_blank(), axis.title.y.left = element_blank()) + labs(subtitle = paste0("numInt=", length(p$varthetaL)))),
+  nrow = 4, ncol = 4, common.legend = TRUE
+)
+```
+
+
 
 
 # Scoring of projects
@@ -1035,7 +1165,11 @@ To compute a score, we need to define how to measure the distance between the WP
 For scoring a single project, we first warp it to the pattern, then we measure the remaining distance. We only do time-warping of the projects to the pattern. We could compute a score for each interval. However, the ground truth does not yield this, so we will only compute a scores for entire signals, i.e., over all intervals. Once aligned, computing scores is cheap, so we will try a variety of scores and see what works best.
 
 ```{r score-mech}
-score_variable_alignment <- function(alignment, patternName, projectName, use = c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae", "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
+score_variable_alignment <- function(
+  alignment, patternName, projectName,
+  use = c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+          "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+) {
   use <- match.arg(use)
   sigs <- alignment$getAllSignals()
   vartypes <- names(weight_vartype)
@@ -1086,7 +1220,8 @@ We define a parallelized function to compute all scores of a project:
 
 ```{r}
 compute_all_scores <- function(alignment, patternName) {
-  useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae", "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+  useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var",
+                 "mae", "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
   
   `rownames<-`(doWithParallelCluster(numCores = length(alignment), expr = {
     foreach::foreach(
@@ -1123,26 +1258,27 @@ We also need to define a function for warping a project to the pattern:
 #' linear scalarizer that is used as objective.
 time_warp_project <- function(pattern, project, thetaB = c(0, fd_data_boundaries, 1)) {
   stopifnot(is.logical(all.equal(names(pattern), names(project))))
+  numInt <- length(thetaB) - 1
   
   obj <- srBTAW_LossLinearScalarizer$new(
     computeParallel = TRUE, gradientParallel = TRUE, returnRaw = FALSE)
   
   inst <- srBTAW$new(
-    theta_b = c(0, fd_data_boundaries, 1),
+    theta_b = thetaB,
     gamma_bed = c(0, 1, sqrt(.Machine$double.eps)),
-    lambda = rep(sqrt(.Machine$double.eps), 4),
+    lambda = rep(sqrt(.Machine$double.eps), numInt),
     begin = 0, end = 1, openBegin = FALSE, openEnd = FALSE,
     useAmplitudeWarping = FALSE)
-  inst$setParams(params = `names<-`(rep(1/4, 4), inst$getParamNames()))
+  inst$setParams(params = `names<-`(rep(1/numInt, numInt), inst$getParamNames()))
   
   for (vartype in names(pattern)) {
     inst$setSignal(signal = pattern[[vartype]])
     inst$setSignal(signal = project[[vartype]])
     
     loss <- srBTAW_Loss_Rss$new(
-      intervals = seq_len(length.out = 4), returnRaw = TRUE, # NOT logarithmic!
+      intervals = seq_len(length.out = numInt), returnRaw = TRUE, # NOT logarithmic!
       wpName = pattern[[vartype]]$getName(), wcName = project[[vartype]]$getName(),
-      weight = 1, continuous = FALSE, numSamples = rep(1e3, length(names(project))))
+      weight = 1, continuous = FALSE, numSamples = rep(1e3, numInt))
     inst$addLoss(loss = loss)
     obj$setObjective(name = paste("rss", vartype, sep = "_"), obj = loss)
   }
@@ -1310,7 +1446,7 @@ The correlation of just the ground truth with all scores is in table \ref{tab:p2
 corr <- stats::cor(ground_truth$consensus, p2_scores)[1, ]
 
 if (interactive()) {
-  corr[1, ]
+  corr
 } else {
   perCol <- ceiling(length(corr) / 3)
   temp <- data.frame(matrix(ncol = 6, nrow = perCol))
@@ -1360,7 +1496,7 @@ p3_avg_align <- loadResultsOrCompute(file = "../results/p3_avg_align.rds", compu
       source("../models/modelsR6.R")
       source("../models/SRBTW-R6.R")
       
-      cl_nested <- parallel::makePSOCKcluster(4)
+      cl_nested <- parallel::makePSOCKcluster(5)
       `names<-`(list(doWithParallelClusterExplicit(cl = cl_nested, expr = {
         temp <- time_warp_project(
           thetaB = seq(from = 0, to = 1, by = 0.1), # important!
@@ -1372,7 +1508,6 @@ p3_avg_align <- loadResultsOrCompute(file = "../results/p3_avg_align.rds", compu
   }))
 })
 ```
-
 
 
 ```{r score-p3_avg}
@@ -1401,7 +1536,7 @@ The correlation of just the ground truth with all scores is in table \ref{tab:p3
 corr <- stats::cor(ground_truth$consensus, p3_avg_scores)[1, ]
 
 if (interactive()) {
-  corr[1, ]
+  corr
 } else {
   perCol <- ceiling(length(corr) / 3)
   temp <- data.frame(matrix(ncol = 6, nrow = perCol))
@@ -1440,7 +1575,7 @@ for (project in ground_truth$project) {
   temp <- p3_avg_align[[project]]$clone()
   temp$setParams(params = `names<-`(rep(1 / temp$getNumParams(),
                   temp$getNumParams()), temp$getParamNames()))
-  p3_avg_align[[project]] <- temp
+  p3_avg_no_align[[project]] <- temp
 }
 ```
 
@@ -1448,6 +1583,53 @@ for (project in ground_truth$project) {
 p3_avg_no_scores <- loadResultsOrCompute(file = "../results/p3_avg_no_scores.rds", computeExpr = {
   as.data.frame(compute_all_scores(alignment = p3_avg_no_align, patternName = "p3_avg"))
 })
+```
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  round(t(p3_avg_no_scores), 4)
+} else {
+  knitr::kable(
+    x = round(`colnames<-`(t(p3_avg_no_scores), paste0("pr_", 1:9)), 2),
+    booktabs = TRUE,
+    caption = "Scores for the non-aligned projects with pattern III (average ground truth).",
+    label = "p3-avg-no-scores"
+  )
+}
+```
+
+The correlation of just the ground truth with all scores is in table \ref{tab:p3-avg-corr}.
+
+```{r echo=FALSE}
+corr <- stats::cor(ground_truth$consensus, p3_avg_no_scores)[1, ]
+
+if (interactive()) {
+  corr
+} else {
+  perCol <- ceiling(length(corr) / 3)
+  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
+  for (idx in 1:3) {
+    off <- (idx - 1) * perCol
+    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
+    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
+  }
+  colnames(temp) <- rep(c("Score", "Value"), 3)
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Correlation of the ground truth with all other scores for pattern II.",
+    label = "p3-avg-no-corr")
+}
+```
+
+The correlation matrix looks as in figure \ref{fig:p3-avg-no-corr-mat}.
+
+```{r p3-avg-no-corr-mat, echo=FALSE, fig.cap="Correlation matrix for non-aligned scores using pattern III (average).", fig.align="top", fig.pos="ht!"}
+temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p3_avg_no_scores[,])
+
+corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
+                   tl.col = "black", tl.srt = 90)
 ```
 
 
