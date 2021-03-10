@@ -1,5 +1,6 @@
 ---
-title: "Closed-window optimization"
+title: "Technical Report: Self-Regularizing Boundary Time Warping and Boundary Amplitude Warping"
+author: "Sebastian Hönel"
 bibliography: ../inst/REFERENCES.bib
 header-includes:
   - \usepackage{bm}
@@ -36,14 +37,29 @@ library(ggplot2)
 library(ggpubr)
 ```
 
-In this notebook, we will go back to our initial Fire Drill (FD) problem, and design models to accomodate it. The goal is to bring together everything we learned from all the notebooks in between, and to come up with solutions specifically designed to address the matter.
+In this notebook, we will go back to our initial Fire Drill (FD) problem, and design models to accommodate it. The goal is to bring together everything we learned from all the notebooks in between, and to come up with solutions specifically designed to address the matter.
+
+# Overview
+
+Self-regularizing boundary time and amplitude warping, __`srBTAW`__, is a model that allows for rectifying signals. Similar to Dynamic time warping (DTW), one signal is aligned to another. However, srBTAW is not limited to the time-domain only, and can optionally correct the amplitude of a signal, too. The suggested models have built-in self-regularization, meaning that they will somewhat automatically correct extreme parameters without requiring additional regularization.
+
+Among others, srBTAW has the following features:
+
+* srBTAW is an optimization algorithm, and not based on dynamic programming. While DTW finds some best alignment for each point of discrete signals, srBTAW finds some best alignment for whole intervals. Warping for srBTAW means to linearly affine transform intervals.
+* It is designed to foremost work with continuous signals, although it can be used for discrete signals just as well, too.
+* Closed-, half- or fully-open matching: It is up to the user whether a signal must be matched from the start, to the end, both, or neither of them.
+* Custom objectives: Unlike DTW, srBTAW allows for arbitrary user-defined objectives to compute, e.g., distances or similarities between (intervals of) signals. DTW almost always makes the stipulation of computing distances using the Euclidean distance. In this notebook, we demonstrate using losses from various domains, such as information- or signal-theory.
+* srBTAW is multivariate: both the pattern (reference) and candidate (query) may consist of one or arbitrary many separate signals. Each of them may have their own support.
+
+srBTAW was developed to solve some concrete problems in the project management domain, and this notebook uses some of the use cases to evolve the models. However, srBTAW can work with many various types of time series-related problems, such as classification, motif discovery etc.
+
 
 # Problem description
 
 Initially I thought the answer would be using dynamic time Warping, but it is not suitable for an analytical solution (actually, closed-form expression). What makes our problem a bit special are the following:
 
 * __Reference__ and __Query__ signal have the same support: The FD is an AP that spans the entire project, start to finish. Matching must be attempted at the very beginning of the data, and is concluded at the very end. The query signal is scaled such that the extent of its support is the same as the reference's.
-  * As we will see later, this constraint is optionally relaxed by allowing to the query-signal to cover a proper sub-support of the reference using open begin-/ and/or -end time warping.
+  * As we will see later, this constraint is optionally relaxed by allowing to the query-signal to cover a proper sub-support of the reference using open begin- and/or -end time warping.
 * All data has to be used: We can apply local time warping to the query signal, but nothing can be left out. The warping may even result in a length of zero of some intervals, but they must not be negative.
 
 
@@ -52,8 +68,8 @@ Initially I thought the answer would be using dynamic time Warping, but it is no
 We have __3__ optimization goals for the joint paper/article (each of them has a dedicated section in this notebook):
 
 * Fitting of project data to a defined AP (here: the Fire Drill)
-* Validate selection of sub-models andscores; also: calibration of scores
-* Averaging the reference pattern over allknown ground truths
+* Validate selection of sub-models and scores; also: calibration of scores
+* Averaging the reference pattern over all known ground truths
 
 
 # Optimization goal I: Fitting of project data to a defined AP
@@ -299,7 +315,7 @@ $$
     \sum_{i=1}^{q-1}\,l_i^{(c)},&\text{otherwise}
   \end{cases}}^{\phi_q}\Bigg]}^{s_b^{(q)}}
   \\[0ex]
-  &\;\;\;\;\;\;+\Big(x-t_b^{(q)}\Big)\times{\delta_q^{(t)}}^{-1}\times \overbrace{\max{\Big(\bm{\lambda}_q,\mathcal{R}(2\times l_q)-l_q\Big)}\times\Bigg[\sum_{i=1}^{\max{(Q)}}\,l'_i\Bigg]^{-1}}^{\text{(recall}\;l_q^{(c)}=\frac{l'_q}{\psi}\times(\beta_u-\beta_l)\text{, here we got}\;l'_q\times\psi^{-1}\text{)}}
+  &\;\;\;\;\;\;+\Big(x-t_b^{(q)}\Big)\times{\delta_q^{(t)}}^{-1}\times \overbrace{\max{\Big(\bm{\lambda}_q,\mathcal{R}(2\times l_q)-l_q\Big)}\times\Bigg[\sum_{i=1}^{\max{(Q)}}\,l'_i\Bigg]^{-1}}^{\text{recall}\;l_q^{(c)}=\frac{l'_q}{\psi}\times(\beta_u-\beta_l)\text{, here we got}\;l'_q\times\psi^{-1}}
   \\[0ex]
   &\;\;\;\;\;\;\times\bigg(\overbrace{\max{\Big(\gamma_b+\gamma_d,\min{\big(\gamma_e, \max{(b,e)}\big)}\Big)}}^{\beta_u}-\overbrace{\min{\Big(\gamma_e-\gamma_d,\max{\big(\gamma_b, \min{(b,e)}\big)}\Big)}}^{\beta_l}\bigg)\Bigg)\;\text{.}
 \end{aligned}
@@ -401,7 +417,7 @@ Instead of returning a discrete vector for each sub-model, $\mathbf{\hat{y}}_q$,
 
 ## Gradient of the model
 
-__ATTENTION__: I had previously fixed an error in the model formulation, so that this entire section needs to be reworked. While some parts are still correct, some are not!
+__ATTENTION__: I had previously fixed an error in the model formulation, so that large parts of this subsection are unfortunately outdated. While some parts are still correct, some are not!
 
 We have previously shown the sub-model with built-in constraints, $m_q^c$. We have quite many $\min,\max$-expressions and dynamically-long sums in our model, and for a symbolic solution, we suggest to expand all terms to create a sum, where each term can be derived for separately. Before we get there, however, it makes sense to derive some of the recurring expressions, so that we can later just plug them in.
 
