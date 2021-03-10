@@ -1,6 +1,8 @@
 ---
-title: "Detecting the Fire Drill anti-pattern using Source Code -- Technical Report"
-author: "Sebastian Hönel"
+title: "Technical Report: Detecting the Fire Drill anti-pattern using Source Code"
+# author: "Sebastian Hönel"
+author: "Anonymous authors"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
 output:
   bookdown::pdf_document2:
@@ -46,7 +48,7 @@ library(ggpubr)
 
 # Introduction
 
-This is the complementory technical report for the paper/article tentatively entitled "Detection of Project Management Anti-Patterns through Source Code". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
+This is the complementary technical report for the paper/article tentatively entitled "Towards Data-Based Detection of Project Management Anti-Patterns". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
 
 All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the results. This notebook has a canonical URL[^1] and can be read online as a rendered markdown[^2] version. All code can be found in this repository, too.
 
@@ -309,6 +311,22 @@ The pattern and its boundaries look like this:
 ```{r pattern-1, fig.cap="The pattern that was our initial best guess", fig.align="top", fig.pos="ht!"}
 plot_project_data(data = fd_data_concat, boundaries = fd_data_boundaries)
 ```
+
+```{r echo=FALSE}
+tikzDevice::tikz(file = "../figures/pattern-I.tex", width = 3.4, height = 2.1)
+plot_project_data(data = fd_data_concat, boundaries = fd_data_boundaries) +
+  xlab("Normalized time") + ylab("Magnitude") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1), position = "top") +
+  theme_light(base_size = 10) +
+  theme(
+    axis.title.x.top = element_text(margin = margin(b=5), size = 10),
+    axis.title.y = element_text(margin = margin(r=3), size = 10),
+    legend.position = "bottom",
+    legend.margin = margin(-7.5, 0, 0, 0),
+    strip.background = element_rect(fill="#dfdfdf"))
+dev.off()
+```
+
 
 ### Initialize the pattern
 
@@ -878,7 +896,7 @@ We will load all the results previously computed and compute an information crit
 ```{r}
 p3_params <- NULL
 for (tempPath in gtools::mixedsort(
-  Sys.glob(paths = paste0(getwd(), "/../results/p3-compute/*.rds")))
+  Sys.glob(paths = paste0(getwd(), "/../results/p3-compute/i*.rds")))
 ) {
   temp <- readRDS(file = tempPath)
   p3_params <- rbind(p3_params, data.frame(
@@ -1080,7 +1098,7 @@ for (vartype in names(weight_vartype)) {
 
 The 2nd pattern, as derived from the ground truth, is shown in figure \ref{fig:p3-signals}.
 
-```{r p3-signals, echo=FALSE, fig.cap="Third pattern as aligned by the ground truth only.", fig.align="top", fig.pos="ht!"}
+```{r p3-signals, echo=FALSE, fig.cap="Pattern type III (b) pattern as aligned by the ground truth only.", fig.align="top", fig.pos="ht!"}
 plot_project_data(data = temp, boundaries = p3_best_thetaB[2:(length(p3_best_thetaB) - 1)])
 ```
 
@@ -1143,7 +1161,7 @@ The true main-purpose of our work is to take a pattern and check it against any 
 
 How it works: Given some pattern that consists of one or arbitrary many signals, the pattern is added to a single instance of `srBTAW` as __Warping Pattern__. The project's signals are added as __Warping Candidates__ to the same instance.
 
-To compute a score, we need to define how to measure the distance between the WP and the WC (between each pair of signals and each interval). In the notebooks for sr-BTW we have previously defined some suitable losses with either __global__ or __local__ finite upper bounds. Currently, the Jenson--Shannon divergence (JSD), as well as the ratio-metrics (correlation, arc-lengths) have global upper bounds. For the JSD, it is $\ln{2}$. Losses with local finite upper bound are, for example, the area between curves, the residual sum of squares, the Euclidean distance etc., basically any metric that has a limit within the rectangle demarcated by one or more intervals. For some of the patterns, we have used a combination of such losses with local bounds. In general, it is not necessary to fit a pattern with the same kinds of losses that are later on used for scoring, but it is recommended to avoid confusing may results.
+To compute a score, we need to define how to measure the distance between the WP and the WC (between each pair of signals and each interval). In the notebooks for sr-BTW we have previously defined some suitable losses with either __global__ or __local__ finite upper bounds. Currently, the Jensen--Shannon divergence (JSD), as well as the ratio-metrics (correlation, arc-lengths) have global upper bounds. For the JSD, it is $\ln{2}$. Losses with local finite upper bound are, for example, the area between curves, the residual sum of squares, the Euclidean distance etc., basically any metric that has a limit within the rectangle demarcated by one or more intervals. For some of the patterns, we have used a combination of such losses with local bounds. In general, it is not necessary to fit a pattern with the same kinds of losses that are later on used for scoring, but it is recommended to avoid confusing may results.
 
 ## Scoring mechanisms
 
@@ -1367,12 +1385,13 @@ corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
 
 We appear to have mostly strongly negative correlations -- note that the measure using Kullback-Leibler is a divergence, not a similarity. Area and RMSE have a strong negative correlation, which suggests that whenever their score is high, the ground truth's consensus score is low. A high score for area or RMSE however means, that the distance between the signals is comparatively low, so we should have a good alignment, so how is this explained then?
 
-Going back to table \ref{tab:groundtruth}, we will notice that projects 2, 3 and 5 have somewhat similar courses for their variables, yet their consensus scores are 0, 6 and 1, respectively. In other words, only project 3 has had a Fire Drill. We can hence conclude that the visual distance and the ground truth consensus are __not__ proportional (at least not for the variables we chose to model). The visual similarity of a project to a pattern is just that; the score quantifies the deviation from the pattern, but it does not necessarily correlate with the ground truth. This however was our underlying assumption all along, hence the initial pattern. We deliberately chose to design patterns _without_ investigating any of the projects.
+Going back to table \ref{tab:groundtruth}, we will notice that projects 2, 3 and 5 have somewhat similar courses for their variables, yet their consensus scores are 0, 6 and 1, respectively. In other words, only project 3 has had a Fire Drill. We can hence conclude that the visual distance and the ground truth consensus are __not__ proportional (at least not for the variables we chose to model). The visual similarity of a project to a pattern is just that; the score quantifies the deviation from the pattern, but it does not necessarily correlate with the ground truth. This however was our underlying assumption all along, hence the initial pattern. We deliberately chose to design patterns _without_ investigating any of the projects. Also, while we had access to the projects for some time now, the ground truth became available only very recently, after all modeling was done.
 
 Nevertheless, it does not hurt to check out patterns II and III, as we would like to achieve better matches. Eventually, the goal with this approach is to improve correlations and to get more accurate scores. The final stage then could be to compute, for example, a weighted consensus, based on the projects that we have, or to create a linear model that can regress to a value close to the ground truth by considering all the different scores.
 
 ## Pattern II\label{ssec:score-pattern2}
 
+The second pattern was produced by having it warp to all the ground truths simultaneously, using their weight.
 
 ```{r p2-align}
 library(foreach)
@@ -1426,7 +1445,7 @@ if (interactive()) {
 
 The correlation of just the ground truth with all scores is in table \ref{tab:p2-corr}.
 
-```{r}
+```{r echo=FALSE}
 corr <- stats::cor(ground_truth$consensus, p2_scores)[1, ]
 
 if (interactive()) {
@@ -1457,12 +1476,83 @@ corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
                    tl.col = "black", tl.srt = 90)
 ```
 
-With the second pattern we get much stronger correlations on average, meaning that the alignment of each project to the second pattern is better. While some correlations with the ground truth remain similar, we get strong positive correlations with the signal-measures _Impulse-factor_ (`r round(temp[, "ImpulseFactor_m"], 3)`) and _Peak_ (`r round(temp[, "Peak_m"], 3)`) [@xi2000bearing].
+With the second pattern we get much stronger correlations on average, meaning that the alignment of each project to the second pattern is better. While some correlations with the ground truth remain similar, we get strong positive correlations with the signal-measures _Impulse-factor_ (`r round(temp[, "ImpulseFactor_m"], 3)`) and _Peak_ (`r round(temp[, "Peak_m"], 3)`) [@xi2000bearing]. This however is explained by the double warping: First the pattern II was produced by time- and amplitude-warping it to the ground truth. Then, each project was time-warped to the that pattern. Simply put, this should result in some good alignment of all of the signals' peaks, explaining the high correlations.
 
+
+## Pattern II (without alignment)
+
+Since pattern II was computed such that it warps to all projects, it already should correct for time- and amplitude warping. This gives us incentive to compute scores against the non-aligned projects:
+
+
+```{r}
+p2_no_align <- list()
+
+for (project in ground_truth$project) {
+  temp <- p2_align[[project]]$clone()
+  temp$setParams(params = `names<-`(p2_ex_varthetaL, temp$getParamNames()))
+  p2_no_align[[project]] <- temp
+}
+```
+
+```{r score-p2_no}
+p2_no_scores <- loadResultsOrCompute(file = "../results/p2_no_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores(alignment = p2_no_align, patternName = "p2"))
+})
+```
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  round(t(p2_no_scores), 4)
+} else {
+  knitr::kable(
+    x = round(`colnames<-`(t(p2_no_scores), paste0("pr_", 1:9)), 2),
+    booktabs = TRUE,
+    caption = "Scores for the aligned projects with pattern II (p=product, m=mean).",
+    label = "p2-no-scores"
+  )
+}
+```
+
+The correlation of just the ground truth with all scores is in table \ref{tab:p2-no-corr}.
+
+```{r echo=FALSE}
+corr <- stats::cor(ground_truth$consensus, p2_no_scores)[1, ]
+
+if (interactive()) {
+  corr
+} else {
+  perCol <- ceiling(length(corr) / 3)
+  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
+  for (idx in 1:3) {
+    off <- (idx - 1) * perCol
+    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
+    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
+  }
+  colnames(temp) <- rep(c("Score", "Value"), 3)
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Correlation of the ground truth with all other non-aligned scores for pattern II.",
+    label = "p2-no-corr")
+}
+```
+
+The correlation matrix looks as in figure \ref{fig:p2-corr-mat}.
+
+```{r p2-no-corr-mat, echo=FALSE, fig.cap="Correlation matrix for non-aligned scores using pattern II.", fig.align="top", fig.pos="ht!"}
+temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p2_no_scores[,])
+
+corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
+                   tl.col = "black", tl.srt = 90)
+```
+
+While some correlations are weaker now, we observe more agreement between the scores, i.e., more correlations tend to be positive. _Peak_ and _Impulse-factor_ however have negative correlations now.
 
 ## Pattern III (average)
 
-The 3rd pattern that was produced as weighted average over all ground truth is scored in this section. __Note!__ There is one important difference here: the weighted-average pattern does not have the same intervals as our initial pattern -- in fact, we cannot make any assumptions about any of the intervals. Therefore, we will compute this align with __ten equally-long__ intervals.
+The 3rd pattern that was produced as weighted average over all ground truth is scored in this section. __Note!__ There is one important difference here: the weighted-average pattern does not have the same intervals as our initial pattern -- in fact, we cannot make any assumptions about any of the intervals. Therefore, we will compute this align with __ten equally-long__ intervals. This amount was chosen arbitrarily as a trade-off between the time it takes to compute, and the resolution of the results. Adding more intervals increases both, computing time and resolution exponentially, however the latter much less.
+
 
 ```{r p3-avg-align}
 library(foreach)
@@ -1516,7 +1606,7 @@ if (interactive()) {
 
 The correlation of just the ground truth with all scores is in table \ref{tab:p3-avg-corr}.
 
-```{r}
+```{r echo=FALSE}
 corr <- stats::cor(ground_truth$consensus, p3_avg_scores)[1, ]
 
 if (interactive()) {
@@ -1546,6 +1636,10 @@ temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p3_avg_sc
 corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
                    tl.col = "black", tl.srt = 90)
 ```
+
+I suppose that the most significant result here is the positive Jensen--Shannon divergence score correlation.
+
+## Pattern III (average, no alignment)
 
 Before we go any further, I would also like to compute the scores for this data-driven pattern __without__ having the projects aligned. After manually inspecting some of these alignments, it turns out that some are quite extreme. Since this pattern is a weighted average over all ground truth, not much alignment should be required.
 
@@ -1585,7 +1679,7 @@ if (interactive()) {
 
 The correlation of just the ground truth with all scores is in table \ref{tab:p3-avg-corr}.
 
-```{r}
+```{r echo=FALSE}
 corr <- stats::cor(ground_truth$consensus, p3_avg_no_scores)[1, ]
 
 if (interactive()) {
@@ -1616,11 +1710,101 @@ corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
                    tl.col = "black", tl.srt = 90)
 ```
 
+And here we got the result that was the most-expected. We get almost always positive correlations, and most of them range between medium and significant strength. If we look at the correlation for `sd_p`, it is almost perfect with `r round(corr["sd_p"], 3)`. The Jensen--Shannon divergence score (note: while called divergence, this is a score, the higher the better) of `r round(corr["jsd_m"], 3)` is at a high level now. I mention this because this measure is less primitive than the others and tends to capture more properties of the signals. If this is high, it means we get a robust measure that ought to be usable stand-alone. The other low-level scores probably would need to be combined instead.
+
 
 ## Pattern III (b)\label{ssec:score-pattern3}
 
-The third and last pattern is based on the ground truth only. Starting with straight lines and equally long intervals, a pattern was generated and selected using a best trade-off between number of parameters and highest _likelihood_.
+The third and last pattern is based on the ground truth only. Starting with straight lines and equally long intervals, a pattern was generated and selected using a best trade-off between number of parameters and highest _likelihood_, or by the lowest loss. Like pattern II, all of these patterns were produced with time warping applied, so that we do not need to align the projects to it. We have produced 16 patterns, so let's compute the scores for all of them.
 
+
+```{r p3b-no-scores}
+p3b_no_scores <- loadResultsOrCompute(file = "../results/p3b_no_scores.rds", computeExpr = {
+  unlist(doWithParallelCluster(numCores = min(8, parallel::detectCores()), expr = {
+    foreach::foreach(
+      numIntervals = seq_len(length.out = 16),
+      .inorder = FALSE
+    ) %dopar% {
+      source("./common-funcs.R")
+      source("../models/modelsR6.R")
+      source("../models/SRBTW-R6.R")
+      
+      temp_no_align <- list()
+      
+      for (project in ground_truth$project) {
+        inst <- srBTAW$new(
+          theta_b = seq(0, 1, length.out = 2),
+          gamma_bed = c(0, 1, .Machine$double.eps),
+          lambda = .Machine$double.eps,
+          begin = 0, end = 1, openBegin = FALSE, openEnd = FALSE,
+          useAmplitudeWarping = FALSE)
+        
+        for (vartype in names(weight_vartype)) {
+          # Set WP and WC:
+          wp <- p3b_all[[paste0("i_", numIntervals)]]$signals[[vartype]]
+          wc <- project_signals[[project]][[vartype]]
+            
+          inst$setSignal(signal = wp)
+          inst$setSignal(signal = wc)
+          
+          srbtwbaw <- inst$.__enclos_env__$private$createInstance(
+            wp = wp$get0Function(), wc = wc$get0Function())
+          inst$.__enclos_env__$private$addInstance(
+            instance = srbtwbaw, wpName = wp$getName(), wcName = wc$getName())
+        }
+        
+        inst$setParams(params = c(vtl_1 = 1))
+        temp_no_align[[project]] <- inst
+      }
+      
+      res <- `names<-`(list(tryCatch(expr = {
+        # compute_all_scores is already parallel!
+        temp <-as.data.frame(compute_all_scores(alignment = temp_no_align, patternName = "p3"))
+        saveRDS(object = temp, file = paste0("../results/p3-compute/p3b_no_", numIntervals, ".rds"))
+        temp
+      }, error = function(cond) {
+        list(cond = cond, tb = traceback())
+      })), paste0("i_", numIntervals))
+    }
+  }), recursive = FALSE)
+})
+```
+
+We will have a lot of results. In order to give an overview, we will show the correlation of the ground truth with the scores as obtained by scoring against each of the 16 patterns. The correlation plot in figure \ref{fig:p3b-no-scores-corr} should give us a good idea of how the scores changes with increasing number of parameters.
+
+```{r p3b-no-scores-corr, echo=FALSE, fig.cap="Correlation-scores for all 16 patterns (type III, b).", fig.align="top", fig.pos="ht!"}
+# dummy:
+p3b_corr <- NULL
+
+for (idx in seq_len(length.out = length(p3b_no_scores))) {
+  temp <- p3b_no_scores[[paste0("i_", idx)]]
+  if (!is.data.frame(temp)) {
+    next
+  }
+  p3b_corr <- rbind(
+    p3b_corr, `rownames<-`(stats::cor(ground_truth$consensus, temp), paste0("P III (b) [numInt=", idx, "]")))
+}
+
+corrplot::corrplot(corr = p3b_corr)
+```
+
+If `RMS` was to score to use, then the even the $1$-interval pattern will do, as the correlation for it is always strongly positive. In general, we can observe how some correlations get weaker, and some get stronger for patterns with higher number of parameters. There is no clear winner here, and the results are quite similar. What can say clearly is, that it is likely not worth to use highly parameterized models to detect the Fire Drill as it was present in our projects, as the manifestation is just not strong enough to warrant for patterns with high degrees of freedom. It is probably best, to use one of the other pattern types.
+
+Let's also show an overview of the correlation with the ground truth for all of the other patterns:
+
+```{r pall-corr, echo=FALSE, fig.cap="Overview of correlation-scores for all other types of patterns.", fig.align="top", fig.pos="ht!"}
+pAll_corr <- rbind(
+  `rownames<-`(stats::cor(ground_truth$consensus, p1_scores), "Pattern I"),
+  `rownames<-`(stats::cor(ground_truth$consensus, p2_scores), "Pattern II"),
+  `rownames<-`(stats::cor(ground_truth$consensus, p2_no_scores), "Pattern II (no align)"),
+  `rownames<-`(stats::cor(ground_truth$consensus, p3_avg_scores), "Pattern III (avg)"),
+  `rownames<-`(stats::cor(ground_truth$consensus, p3_avg_no_scores), "Pattern III (avg, no align)")
+)
+
+corrplot::corrplot(corr = pAll_corr)
+```
+
+The correlation overview in figure \ref{fig:pall-corr} suggests that the no-alignment patterns have most of the strong positive-correlated scores. However, it appears that it was still worth adapting our initial pattern using the ground truth, as it is the only pattern with very high positive correlations for Peak and Impulse-factor. These however disappear, if we do not do the double warping.
 
 
 # References {-}
