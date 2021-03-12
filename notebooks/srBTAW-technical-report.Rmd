@@ -1,7 +1,6 @@
 ---
 title: "Technical Report: Self-Regularizing Boundary Time Warping and Boundary Amplitude Warping"
 author: "Sebastian Hönel"
-# author: "Anonymous authors"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
 header-includes:

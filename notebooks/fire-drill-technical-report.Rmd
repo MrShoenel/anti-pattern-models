@@ -1,7 +1,6 @@
 ---
 title: "Technical Report: Detecting the Fire Drill anti-pattern using Source Code"
-# author: "Sebastian Hönel"
-author: "Anonymous authors"
+author: "Sebastian Hönel"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
 output:
