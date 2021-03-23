@@ -1271,6 +1271,100 @@ $$
 Also, instead of or additionally to this regularizer, we can sum up the number of violations. This can then be used, e.g., as base, exponent or multiplier. At this point I would recommend to use this regularizer for all parameters, that is all lengths ($\bm{\vartheta}^{(l)}$) as well as $b,e$. Additionally, I recommend adding another instance of this regularizer for $b,e$ that uses $e-\gamma_d$ as upper boundary for $b$, and $b+\gamma_d$ as lower boundary for $e$. This regularizer should be able to help the model figure out good values more quickly, and it should speed up the process if $b>e$ (which is handled by the model but still not OK).
 
 
+## Extension: Non-linear time warping
+
+We can easily make sr-BTW use non-linear time warping. Given the model $m^c_q$, we replace the linear scaling function with an arbitrary function.
+
+$$
+\begin{aligned}
+	\delta_q^{(t)}=&\;t_e^{(q)}-t_b^{(q)}\;\text{and}
+	\\[1ex]
+	\delta_q^{(s)}\equiv&\;l_q^{(c)}\;\text{,}
+	\\[1ex]
+	m^c_q(f,x,\dots)=&\;f\Bigg(\frac{\Big(x-t_b^{(q)}\Big)\times l_q^{(c)}}{\delta_q^{(t)}}+s_b^{(q)}\Bigg)\;\text{.}
+\end{aligned}
+$$
+
+As we can see, the target-$x$ is transformed in three (four) steps:
+
+* 1. -- Translation to $0$ ($x-t_b^{(q)}$),
+* 2.(a) -- Normalization according to the target-interval/-extent ($\times{\delta_q^{(t)}}^{-1}$),
+* 2.(b) -- Scaling to the source-interval/-extent ($\times l_q^{(c)}$),
+* 3. -- Translation to offset in source-interval/-extent ($+s_b^{(q)}$).
+
+So, really, the time warping happens in step __2__, when $x$ is scaled _within_ the source-interval: Currently, this is a linear function of the form $y=a*x+b$, where $b=0$, as the function goes through the origin, thanks to steps $1$/$3$. $a$ results from putting the source- and target-extents into relation, so we have no additional parameters to learn.
+
+The linear function hence maps a target-$x$ to a source-$x$, where the support is $\Big[0\;,\;t_e^{(q)}-t_b^{(q)}\Big]$, and the co-domain is $\Big[0\;,\;s_e^{(q)}-s_b^{(q)}\Big]$. The linear function is also strictly monotonically increasing, which is a requirement as we will show later. If the function had saddle points, i.e., a slope of $0$, then this would mean no time warping is applied. A negative slope would result in negative time warping (i.e., while the target-$x$ moves forward in time, the source-$x$ would move backward), which is prohibited.
+
+If we want to introduce arbitrary scaling functions, even non-linear functions, then it is helpful to introduce a few additional notions first:
+
+$$
+\begin{aligned}
+	x'=&\;\Big(x-t_b^{(q)}\Big)\;\text{, pre-translation of}\;x\text{,}
+	\\[1ex]
+	s^{(\text{lin})}(x')=&\;x'\times\frac{\delta_q^{(s)}}{\delta_q^{(t)}}\;\text{, linear scaling used thus far,}
+	\\[1ex]
+	s^{(\text{nonlin})}(x')=&\;\dots\;\text{(some non-linear and strictly increasing scaling function),}
+	\\[1ex]
+	s'^{(\text{nonlin})}(x')=&\;\delta_q^{(s)}\times\frac{s^{(\text{nonlin})}(x')-s^{(\text{nonlin})}(0)}{s^{(\text{nonlin})}\Big(\underbrace{t_e^{(q)}-t_b^{(q)}}_{\delta_q^{(t)}}\Big)-s^{(\text{nonlin})}(0)}\;\text{, constrained version.}
+\end{aligned}
+$$
+
+Any arbitrary scaling function $s$ needs to be constrained, such that its constrained version $s'$ satisfies the same properties as does the linear scaling function:
+
+* The function is continuous,
+* same support and co-domain as the linear function,
+* goes through $[0,0]$ and $\Big[t_e^{(q)}-t_b^{(q)},\;s_e^{(q)}-s_b^{(q)}\Big]$,
+* is strictly increasing.
+
+Technically, it is not required that any scaling function is strictly increasing, only that $s(0)\prec s(x),\,\forall\,x>0$, so the function may have saddle-points. Otherwise, its constrained version would potentially divide by $0$.
+
+If we now introduce arbitrary scaling functions (here using a constrained non-linear example) into our submodel formulation, we get:
+
+$$
+\begin{aligned}
+	m_q^{c}(f,x',\dots)=&\;f\Big(s'^{(\text{nonlin})}\Big(x-t_b^{(q)}\Big)+s_b^{(q)}\Big)
+\end{aligned}\;\text{.}
+$$
+
+Note that, while omitted here, any scaling function would be passed the pre-translated $x$ as $x'=x-t_b^{(q)}$, as well as all extent-parameters, namely $s_b^{(q)},s_e^{(q)},t_b^{(q)},t_e^{(q)}$. If the scaling function introduces parameters that should be optimized for, e.g., if it is a polynomial, then its gradient must reflect that, and hence the submodel's gradient does change, too. It would be perfectly fine to use a different kind of scaling function in each interval.
+
+Example with a non-linear polynomial, where we want to capture the portion of the function in the interval $[0,1]$, which is then scaled to the current target-extent of $\Big[0,\delta_q^{(t)}\Big]$:
+
+$$
+\begin{aligned}
+	s(x')=&\;\frac{mx'}{\delta_q^{(t)}}+\frac{nx'^2}{\delta_q^{(t)}}\;\text{,}
+	\\[1ex]
+	=&\;\frac{x'\times(m+nx')}{\delta_q^{(t)}}\;\text{, with constrained version}\;s'\text{:}
+	\\[1ex]
+	s'(x')=&\;\delta_q^{(s)}\times\frac{s\big(x'\big)-s(0)}{s\Big(\delta_q^{(t)}\Big)-s(0)}\;\text{,}
+	\\[1ex]
+	=&\;\frac{\delta_q^{(s)}\times s\big(x'\big)}{s\Big(\delta_q^{(t)}\Big)}\;\text{, as}\;s(0)=0\text{, fully expanded as}
+	\\[1ex]
+	=&\;\frac{\delta_q^{(s)}\times x'\times\big(m+nx'\big)}{\delta_q^{(t)}\times\Big(m+n\times\delta_q^{(t)}\Big)}\;\text{.}
+\end{aligned}
+$$
+
+It is important that the scaling function covers some characteristic interval $[0,k]$, where $k>0$. The value of $k$ is not important, only that the interval starts with $0$. In other words, any non-constrained scaling function $s(x)$ needs to satisfy these criteria:
+
+* The function is continuous,
+* has a support of $[0,k]$, where $k>0$,
+* is monotonically increasing and satisifies $s(0)\prec s(x),\,\forall\,x>0$.
+
+The co-domain may arbitrary, as the constraining function re-maps it to $\Big[0,\delta_q^{(s)}\Big]$.
+
+In the previous example, we chose a scaling function that has two learnable parameters, $m,n$. Also, the parameter $\delta_q^{(s)}\equiv\,l_q^{(c)}$, which depends on other parameters of the model. So, the complete gradient requires deriving for these three kinds of parameters, and we will omit the set of partial derivatives for the last one here:
+
+$$
+\begin{aligned}
+	\nabla\,s'(x')=&\;\Bigg[\frac{\partial\,s}{\partial\,m}\;,\;\frac{\partial\,s}{\partial\,n}\;,\;\Bigg(\frac{\partial\,s}{\partial\,\delta_q^{(s)}}\Bigg)\Bigg]\;\text{,}
+	\\[1ex]
+	=&\;\Bigg[\frac{\delta_q^{(s)}\times n\times x'\times\Big(\delta_q^{(t)}-x'\Big)}{\delta_q^{(t)}\times\Big(m+n\times\delta_q^{(t)}\Big)^2}\;,\;\frac{\delta_q^{(s)}\times m\times x'\times\Big(x'-\delta_q^{(t)}\Big)}{\delta_q^{(t)}\times\Big(m+n\times\delta_q^{(t)}\Big)^2}\;,\;\dots\Bigg]\;\text{.}
+\end{aligned}
+$$
+
+
+
 # Optimization goal II
 
 This goal is actually specific to the current case, but in general the purpose is to a) verify, that the choice of data- and regularization-loss is apt for matching data that is expected to be somewhat similar to a given pattern, and b) to find upper- and/or lower-bounds (best/worst possible match) such that we can use the model for __scoring__ when fitting to real-world data.
