@@ -2009,6 +2009,8 @@ Signal <- R6Class(
       func_deriv <- function(x, n) {
         m <- "central"
         eps <- sqrt(.Machine$double.eps)
+        # stopifnot(x >= support[1] && x <= support[2])
+        
         if (abs(x - support[1]) < eps) {
           m <- "forward"
         } else if (abs(support[2] - x) < eps) {

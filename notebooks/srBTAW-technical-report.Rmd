@@ -2426,6 +2426,8 @@ Choosing a good number of boundaries _a priori_: This depends on the problem, e.
 
 Choosing a priori: One idea could be to select some number of equidistant boundaries/intervals and then replace the signal in each interval with a linear function that goes from start to end. Then, we would compute a loss and AIC between this function and the original interval to find the best number of intervals.
 
+Another idea: Calculate arc length over full support, then divide it by a constant number of intervals. Then, start from the begin of the support and go a partial arc length (calculate the end coordinate as we know the begin and the arc length already). Repeat to the end. This method will subdivide the function into parts of equal arc length.
+
 Classification: One additional way for classification would be an open/open approach using only one interval. If the selected section is much shorter than the original signal, the match would be bad (for non-repetitive signals).
 
 

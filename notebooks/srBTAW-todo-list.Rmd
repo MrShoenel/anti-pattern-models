@@ -1,0 +1,377 @@
+---
+title: "sr-BT/AW: To-do list"
+author: "Sebastian Hönel"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: ../inst/REFERENCES.bib
+header-includes:
+  - \usepackage{bm}
+  - \usepackage{mathtools}
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    df_print: kable
+    keep_tex: true
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    df_print: kable
+  word_document: default
+---
+
+\newcommand*\mean[1]{\overline{#1}}
+\newcommand{\norm}[1]{\left\lvert#1\right\rvert}
+\newcommand{\infdiv}[2]{#1\;\|\;#2}
+
+```{r echo=FALSE, warning=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+
+# About
+
+This notebook will address a few remaining issues regarding sr-BT/AW that need to be done before we can wrap things up and write an article about it. The following issues need to be addressed before we can proceed:
+
+* Implement a way to extract the applied warping. Currently, there is access to $\theta^{(b)}$ and $\vartheta^{(l)}$, and we should provide a convenient way to get both vectors so they can be compared.
+  * We should provide at least a few ways to quantify the cost of warping, as derived from these two vectors. We should also show how to calculate the lower/upper bounds of this cost, so a score can be created.
+* Implement getting the warping function. This is two-fold:
+  * First, we will need some plotting of it. I was thinking of at least two kinds of plot. The first kind is similar to `dtw`'s 3-way plot. The second kind is a colorbar using a gradient, indicating piece-wise (local) time-dilation (e.g., blue) and -compression (e.g., red).
+  * Second, implement at least one method that translates the warping function into a cost. However, since we have the methods from the previous point, this may be redundant.
+* Implement some helpers that will make working with sr-BT/AW easier.
+  * One or more approaches for choosing intervals a priori is required, there were some ideas in the previous notebook.
+  * Support of discrete signals. We have the class `Signal` that is created from a function, so this complexity is already _not_ part of it and I want to keep it separate. However, if a signal is discrete, the class better know about it, because there are at least a few ways to interpolate (`approxfun` would interpolate, while we could also, e.g., round to the nearest index given some $x$, or truncate $x$ to the index).
+* Finalize formal model description so that we can release the `R`-package.
+  * Either derive all gradients for the model and the regularizers, or focus on analytical gradients for first release.
+* Extensive evaluation.
+  * Prepare a couple of test cases and run with different parameters, for example, number of boundaries. Check performance when using many (100 or more) intervals, how does it scale?
+  * Check whether we can build a simple classifier based on sr-BT/AW.
+  * Make some preliminary tests using transformed signals. For example, we should test how we ll it works to align, e.g., the first derivative of a signal (@keogh2001derivative uses information of the derivative), or its CDF.
+
+
+
+
+# Problem: Number of intervals a priori
+
+Let's load some data. The goal in this problem is to find some method to automatically determine a (good) number of intervals (and where to place them/their length).
+
+
+```{r echo=FALSE, message=FALSE}
+fd_data_concat <- readRDS(file = "../data/fd_data_concat.rds")
+dens_acp_data <- readRDS(file = "../data/dens_acp_data.rds")
+
+a_ref <- fd_data_concat[fd_data_concat$t == "A", ]
+a_query <- dens_acp_data[dens_acp_data$t == "A", ]
+
+r <- (function() {
+  temp <- stats::approxfun(x = a_ref$x, y = a_ref$y)
+  function(x) temp(v = x)
+})()
+f <- (function() {
+  temp <- stats::approxfun(x = a_query$x, y = a_query$y)
+  function(x) temp(v = x)
+})()
+
+ggarrange(
+  plot_project_data(a_ref),
+  plot_project_data(a_query) + ylim(0,0.3),
+  nrow = 2
+)
+```
+
+## Using total and partial arc lengths
+
+The idea here is to measure the arc length over the total support, then subdivide the length by a constant number and thus subdivide the total arc length into sections of equal arc length (not necessarily equal interval length). This way, each interval covers the same arc length, which should have a high correlation with the convolution (complexity) of the signal.
+
+What we will try here is to load above signal (WC) into a class of type `Signal`, to get the first derivative of it.
+
+```{r}
+sig <- Signal$new(
+  name = "sig", support = range(a_query$x), isWp = FALSE,
+  func = stats::approxfun(x = a_query$x, y = a_query$y, rule = 2))
+
+ggarrange(
+  sig$plot(),
+  sig$plot(showSignal = FALSE, show1stDeriv = TRUE),
+  nrow = 2
+)
+```
+
+The total arc length is:
+
+```{r}
+library(cubature)
+
+sig_d0 <- sig$get0Function()
+sig_d1 <- sig$get1stOrderPd()
+
+arclen <- function(f_d1, a, b, maxEval = 25e2) {
+  cubature::cubintegrate(f = function(x) {
+    sqrt(1 + f_d1(x)^2)
+  }, lower = a, upper = b, maxEval = maxEval)$integral
+}
+
+arc_total <- arclen(f_d1 = sig_d1, a = 0, b = 1 - 1e-5)
+
+arc_total
+```
+
+### Optimize using Newton's method:
+
+Let's define a method based on Newton's method:
+
+```{r}
+arclen_newton <- function(sig_d1, support, N, maxIter = 25, maxEval = 150) {
+  arc_total <- arclen(f_d1 = sig_d1, a = support[1], b = support[2])
+  b_0 <- arc_total / N
+  b_k_Final <- `colnames<-`(matrix(nrow = N, ncol = 3), c("a", "b", "arc"))
+  eps <- sqrt(.Machine$double.eps)
+  
+  F_d1 <- function(b) {
+    -sqrt(1 + sig_d1(b)^2)
+  }
+  
+  a <- support[1]
+  for (j in 1:N) {
+    b_k <- b_0
+    l <- 0
+    
+    i <- 1
+    while (TRUE && i <= maxIter) {
+      if (j == N) {
+        b_k <- support[2]
+      }
+      l <- arclen(f_d1 = sig_d1, a = a, b = b_k, maxEval = maxEval)
+      if (j == N) {
+        break
+      }
+      b_k <- b_k - (b_0 - l) / F_d1(b_k)
+      if ((b_k + eps) < a) {
+        b_k <- a + eps
+      }
+      
+      if (abs(l - b_0) < max(1e-4, 1 / 10^(log(2 * N)))) {
+        break
+      }
+      i <- i + 1
+    }
+    
+    b_k_Final[j, ] <- c(a, b_k, l)
+    
+    a <- b_k # So the next starts from b_k
+  }
+  
+  b_k_Final
+}
+```
+
+And test it:
+
+```{r}
+# Even with extreme low values for number of Newton-iterations and
+# evaluations for the numerical integral we get very good results.
+# The values chosen as default are just conservative. Increasing the
+# maximum number of evaluations is costly but will get you precision.
+temp <- arclen_newton(
+  sig_d1 = sig_d1, support = c(0, 1), N = 50, maxIter = 10, maxEval = 50)
+abs(sum(temp[, "arc"]) - arc_total)
+```
+
+That appears to work well, we can see that the deviation between the total arc length and the sum of all partial arc lengths is small.
+
+
+### Number of intervals using AIC
+
+The second part to this is to find an appropriate amount of intervals. We can use the Newton-based optimization from the previous section and gradually increase the number, until a trade-off between number of intervals and likelihood is reached.
+
+The way we will do this is simple: For each interval, we will replace the function with a linear interpolation between the first and last point (the interval's support), and then calculate a loss between this piece-wise linear function and the original signal. The more intervals we have, the lower the loss will be, but the higher the model's cost will be.
+
+```{r}
+arclen_likelihood <- function(sig_d0, intervalMatrix, numSamples = 2e3) {
+  supp <- range(intervalMatrix[, c("a", "b")])
+  
+  # Add y-coords to interval-matrix:
+  intervalMatrix <- cbind(intervalMatrix, `colnames<-`(matrix(ncol = 2, nrow = nrow(intervalMatrix), byrow = FALSE, data = c(
+    sapply(X = seq_len(length.out = nrow(intervalMatrix)), FUN = function(n) {
+      sig_d0(intervalMatrix[n, "a"])
+    }),
+    sapply(X = seq_len(length.out = nrow(intervalMatrix)), FUN = function(n) {
+      sig_d0(intervalMatrix[n, "b"])
+    })
+  )), c("y_left", "y_right")))
+  
+  interval_for_x <- Vectorize(function(x) {
+    stopifnot(x >= supp[1] && x <= supp[2])
+    i <- 1
+    while (i <= nrow(intervalMatrix)) {
+      if (x <= intervalMatrix[i, "b"]) {
+        break
+      }
+      i <- i + 1
+    }
+    i
+  })
+  
+  F_lin <- Vectorize(function(x) {
+    intIdx <- interval_for_x(x = x)
+    stats::approx(
+      xout = x,
+      x = intervalMatrix[intIdx, c("a", "b")],
+      y = intervalMatrix[intIdx, c("y_left", "y_right")])$y
+  })
+  
+  compute_ICs <- function() {
+    aics <- c()
+    bics <- c()
+    M <- ceiling(numSamples / nrow(intervalMatrix))
+    
+    for (k in 1:nrow(intervalMatrix)) {
+      int <- intervalMatrix[k, ]
+      X <- seq(from = int["a"], to = int["b"], length.out = M)
+      Y <- sapply(X = X, FUN = sig_d0)
+      templm <- stats::lm(formula = y ~ x, data = list(x = X, y = Y))
+      aics <- c(aics, stats::AIC(templm))
+      bics <- c(bics, stats::BIC(templm))
+    }
+    list(
+      AIC = aics,
+      BIC = bics
+    )
+  }
+  
+  X <- seq(from = supp[1], to = supp[2], length.out = numSamples)
+  samp_sig <- sapply(X = X, FUN = sig_d0)
+  samp_lin <- sapply(X = X, FUN = F_lin)
+  
+  P <- samp_sig - min(samp_sig) + 1e-6
+  P <- P / sum(P)
+  Q <- samp_lin - min(samp_lin) + 1e-6
+  Q <- Q / sum(Q)
+  
+  kld <- philentropy::k_divergence(P = P, Q = Q, testNA = FALSE, unit = "log")
+  jsd <- philentropy::jensen_difference(P = P, Q = Q, testNA = FALSE, unit = "log")
+  
+  logLik_jsd <- -log(jsd / log(2)) # Low divergence means high likelihood
+  
+  err_rss <- (1 + sum((samp_sig - samp_lin)^2))^10
+  
+  ics <- compute_ICs()
+  
+  list(
+    err_rss = err_rss,
+    aic_rss = 2 * nrow(intervalMatrix) + 2 * log(err_rss), # 2*k - 2*log(L_hat)
+    
+    KLD = kld,
+    JSD = jsd,
+    logLik_jsd = logLik_jsd,
+    
+    ics_AIC = ics$AIC,
+    ics_BIC = ics$BIC,
+    
+    X = X,
+    samp_lin = samp_lin,
+    samp_sig = samp_sig
+  )
+}
+```
+
+```{r}
+arclen_likelihood(
+  sig_d0 = sig_d0, intervalMatrix = temp, numSamples = 1e3)[c("logLik_jsd", "JSD")]
+```
+
+Let's try this in a loop, where we gradually increase the number of parameters:
+
+```{r}
+library(foreach)
+
+res <- loadResultsOrCompute(file = "../results/num_intervals_IC.rds", computeExpr = {
+  temp <- doWithParallelCluster(expr = {
+    foreach::foreach(
+      N = sample(1:250),
+      .combine = rbind,
+      .inorder = FALSE
+    ) %dopar% {
+      tempn <- arclen_newton(sig_d1 = sig_d1, support = c(0, 1), N = N)
+      temp <- arclen_likelihood(sig_d0 = sig_d0, intervalMatrix = tempn, numSamples = 1e3)
+      
+      c(N, temp$err_rss, temp$aic_rss, sum(temp$ics_AIC), mean(temp$ics_AIC), sum(temp$ics_BIC), mean(temp$ics_BIC), temp$logLik_jsd, exp(-temp$logLik_jsd))
+    }
+  })
+  
+  temp <- temp[order(temp[, 1]), ]
+  temp
+})
+```
+
+
+The results contain a variety of computed properties that could be used as decision criteria for how many intervals is a good number. However, without going into details here, for the moment I do recommend to use the (normalized) Jensen--Shannon divergence and a threshold.
+
+```{r}
+plot(res[1:25, 9], type = "l")
+```
+
+It appears that common thresholds are $\approx[0.05,0.02,0.01]$. Assuming these thresholds, the minimum amount of boundaries chosen would be:
+
+```{r}
+par(mfrow=c(2,1))
+for (t in c(0.05, 0.02, 0.01)) {
+  N <- unname(which(res[, 9] < t)[1])
+  tempn <- arclen_newton(sig_d1 = sig_d1, support = c(0, 1), N = N)
+  temp <- arclen_likelihood(sig_d0 = sig_d0, intervalMatrix = tempn, numSamples = 1e3)
+  
+  plot(list(x = temp$X, y = temp$samp_sig), type = "l", main = paste0(N, " intervals over original signal"), xlab = "Relative Time", ylab = "Magnitude")
+  abline(v = unique(c(tempn[, "a"], tempn[, "b"])), col = "grey", lty = 2)
+  
+  plot(list(x = temp$X, y = temp$samp_lin), type = "l", main = paste0(N, " intervals over piece-wise linear function: "), xlab = "Relative Time", ylab = "Magnitude")
+  abline(v = unique(c(tempn[, "a"], tempn[, "b"])), col = "grey", lty = 2)
+}
+```
+
+With increasing amount of intervals the resolution increases, resulting in more accurate representations of the original signal through a piece-wise linear estimation. Interestingly, we get $9$ and $18$ intervals, and the latter shows an exact additional subdivision of each interval, which is expected. Subjectively, the version using $23$ intervals appears to resemble the original signal quite well, preserving almost all of its characteristic "bumps".
+
+
+
+
+
+
+# References {-}
+
+<div id="refs"></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
