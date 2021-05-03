@@ -1837,6 +1837,67 @@ corrplot::corrplot(corr = pAll_corr)
 The correlation overview in figure \ref{fig:pall-corr} suggests that the no-alignment patterns have most of the strong positive-correlated scores. However, it appears that it was still worth adapting our initial pattern using the ground truth, as it is the only pattern with very high positive correlations for Peak and Impulse-factor. These however disappear, if we do not do the double warping.
 
 
+
+### Linear combination of scores
+
+The pattern that incurred the lowest loss was number __`r p3_params[which.min(p3_params$loss), ]$numInt`__. We should however also test the pattern that had the highest correlations (positive _or_ negative) on average:
+
+```{r}
+p3b_corr_all <- apply(X = p3b_corr, MARGIN = 1,
+                      FUN = function(row) mean(abs(row)))
+```
+
+```{r echo=FALSE}
+temp <- `rownames<-`(data.frame(corr = p3b_corr_all), names(p3b_corr_all))
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Mean absolute correlation for all patterns of type III (b).",
+    label = "p3b-corr-all"
+  )
+}
+```
+
+In table \ref{tab:p3b-corr-all} we show the mean absolute correlation for the scores of all projects as computed against each pattern of type III (b).
+
+```{r}
+p3b_highest_corr <- names(which.max(p3b_corr_all))
+p3b_highest_corr
+```
+
+The pattern using __`r gsub("[^0-9]", "", p3b_highest_corr)`__ has the highest correlation.
+
+Taking the best pattern of type III (b), we can also do a linear combination again. "Best" may refer to the pattern with the highest correlations over all scores or the one with the lowest loss when fitting to all projects.
+
+```{r}
+# Take the project with the highest mean absolute correlation.
+temp <- cbind(
+  data.frame(gt_consensus = ground_truth$consensus_score),
+  p3b_no_scores[[paste0("i_", gsub("[^0-9]", "", p3b_highest_corr))]])
+p3b_lm <- stats::lm(
+  formula = gt_consensus ~ area_p + corr_p + jsd_m + sd_p + rmse_p + RMS_p,
+  data = temp)
+stats::coef(p3b_lm)
+plot(p3b_lm, ask = FALSE, which = 1:2)
+```
+
+```{r}
+p3b_lm_scores <- stats::predict(p3b_lm, temp)
+round(p3b_lm_scores * 10, 3)
+```
+
+```{r}
+stats::cor(p3b_lm_scores, ground_truth$consensus_score)
+```
+
+With this linear model, we can report a high correlation with the consensus, too.
+
+
+
 # References {-}
 
 <div id="refs"></div>
