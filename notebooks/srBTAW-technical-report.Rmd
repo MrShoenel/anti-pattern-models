@@ -3,20 +3,23 @@ title: "Technical Report: Self-Regularizing Boundary Time Warping and Boundary A
 author: "Sebastian Hönel"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
 header-includes:
   - \usepackage{bm}
   - \usepackage{mathtools}
+  - \usepackage{xurl}
 output:
-  pdf_document:
-    number_sections: true
-    toc: true
-    toc_depth: 6
-    df_print: kable
-    keep_tex: true
   md_document:
     toc: true
     toc_depth: 6
     df_print: kable
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
   html_document:
     number_sections: true
     toc: true
@@ -30,7 +33,12 @@ output:
 \newcommand{\norm}[1]{\left\lvert#1\right\rvert}
 \newcommand{\infdiv}[2]{#1\;\|\;#2}
 
-```{r echo=FALSE, warning=FALSE}
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 source(file = "../helpers.R")
 source(file = "./common-funcs.R")
 
@@ -38,9 +46,9 @@ library(ggplot2)
 library(ggpubr)
 ```
 
-In this notebook, we will go back to our initial Fire Drill (FD) problem, and design models to accommodate it. The goal is to bring together everything we learned from all the notebooks in between, and to come up with solutions specifically designed to address the matter.
+# Introduction\label{tr:srBTAW-technical-report}
 
-# Overview
+In this notebook, we will go back to our initial Fire Drill (FD) problem, and design models to accommodate it. The goal is to bring together everything we learned from all the notebooks in between, and to come up with solutions specifically designed to address the matter.
 
 Self-regularizing boundary time and amplitude warping, __`srBTAW`__, is a model that allows for rectifying signals. Similar to Dynamic time warping (DTW), one signal is aligned to another. However, srBTAW is not limited to the time-domain only, and can optionally correct the amplitude of a signal, too. The suggested models have built-in self-regularization, meaning that they will somewhat automatically correct extreme parameters without requiring additional regularization.
 
@@ -54,6 +62,8 @@ Among others, srBTAW has the following features:
 * For DTW the underlying assumption is that the query-signal is a time-distorted version of the reference signal, and that there are no portions of the query that have a higher amplitude. In other words, DTW assumes only degrees of freedom on the time axis and can actually not support alignment of signals with different amplitudes well. Furthermore, DTW performs poor for very dissimilar signals. This is not a problem for srBTAW because of its interval-alignments.
 
 srBTAW was developed to solve some concrete problems in the project management domain, and this notebook uses some of the use cases to evolve the models. However, srBTAW can work with many various types of time series-related problems, such as classification, motif discovery etc.
+
+All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/srBTAW-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/srBTAW-technical-report.md)^ version (attention: the math is probably not rendered correctly there!). All code can be found in this repository, too.
 
 
 # Problem description
@@ -419,7 +429,7 @@ Instead of returning a discrete vector for each sub-model, $\mathbf{\hat{y}}_q$,
 
 ## Gradient of the model
 
-__ATTENTION__: I had previously fixed an error in the model formulation, so that large parts of this subsection are unfortunately outdated. While some parts are still correct, some are not!
+_Attention_: I had previously fixed an error in the model formulation, so that some parts of this subsection are unfortunately outdated. Still, we keep them for historical reasons.
 
 We have previously shown the sub-model with built-in constraints, $m_q^c$. We have quite many $\min,\max$-expressions and dynamically-long sums in our model, and for a symbolic solution, we suggest to expand all terms to create a sum, where each term can be derived for separately. Before we get there, however, it makes sense to derive some of the recurring expressions, so that we can later just plug them in.
 
