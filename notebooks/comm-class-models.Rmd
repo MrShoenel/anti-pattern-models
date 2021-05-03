@@ -1,13 +1,16 @@
 ---
-title: "Commit Classification models"
+title: "Technical Report: Commit Classification models based on Keywords and Source Code Density"
+author: "Sebastian Hönel"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
 output:
-  pdf_document:
-    number_sections: true
+  md_document:
     toc: true
     toc_depth: 6
     df_print: kable
-  md_document:
+  pdf_document:
+    number_sections: true
     toc: true
     toc_depth: 6
     df_print: kable
@@ -20,14 +23,19 @@ output:
   word_document: default
 ---
 
-```{r}
-source("../helpers.R")
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
 ```
 
 
-# Models for Commit Classification
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+source("../helpers.R")
+```
 
-In this notebook, we will train and store some best best models for commit classification, as these will be detrimental to detecting maintenance activities in software projects. The models will be based on our latest work [@honel2020using].
+# Introduction\label{tr:comm-class-models}
+
+In this notebook, we will train and store some best best models for commit classification, as these will be detrimental to detecting maintenance activities in software projects. The models will be based on latest work from [@honel2020using].
 
 Throughout this notebook, we will build a few models that are all similar. Our latest work indicated that including up to three previous generations of commits is beneficial. We will evaluate models that include 1, 2 or 3 previous generations.
 
@@ -37,7 +45,9 @@ For finding the best models, the process is separated into two steps: First, do 
 
 Also note that each of the following models was already optimized w.r.t. to some aspects of the training, like using an already oversampled dataset. Also, we are using a very high split, as the resulting model will also be using all data. Using many folds and repeats, we make sure that overfitting is not a problem.
 
-```{r echo=FALSE, warning=FALSE}
+All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.md)^ version. All code can be found in this repository, too.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 library(caret)
 ```
 
@@ -50,7 +60,11 @@ The stateless model shall be used whenever there is __no__ data available from t
 
 ```{r}
 # the stateless data:
-data_sl <- getDataset("antipat_gt_all")
+data_sl <- if (interactive()) {
+  getDataset("antipat_gt_all")
+} else {
+  readRDS("../data/antipat_gt_all.rds")
+}
 
 # remove SHAs:
 data_sl <- data_sl[, !(names(data_sl) %in% c("SHA1", "ParentCommitSHA1s"))]
@@ -94,7 +108,7 @@ tc_sl <- caret::trainControl(
 
 We do this step to find which models work well with our data. Later, we can try to combine the best models into a meta-model.
 
-```{r echo=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE}
 set.seed(1337)
 # Let's preserve 100 instances from the original data as validation data:
 p <- caret::createDataPartition(
@@ -108,8 +122,10 @@ valid_sl <- data_sl[-p,]
 # However, most recent changes indicate this may or may not be beneficial.
 train_sl <- balanceDatasetSmote(
   data = train_sl, stateColumn = "label")
+```
 
 
+```{r message=FALSE, warning=FALSE}
 # Caret itself needs e1071
 library(e1071)
 
@@ -177,7 +193,9 @@ results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
 The following will give us a correlation matrix of the models' predictions. The goal is to find models with high performance and unrelated predictions, so that they can be combined.
 
 ```{r echo=FALSE, warning=FALSE}
-data.frame(round(caret::modelCor(caret::resamples(results_sl)), 4))
+temp <- data.frame(round(caret::modelCor(caret::resamples(results_sl)), 4))
+temp[, 1:7]
+temp[, 8:ncol(temp)]
 ```
 
 Show for each model the performance during training, and also predict on our validation data to get an idea of their goodness.
@@ -309,7 +327,7 @@ Now that we have the data prepared for our manual ensemble, let's attempt to tra
 
 Before going back to caret, let's try a neural network the manual way.
 
-```{r echo=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE}
 library(neuralnet)
 library(e1071)
 
@@ -323,10 +341,11 @@ nnet <- loadResultsOrCompute("../results/nnet.rds", computeExpr = {
     lifesign = if (interactive()) "full" else "minimal")
 })
 ```
+
 The network has the following structure:
 
 ```{r}
-plot(nnet)
+plot(nnet, rep = "best")
 ```
 
 
@@ -429,7 +448,11 @@ create_final_model <- function() {
   single_models <- models_sl[stack_manual_models]
   
   predict_class_membership <- function(data, modelList = single_models, labelCol = "label") {
-    dataLabel <- if (labelCol %in% colnames(data)) data[[labelCol]] else matrix(ncol = 0, nrow = nrow(data))
+    dataLabel <- if (labelCol %in% colnames(data)) {
+      data[[labelCol]]
+    } else {
+      matrix(ncol = 0, nrow = nrow(data))
+    }
     data <- data[, !(names(data) %in% labelCol)]
     dataCM <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
     
@@ -503,7 +526,7 @@ caret::confusionMatrix(final_model$predict(valid_sl), valid_sl$label)
 
 The last thing to do is creating an ensemble using `caretEnsemble`. __NOTE__: Unfortunately, that package does not supports multi-class problems, and we will not attempt to modify the problem to fit the model at this time. The following tests below do not work.
 
-```{r echo=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE}
 library(caretEnsemble)
 
 tc_sl_es <- caret::trainControl(
@@ -544,7 +567,7 @@ Using the list of trained models from the previous section, we create an ensembl
 
 # Some tests using Angular
 
-Let's load the data we extracted using _Git-Tools_ from the Angular repository (begin 2020 - now). After loading, we will predict the maintenance activity and save the file.
+Let's load the data we extracted using _Git-Tools_ [@honel2020gitdens] from the Angular repository (begin 2020 - now). After loading, we will predict the maintenance activity and save the file.
 
 ```{r}
 # GitTools.exe -r C:\temp\angular\ -o 'C:\temp\angular.csv' -s '2019-01-01 00:00'
@@ -590,7 +613,8 @@ It appears that the activities after 2019-11-01 are much more balanced. Let's lo
 
 ```{r}
 temp <- ggplot2::ggplot(
-  data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
+  data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") &
+                   angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
   ggplot2::aes(
     AuthorTimeUnixEpochMilliSecs, color = label, fill = label))
 
@@ -604,7 +628,7 @@ The above plot is a 3-week snapshot, with weeks starting at Monday, 00:00, and e
 
 Here are some attempts with a rolling mean over the class-probabilities:
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(zoo)
 
 data<-AirPassengers
