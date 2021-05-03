@@ -1,5 +1,4 @@
--   [Models for Commit
-    Classification](#models-for-commit-classification)
+-   [Introduction](#introduction)
 -   [Stateless model](#stateless-model)
     -   [Load and prepare the data](#load-and-prepare-the-data)
     -   [Define how the training works](#define-how-the-training-works)
@@ -17,15 +16,13 @@
 -   [Some tests using Angular](#some-tests-using-angular)
 -   [References](#references)
 
-    source("../helpers.R")
-
-Models for Commit Classification
-================================
+Introduction
+============
 
 In this notebook, we will train and store some best best models for
 commit classification, as these will be detrimental to detecting
 maintenance activities in software projects. The models will be based on
-our latest work (Hönel et al. 2020).
+latest work from (Hönel et al. 2020).
 
 Throughout this notebook, we will build a few models that are all
 similar. Our latest work indicated that including up to three previous
@@ -51,9 +48,14 @@ dataset. Also, we are using a very high split, as the resulting model
 will also be using all data. Using many folds and repeats, we make sure
 that overfitting is not a problem.
 
-    ## Loading required package: lattice
-
-    ## Loading required package: ggplot2
+All complementary data and results can be found at Zenodo. This notebook
+was written in a way that it can be run without any additional efforts
+to reproduce the outputs (using the pre-computed results). This notebook
+has a canonical
+URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd)</sup>
+and can be read online as a rendered
+markdown<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.md)</sup>
+version. All code can be found in this repository, too.
 
 Stateless model
 ===============
@@ -65,7 +67,11 @@ Load and prepare the data
 -------------------------
 
     # the stateless data:
-    data_sl <- getDataset("antipat_gt_all")
+    data_sl <- if (interactive()) {
+      getDataset("antipat_gt_all")
+    } else {
+      readRDS("../data/antipat_gt_all.rds")
+    }
 
     # remove SHAs:
     data_sl <- data_sl[, !(names(data_sl) %in% c("SHA1", "ParentCommitSHA1s"))]
@@ -110,71 +116,80 @@ Tuning of several models
 We do this step to find which models work well with our data. Later, we
 can try to combine the best models into a meta-model.
 
-    ## Registered S3 method overwritten by 'quantmod':
-    ##   method            from
-    ##   as.zoo.data.frame zoo
+    set.seed(1337)
+    # Let's preserve 100 instances from the original data as validation data:
+    p <- caret::createDataPartition(
+      y = data_sl$label, p = 0.95, list = FALSE)
 
-    ## Loaded gbm 2.1.8
+    train_sl <- data_sl[p, ]
+    valid_sl <- data_sl[-p,]
 
-    ## 
-    ## Attaching package: 'dplyr'
 
-    ## The following objects are masked from 'package:plyr':
-    ## 
-    ##     arrange, count, desc, failwith, id, mutate, rename, summarise,
-    ##     summarize
+    # As described above, we can use an oversampled dataset for this model.
+    # However, most recent changes indicate this may or may not be beneficial.
+    train_sl <- balanceDatasetSmote(
+      data = train_sl, stateColumn = "label")
 
-    ## The following objects are masked from 'package:stats':
-    ## 
-    ##     filter, lag
+    # Caret itself needs e1071
+    library(e1071)
 
-    ## The following objects are masked from 'package:base':
-    ## 
-    ##     intersect, setdiff, setequal, union
+    library(gbm)
+    library(plyr)
 
-    ## randomForest 4.6-14
+    # LogitBoost
+    library(caTools)
 
-    ## Type rfNews() to see new features/changes/bug fixes.
+    # C5.0
+    library(C50)
 
-    ## 
-    ## Attaching package: 'randomForest'
+    # ranger, rf
+    library(ranger)
+    library(dplyr)
+    library(randomForest)
 
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     combine
+    # naive_bayes
+    library(naivebayes)
 
-    ## The following object is masked from 'package:ranger':
-    ## 
-    ##     importance
+    # mlp, mlpMl etc.
+    library(RSNNS)
 
-    ## The following object is masked from 'package:ggplot2':
-    ## 
-    ##     margin
+    # nnet
+    library(nnet)
 
-    ## naivebayes 0.9.7 loaded
+    # svmPoly, svmRadial etc.
+    library(kernlab)
 
-    ## Loading required package: Rcpp
+    # xgbTree, xgbLinear, xgbDART
+    library(xgboost)
 
-    ## 
-    ## Attaching package: 'RSNNS'
 
-    ## The following objects are masked from 'package:caret':
-    ## 
-    ##     confusionMatrix, train
-
-    ## 
-    ## Attaching package: 'kernlab'
-
-    ## The following object is masked from 'package:ggplot2':
-    ## 
-    ##     alpha
-
-    ## 
-    ## Attaching package: 'xgboost'
-
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     slice
+    results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
+      doWithParallelCluster(expr = {
+        resList <- list()
+        methods <- c("gbm", "LogitBoost", "C5.0", "rf",
+                     "ranger",
+                     "naive_bayes", "mlp", "nnet",
+                     "svmPoly",
+                     "svmRadial",
+                     "xgbTree",
+                     "xgbDART",
+                     "xgbLinear",
+                     "null"
+                     )
+        
+        for (method in methods) {
+          resList[[method]] <- base::tryCatch({
+            caret::train(
+              label ~ ., data = train_sl,
+              trControl = tc_sl,
+              preProcess = c("center", "scale"),
+              method = method, verbose = FALSE)
+          }, error = function(cond) cond)
+        }
+        
+        resList
+      })
+    })
 
 ### Several models: correlation and performance
 
@@ -182,24 +197,7 @@ The following will give us a correlation matrix of the models’
 predictions. The goal is to find models with high performance and
 unrelated predictions, so that they can be combined.
 
-<table style="width:100%;">
-<colgroup>
-<col style="width: 9%" />
-<col style="width: 6%" />
-<col style="width: 8%" />
-<col style="width: 6%" />
-<col style="width: 6%" />
-<col style="width: 6%" />
-<col style="width: 9%" />
-<col style="width: 6%" />
-<col style="width: 6%" />
-<col style="width: 6%" />
-<col style="width: 7%" />
-<col style="width: 6%" />
-<col style="width: 6%" />
-<col style="width: 7%" />
-<col style="width: 3%" />
-</colgroup>
+<table>
 <thead>
 <tr class="header">
 <th style="text-align: left;"></th>
@@ -210,13 +208,6 @@ unrelated predictions, so that they can be combined.
 <th style="text-align: right;">ranger</th>
 <th style="text-align: right;">naive_bayes</th>
 <th style="text-align: right;">mlp</th>
-<th style="text-align: right;">nnet</th>
-<th style="text-align: right;">svmPoly</th>
-<th style="text-align: right;">svmRadial</th>
-<th style="text-align: right;">xgbTree</th>
-<th style="text-align: right;">xgbDART</th>
-<th style="text-align: right;">xgbLinear</th>
-<th style="text-align: right;">null</th>
 </tr>
 </thead>
 <tbody>
@@ -229,13 +220,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">0.1566</td>
 <td style="text-align: right;">0.0235</td>
 <td style="text-align: right;">0.0652</td>
-<td style="text-align: right;">0.2570</td>
-<td style="text-align: right;">-0.1260</td>
-<td style="text-align: right;">0.3147</td>
-<td style="text-align: right;">-0.0134</td>
-<td style="text-align: right;">-0.2682</td>
-<td style="text-align: right;">0.0560</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">LogitBoost</td>
@@ -246,13 +230,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.0054</td>
 <td style="text-align: right;">-0.0587</td>
 <td style="text-align: right;">0.1126</td>
-<td style="text-align: right;">0.2848</td>
-<td style="text-align: right;">-0.2447</td>
-<td style="text-align: right;">-0.1108</td>
-<td style="text-align: right;">0.2494</td>
-<td style="text-align: right;">-0.0111</td>
-<td style="text-align: right;">-0.2253</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">C5.0</td>
@@ -263,13 +240,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.2741</td>
 <td style="text-align: right;">-0.2880</td>
 <td style="text-align: right;">0.4716</td>
-<td style="text-align: right;">0.0728</td>
-<td style="text-align: right;">-0.1573</td>
-<td style="text-align: right;">0.1220</td>
-<td style="text-align: right;">-0.2393</td>
-<td style="text-align: right;">0.1322</td>
-<td style="text-align: right;">0.0391</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">rf</td>
@@ -280,13 +250,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.1473</td>
 <td style="text-align: right;">0.3730</td>
 <td style="text-align: right;">-0.0736</td>
-<td style="text-align: right;">0.0485</td>
-<td style="text-align: right;">-0.2841</td>
-<td style="text-align: right;">0.4284</td>
-<td style="text-align: right;">0.2115</td>
-<td style="text-align: right;">-0.3900</td>
-<td style="text-align: right;">0.2076</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">ranger</td>
@@ -297,13 +260,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">1.0000</td>
 <td style="text-align: right;">-0.0075</td>
 <td style="text-align: right;">-0.4465</td>
-<td style="text-align: right;">0.1069</td>
-<td style="text-align: right;">0.2096</td>
-<td style="text-align: right;">-0.2944</td>
-<td style="text-align: right;">-0.1651</td>
-<td style="text-align: right;">0.1307</td>
-<td style="text-align: right;">-0.2322</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">naive_bayes</td>
@@ -314,13 +270,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.0075</td>
 <td style="text-align: right;">1.0000</td>
 <td style="text-align: right;">0.0956</td>
-<td style="text-align: right;">-0.1905</td>
-<td style="text-align: right;">0.2341</td>
-<td style="text-align: right;">0.3539</td>
-<td style="text-align: right;">0.0449</td>
-<td style="text-align: right;">0.2583</td>
-<td style="text-align: right;">-0.1731</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">mlp</td>
@@ -331,13 +280,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.4465</td>
 <td style="text-align: right;">0.0956</td>
 <td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">0.1516</td>
-<td style="text-align: right;">0.0764</td>
-<td style="text-align: right;">-0.0435</td>
-<td style="text-align: right;">0.0007</td>
-<td style="text-align: right;">0.0966</td>
-<td style="text-align: right;">-0.0618</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">nnet</td>
@@ -348,13 +290,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">0.1069</td>
 <td style="text-align: right;">-0.1905</td>
 <td style="text-align: right;">0.1516</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.4363</td>
-<td style="text-align: right;">0.0694</td>
-<td style="text-align: right;">0.0475</td>
-<td style="text-align: right;">-0.2216</td>
-<td style="text-align: right;">-0.0691</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">svmPoly</td>
@@ -365,13 +300,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">0.2096</td>
 <td style="text-align: right;">0.2341</td>
 <td style="text-align: right;">0.0764</td>
-<td style="text-align: right;">-0.4363</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.2885</td>
-<td style="text-align: right;">-0.1363</td>
-<td style="text-align: right;">0.5035</td>
-<td style="text-align: right;">0.0248</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">svmRadial</td>
@@ -382,13 +310,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.2944</td>
 <td style="text-align: right;">0.3539</td>
 <td style="text-align: right;">-0.0435</td>
-<td style="text-align: right;">0.0694</td>
-<td style="text-align: right;">-0.2885</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">0.2385</td>
-<td style="text-align: right;">-0.1412</td>
-<td style="text-align: right;">0.1629</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">xgbTree</td>
@@ -399,13 +320,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.1651</td>
 <td style="text-align: right;">0.0449</td>
 <td style="text-align: right;">0.0007</td>
-<td style="text-align: right;">0.0475</td>
-<td style="text-align: right;">-0.1363</td>
-<td style="text-align: right;">0.2385</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.1642</td>
-<td style="text-align: right;">-0.0954</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">xgbDART</td>
@@ -416,13 +330,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">0.1307</td>
 <td style="text-align: right;">0.2583</td>
 <td style="text-align: right;">0.0966</td>
-<td style="text-align: right;">-0.2216</td>
-<td style="text-align: right;">0.5035</td>
-<td style="text-align: right;">-0.1412</td>
-<td style="text-align: right;">-0.1642</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.3693</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">xgbLinear</td>
@@ -433,13 +340,6 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">-0.2322</td>
 <td style="text-align: right;">-0.1731</td>
 <td style="text-align: right;">-0.0618</td>
-<td style="text-align: right;">-0.0691</td>
-<td style="text-align: right;">0.0248</td>
-<td style="text-align: right;">0.1629</td>
-<td style="text-align: right;">-0.0954</td>
-<td style="text-align: right;">-0.3693</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">NA</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">null</td>
@@ -450,6 +350,156 @@ unrelated predictions, so that they can be combined.
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">nnet</th>
+<th style="text-align: right;">svmPoly</th>
+<th style="text-align: right;">svmRadial</th>
+<th style="text-align: right;">xgbTree</th>
+<th style="text-align: right;">xgbDART</th>
+<th style="text-align: right;">xgbLinear</th>
+<th style="text-align: right;">null</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">gbm</td>
+<td style="text-align: right;">0.2570</td>
+<td style="text-align: right;">-0.1260</td>
+<td style="text-align: right;">0.3147</td>
+<td style="text-align: right;">-0.0134</td>
+<td style="text-align: right;">-0.2682</td>
+<td style="text-align: right;">0.0560</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">LogitBoost</td>
+<td style="text-align: right;">0.2848</td>
+<td style="text-align: right;">-0.2447</td>
+<td style="text-align: right;">-0.1108</td>
+<td style="text-align: right;">0.2494</td>
+<td style="text-align: right;">-0.0111</td>
+<td style="text-align: right;">-0.2253</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">C5.0</td>
+<td style="text-align: right;">0.0728</td>
+<td style="text-align: right;">-0.1573</td>
+<td style="text-align: right;">0.1220</td>
+<td style="text-align: right;">-0.2393</td>
+<td style="text-align: right;">0.1322</td>
+<td style="text-align: right;">0.0391</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">rf</td>
+<td style="text-align: right;">0.0485</td>
+<td style="text-align: right;">-0.2841</td>
+<td style="text-align: right;">0.4284</td>
+<td style="text-align: right;">0.2115</td>
+<td style="text-align: right;">-0.3900</td>
+<td style="text-align: right;">0.2076</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">ranger</td>
+<td style="text-align: right;">0.1069</td>
+<td style="text-align: right;">0.2096</td>
+<td style="text-align: right;">-0.2944</td>
+<td style="text-align: right;">-0.1651</td>
+<td style="text-align: right;">0.1307</td>
+<td style="text-align: right;">-0.2322</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">naive_bayes</td>
+<td style="text-align: right;">-0.1905</td>
+<td style="text-align: right;">0.2341</td>
+<td style="text-align: right;">0.3539</td>
+<td style="text-align: right;">0.0449</td>
+<td style="text-align: right;">0.2583</td>
+<td style="text-align: right;">-0.1731</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">mlp</td>
+<td style="text-align: right;">0.1516</td>
+<td style="text-align: right;">0.0764</td>
+<td style="text-align: right;">-0.0435</td>
+<td style="text-align: right;">0.0007</td>
+<td style="text-align: right;">0.0966</td>
+<td style="text-align: right;">-0.0618</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">nnet</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">-0.4363</td>
+<td style="text-align: right;">0.0694</td>
+<td style="text-align: right;">0.0475</td>
+<td style="text-align: right;">-0.2216</td>
+<td style="text-align: right;">-0.0691</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">svmPoly</td>
+<td style="text-align: right;">-0.4363</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">-0.2885</td>
+<td style="text-align: right;">-0.1363</td>
+<td style="text-align: right;">0.5035</td>
+<td style="text-align: right;">0.0248</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">svmRadial</td>
+<td style="text-align: right;">0.0694</td>
+<td style="text-align: right;">-0.2885</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">0.2385</td>
+<td style="text-align: right;">-0.1412</td>
+<td style="text-align: right;">0.1629</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">xgbTree</td>
+<td style="text-align: right;">0.0475</td>
+<td style="text-align: right;">-0.1363</td>
+<td style="text-align: right;">0.2385</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">-0.1642</td>
+<td style="text-align: right;">-0.0954</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">xgbDART</td>
+<td style="text-align: right;">-0.2216</td>
+<td style="text-align: right;">0.5035</td>
+<td style="text-align: right;">-0.1412</td>
+<td style="text-align: right;">-0.1642</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">-0.3693</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">xgbLinear</td>
+<td style="text-align: right;">-0.0691</td>
+<td style="text-align: right;">0.0248</td>
+<td style="text-align: right;">0.1629</td>
+<td style="text-align: right;">-0.0954</td>
+<td style="text-align: right;">-0.3693</td>
+<td style="text-align: right;">1.0000</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">null</td>
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
 <td style="text-align: right;">NA</td>
@@ -710,16 +760,24 @@ Manual neural network
 
 Before going back to caret, let’s try a neural network the manual way.
 
-    ## 
-    ## Attaching package: 'neuralnet'
+    library(neuralnet)
+    library(e1071)
 
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     compute
+    nnet <- loadResultsOrCompute("../results/nnet.rds", computeExpr = {
+      set.seed(0xc0de)
+      neuralnet::neuralnet(
+        formula = label ~ ., data = data_stack_train_sl,
+        act.fct = function(x) 1.5 * x * sigmoid(x),
+        hidden = c(3), threshold = 5e-3,
+        stepmax = 2e5,
+        lifesign = if (interactive()) "full" else "minimal")
+    })
 
 The network has the following structure:
 
-    plot(nnet)
+    plot(nnet, rep = "best")
+
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-14-1.png)
 
     nnet_pred <- predict(nnet, data_stack_valid_sl)
     colnames(nnet_pred) <- levels(valid_sl$label)
@@ -1046,7 +1104,11 @@ model)).
       single_models <- models_sl[stack_manual_models]
       
       predict_class_membership <- function(data, modelList = single_models, labelCol = "label") {
-        dataLabel <- if (labelCol %in% colnames(data)) data[[labelCol]] else matrix(ncol = 0, nrow = nrow(data))
+        dataLabel <- if (labelCol %in% colnames(data)) {
+          data[[labelCol]]
+        } else {
+          matrix(ncol = 0, nrow = nrow(data))
+        }
         data <- data[, !(names(data) %in% labelCol)]
         dataCM <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
         
@@ -1227,12 +1289,11 @@ The last thing to do is creating an ensemble using `caretEnsemble`.
 problems, and we will not attempt to modify the problem to fit the model
 at this time. The following tests below do not work.
 
-    ## 
-    ## Attaching package: 'caretEnsemble'
+    library(caretEnsemble)
 
-    ## The following object is masked from 'package:ggplot2':
-    ## 
-    ##     autoplot
+    tc_sl_es <- caret::trainControl(
+      method = "cv", savePredictions = "final",
+      classProbs = TRUE)
 
 Now let’s create a list of models we would like to use.
 
@@ -1254,9 +1315,9 @@ ensemble that is a linear combination of all models.
 Some tests using Angular
 ========================
 
-Let’s load the data we extracted using *Git-Tools* from the Angular
-repository (begin 2020 - now). After loading, we will predict the
-maintenance activity and save the file.
+Let’s load the data we extracted using *Git-Tools* (Hönel 2020) from the
+Angular repository (begin 2020 - now). After loading, we will predict
+the maintenance activity and save the file.
 
     # GitTools.exe -r C:\temp\angular\ -o 'C:\temp\angular.csv' -s '2019-01-01 00:00'
     dateFormat <- "%Y-%m-%d %H:%M:%S"
@@ -1291,7 +1352,7 @@ using the relative timestamp of each commit.
         AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
       ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-26-1.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-1.png)
 
     ggplot2::ggplot(
       #data = angular[angular$AuthorTimeUnixEpochMilliSecs <= 1.57e12, ],
@@ -1300,31 +1361,32 @@ using the relative timestamp of each commit.
         AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
       ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-26-2.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-2.png)
 
 It appears that the activities after 2019-11-01 are much more balanced.
 Let’s look at a much smaller window:
 
     temp <- ggplot2::ggplot(
-      data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
+      data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") &
+                       angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
       ggplot2::aes(
         AuthorTimeUnixEpochMilliSecs, color = label, fill = label))
 
     temp + ggplot2::geom_density(size = 1, alpha = 0.4)
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-1.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-1.png)
 
     temp + ggplot2::geom_density(size = 1, alpha = 0.4, position = "fill")
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-2.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-2.png)
 
     temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular")
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-3.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-3.png)
 
     temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular", position = "fill")
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-4.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-4.png)
 
 The above plot is a 3-week snapshot, with weeks starting at Monday,
 00:00, and ending at Sunday, 23:59. It appears that each week starts
@@ -1335,20 +1397,13 @@ Here are some attempts with a rolling mean over the class-probabilities:
 
     library(zoo)
 
-    ## 
-    ## Attaching package: 'zoo'
-
-    ## The following objects are masked from 'package:base':
-    ## 
-    ##     as.Date, as.Date.numeric
-
     data<-AirPassengers
     plot(data,main='Simple Moving Average (SMA)',ylab='Passengers')
     lines(rollmean(data,5),col='blue')
     lines(rollmean(data,40),col='red')
     legend(1950,600,col=c('black','blue', 'red'),legend=c('Raw', 'SMA 5', 'SMA 40'),lty=1,cex=0.8)
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-1.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-29-1.png)
 
     data <- angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),]
 
@@ -1360,7 +1415,7 @@ Here are some attempts with a rolling mean over the class-probabilities:
     #lines(rollmean(data$prob_c, 5), col='red')
     lines(rollmean(data$prob_c, 10), col='blue')
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-29-1.png)
+![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-30-1.png)
 
     #plot(rollmean(data$prob_a, 5))
 
@@ -1370,6 +1425,10 @@ References
 Chawla, Nitesh V, Kevin W Bowyer, Lawrence O Hall, and W Philip
 Kegelmeyer. 2002. “SMOTE: Synthetic Minority over-Sampling Technique.”
 *Journal of Artificial Intelligence Research* 16: 321–57.
+
+Hönel, Sebastian. 2020. “Git Density 2020.2: Analyze Git Repositories to
+Extract the Source Code Density and Other Commit Properties,” February.
+<https://doi.org/10.5281/zenodo.3662768>.
 
 Hönel, Sebastian, Morgan Ericsson, Welf Löwe, and Anna Wingkvist. 2020.
 “Using Source Code Density to Improve the Accuracy of Automatic Commit
