@@ -3,7 +3,12 @@ title: "Technical Report: Detecting the Fire Drill anti-pattern using Source Cod
 author: "Sebastian Hönel"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
 output:
+  md_document:
+    toc: yes
+    toc_depth: 6
+    df_print: kable
   bookdown::pdf_document2:
     fig_caption: yes
     number_sections: yes
@@ -11,10 +16,6 @@ output:
     toc_depth: 6
     df_print: kable
     keep_tex: yes
-  md_document:
-    toc: yes
-    toc_depth: 6
-    df_print: kable
   html_document:
     number_sections: yes
     toc: yes
@@ -35,7 +36,12 @@ header-includes:
 \newcommand{\norm}[1]{\left\lvert#1\right\rvert}
 \newcommand{\infdiv}[2]{#1\;\|\;#2}
 
-```{r echo=FALSE, warning=FALSE}
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 source(file = "../helpers.R")
 source(file = "./common-funcs.R")
 source(file = "../models/modelsR6.R")
@@ -45,14 +51,11 @@ library(ggplot2)
 library(ggpubr)
 ```
 
-# Introduction
+# Introduction\label{tr:fire-drill-technical-report}
 
 This is the complementary technical report for the paper/article tentatively entitled "Towards Data-Based Detection of Project Management Anti-Patterns". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
 
-All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the results. This notebook has a canonical URL[^1] and can be read online as a rendered markdown[^2] version. All code can be found in this repository, too.
-
-[^1]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd
-[^2]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md
+All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md)^ version. All code can be found in this repository, too.
 
 # Data
 
@@ -138,9 +141,9 @@ ggplot(data = student_projects, aes(x = length(label), fill = label)) +
 
 We have slightly different begin- and end-times in each project. However, the data for all projects was previously cropped, so that each project's extent marks the absolute begin and end of it -- it starts with the first commit and ends with the last. As for our methods here, we only need to make sure that we scale the timestamps into a relative $[0,1]$-range, where $1$ marks the project's end.
 
-For each project, we model __four__ variables: The activities __adaptive__ (__`A`__), __corrective+perfective__ (__`CP`__), the frequency of all activities, regardless of their type (__`FREQ`__), and the __source code density__ (__`SCD`__). While for the first three variables we estimate a Kernel density, the last variable is a metric collected with each commit. The data for it is mined using `Git-Density` [@honel2020gitdens], and we use a highly efficient commit classification model[^3] ($\approx83.6\%$ accuracy, $\approx0.745$ Kappa) [@honel2020using] to attach maintenance activity labels to each commit, based on size- and keyword-data only.
+For each project, we model __four__ variables: The activities __adaptive__ (__`A`__), __corrective+perfective__ (__`CP`__), the frequency of all activities, regardless of their type (__`FREQ`__), and the __source code density__ (__`SCD`__). While for the first three variables we estimate a Kernel density, the last variable is a metric collected with each commit. The data for it is mined using `Git-Density` [@honel2020gitdens], and we use a highly efficient commit classification model[^1] ($\approx83.6\%$ accuracy, $\approx0.745$ Kappa) [@honel2020using] to attach maintenance activity labels to each commit, based on size- and keyword-data only.
 
-[^3]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.md
+[^1]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd
 
 Technically, we will compose each variable into an instance of our `Signal`-class. Before we start, we will do some normalizations and conversions, like converting the timestamps. This has to be done on a per-project basis.
 
@@ -264,7 +267,7 @@ for (pId in levels(student_projects$project)) {
 
 
 ```{r project-vars, echo=FALSE, fig.cap="All variables over each project's time span", fig.align="top", fig.pos="ht!"}
-ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
+plot_all_acp <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
   geom_line() +
   facet_wrap(p ~.) +
   theme_light() +
@@ -273,8 +276,23 @@ ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
     legend.position = "bottom",
     strip.background = element_rect(fill="#dfdfdf"),
     strip.text = element_text(color="black"))
-
+plot_all_acp
 ```
+
+```{r echo=FALSE, eval=FALSE}
+# Let's save this as tikz:
+tikzDevice::tikz(file = "../figures/all_acp.tex", width = 3.4, height = 1.8)
+plot_all_acp +
+  theme_light(base_size = 10) +
+  theme(
+    axis.title.x.bottom = element_text(margin = margin(b=5), size = 10),
+    axis.title.y.left = element_text(margin = margin(r=3), size = 10),
+    legend.position = "bottom",
+    legend.margin = margin(-7.5, 0, 0, 0),
+    strip.background = element_rect(fill="#dfdfdf"))
+dev.off()
+```
+
 
 ## Modeling of metrics and events using KDE
 
@@ -362,7 +380,7 @@ p1_signals <- list(
 )
 ```
 
-```{r echo=FALSE, fig.height=1.8}
+```{r echo=FALSE, fig.height=1.8, fig.cap="The separate signals of pattern I.", fig.align="top", fig.pos="ht!"}
 ggarrange(
   p1_signals$A$plot() + ylim(0,1), p1_signals$CP$plot() + ylim(0,1),
   p1_signals$FREQ$plot() + ylim(0,1), p1_signals$SCD$plot() + ylim(0,1),
@@ -579,10 +597,13 @@ p2_params <- loadResultsOrCompute(file = "../results/p2_params.rds", computeExpr
 
 p2_fr <- FitResult$new("a")
 p2_fr$fromOptimParallel(p2_params)
-p2_fr$plot_logloss()
 format(p2_fr$getBest(paramName = "loss")[
   1, !(p2_fr$getParamNames() %in% c("duration", "begin", "end"))],
   scientific = FALSE, digits = 4, nsmall = 4)
+```
+
+```{r p2-params-fig, echo=FALSE, fig.cap="Neg. Log-loss of fitting pattern type II.", fig.align="top", fig.pos="ht!"}
+p2_fr$plot_logloss()
 ```
 
 ### Inversing the parameters
@@ -1151,7 +1172,7 @@ ggplot(data = temp, mapping = aes(x = x, y = y, color = t)) +
 ```
 
 
-In figure \ref{fig:p3b-all-fr} we can clearly see that each pattern was fit successfully to all data. The loss is logarithmic, so the progress is rather substantial. For example, going from $\log{(14)}\approx1.2e6$ to $\log{(8)}\approx3e3$ is a reduction by $3$ (!) orders of magnitude.
+In figure \ref{fig:p3b-all-fr} we can clearly see that all but the eighth pattern converged nicely (this was already visible in \ref{fig:p3-all}). The loss is logarithmic, so the progress is rather substantial. For example, going from $\log{(14)}\approx1.2e6$ to $\log{(8)}\approx3e3$ is a reduction by $3$ (!) orders of magnitude.
 
 
 ```{r p3b-all-fr, echo=FALSE, fig.height=6, fig.cap="Losses for all computed pattern by number of intervals.", fig.align="top", fig.pos="ht!"}
@@ -1235,7 +1256,8 @@ compute_all_scores <- function(alignment, patternName) {
   useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var",
                  "mae", "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
   
-  `rownames<-`(doWithParallelCluster(numCores = length(alignment), expr = {
+  #`rownames<-`(
+  doWithParallelCluster(numCores = length(alignment), expr = {
     foreach::foreach(
       projectName = names(alignment),
       .inorder = TRUE,
@@ -1256,7 +1278,7 @@ compute_all_scores <- function(alignment, patternName) {
       }
       `colnames<-`(matrix(data = scores, nrow = 1), names(scores))
     }
-  }), sort(names(alignment)))
+  })#, sort(names(alignment)))
 }
 ```
 
@@ -1434,7 +1456,9 @@ p2_align <- loadResultsOrCompute(file = "../results/p2_align.rds", computeExpr =
 
 ```{r score-p2}
 p2_scores <- loadResultsOrCompute(file = "../results/p2_scores.rds", computeExpr = {
-  as.data.frame(compute_all_scores(alignment = p2_align, patternName = "p2"))
+  #as.data.frame(
+  compute_all_scores(alignment = p2_align, patternName = "p2")
+  #)
 })
 ```
 
@@ -1517,7 +1541,7 @@ if (interactive()) {
   knitr::kable(
     x = round(`colnames<-`(t(p2_no_scores), paste0("pr_", 1:9)), 2),
     booktabs = TRUE,
-    caption = "Scores for the aligned projects with pattern II (p=product, m=mean).",
+    caption = "Scores for the non-aligned projects with pattern II (p=product, m=mean).",
     label = "p2-no-scores"
   )
 }
