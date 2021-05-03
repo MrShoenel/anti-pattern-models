@@ -1,0 +1,7 @@
+delete_merged_file: false
+fig_caption: yes
+number_sections: yes
+toc: yes
+toc_depth: 6
+df_print: kable
+keep_tex: yes

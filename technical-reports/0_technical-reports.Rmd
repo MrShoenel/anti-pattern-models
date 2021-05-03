@@ -1,0 +1,70 @@
+---
+title: "Technical Reports Compilation: Detecting the Fire Drill anti-pattern using Source Code"
+author: "Sebastian Hönel"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: ../inst/REFERENCES.bib
+output:
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
+  bookdown::pdf_book:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
+  md_document:
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+    df_print: kable
+  word_document: default
+  pdf_document:
+    toc: yes
+    toc_depth: '6'
+header-includes:
+- \usepackage{bm}
+- \usepackage{mathtools}
+- \usepackage{xurl}
+abstract: "\\noindent Detecting the presence of project management anti-patterns (AP) currently requires experts on the matter and is an expensive endeavor. Worse, experts may introduce their individual subjectivity.
+
+Using the Fire Drill AP, we first introduce a novel way to translate descriptions into detectable AP that are comprised of arbitrary metrics and events such as maintenance activities, that are mined from the underlying source code, thus making the description objective as it becomes data-based. Secondly, we demonstrate a novel method to quantify and score the deviations from real-world projects to data-based AP descriptions.
+
+Using nine real-world projects that had a Fire Drill to some degree, we show how to further enhance the translated AP. The ground truth in these projects was extracted from two individual experts and consensus was found between them.
+
+The Fire Drill AP as translated from description only shows only low potential of confidently detecting the presence of the anti-pattern in a project. Enriching the AP with data from real-world projects significantly improves the detection. Using patterns derived from data only leads to almost perfect correlations of the scores with the ground truth."
+---
+
+\newcommand*\mean[1]{\overline{#1}}
+\newcommand{\norm}[1]{\left\lvert#1\right\rvert}
+\newcommand{\infdiv}[2]{#1\;\|\;#2}
+
+```{r echo=FALSE, warning=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+# Overview
+
+This document is a compilation of three separate technical reports. In all detail, the development of a method for detecting the presence of so-called _\"anti-patterns\"_ in software development projects is presented.
+
+The first technical report is concerned with this concrete problem, and it facilitates two major building blocks: The first is the application of a new method for time warping, called self-regularizing boundary time/amplitude warping (srBTAW). The second building block is a detailed walkthrough of creating a classifier for commits, based on source code density. Both these blocks have dedicated technical reports.
+
+All of the data, source code, and raw materials can be found online. These reports and resources are made available for reproduction purposes. The interested reader is welcome and enabled to re-run all of the computations and to extend upon our ideas. The repository is to be found at[^1]. The data is made available online~[].
+
+[^1]: https://github.com/sse-lnu/anti-pattern-models
