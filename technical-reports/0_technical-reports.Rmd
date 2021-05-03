@@ -3,6 +3,7 @@ title: "Technical Reports Compilation: Detecting the Fire Drill anti-pattern usi
 author: "Sebastian Hönel"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
 output:
   bookdown::pdf_document2:
     fig_caption: yes
@@ -36,18 +37,17 @@ header-includes:
 - \usepackage{bm}
 - \usepackage{mathtools}
 - \usepackage{xurl}
-abstract: "\\noindent Detecting the presence of project management anti-patterns (AP) currently requires experts on the matter and is an expensive endeavor. Worse, experts may introduce their individual subjectivity.
-
-Using the Fire Drill AP, we first introduce a novel way to translate descriptions into detectable AP that are comprised of arbitrary metrics and events such as maintenance activities, that are mined from the underlying source code, thus making the description objective as it becomes data-based. Secondly, we demonstrate a novel method to quantify and score the deviations from real-world projects to data-based AP descriptions.
-
-Using nine real-world projects that had a Fire Drill to some degree, we show how to further enhance the translated AP. The ground truth in these projects was extracted from two individual experts and consensus was found between them.
-
-The Fire Drill AP as translated from description only shows only low potential of confidently detecting the presence of the anti-pattern in a project. Enriching the AP with data from real-world projects significantly improves the detection. Using patterns derived from data only leads to almost perfect correlations of the scores with the ground truth."
+abstract: "\\noindent Detecting the presence of project management anti-patterns (AP) currently requires experts on the matter and is an expensive endeavor. Worse, experts may introduce their individual subjectivity or bias. Using the Fire Drill AP, we first introduce a novel way to translate descriptions into detectable AP that are comprised of arbitrary metrics and events such as maintenance activities, which are mined from the underlying source code, thus making the description objective as it becomes data-based. Secondly, we demonstrate a novel method to quantify and score the deviations of real-world projects to data-based AP descriptions. Using nine real-world projects that exhibit a Fire Drill to some degree, we show how to further enhance the translated AP. The ground truth in these projects was extracted from two individual experts and consensus was found between them. Our evaluation spans three kinds of pattern, where the first is purely derived from description, the second type is enhanced by data, and the third kind is derived from data only. The Fire Drill AP as translated from description only shows weak potential of confidently detecting the presence of the anti-pattern in a project. Enriching the AP with data from real-world projects significantly improves the detection. Using patterns derived from data only leads to almost perfect correlations of the scores with the ground truth. Some APs share symptoms with the Fire Drill AP, and we conclude that the presence of similar patterns is most certainly detectable. Furthermore, any pattern that can be characteristically modelled using the proposed approach is potentially well detectable."
 ---
 
 \newcommand*\mean[1]{\overline{#1}}
 \newcommand{\norm}[1]{\left\lvert#1\right\rvert}
 \newcommand{\infdiv}[2]{#1\;\|\;#2}
+
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
+```
 
 ```{r echo=FALSE, warning=FALSE}
 source(file = "../helpers.R")
@@ -65,6 +65,4 @@ This document is a compilation of three separate technical reports. In all detai
 
 The first technical report is concerned with this concrete problem, and it facilitates two major building blocks: The first is the application of a new method for time warping, called self-regularizing boundary time/amplitude warping (srBTAW). The second building block is a detailed walkthrough of creating a classifier for commits, based on source code density. Both these blocks have dedicated technical reports.
 
-All of the data, source code, and raw materials can be found online. These reports and resources are made available for reproduction purposes. The interested reader is welcome and enabled to re-run all of the computations and to extend upon our ideas. The repository is to be found at[^1]. The data is made available online~[].
-
-[^1]: https://github.com/sse-lnu/anti-pattern-models
+All of the data, source code, and raw materials can be found online. These reports and resources are made available for reproduction purposes. The interested reader is welcome and enabled to re-run all of the computations and to extend upon our ideas. The repository is to be found at <https://github.com/sse-lnu/anti-pattern-models>. The data is made available online [@akaike1981likelihood].

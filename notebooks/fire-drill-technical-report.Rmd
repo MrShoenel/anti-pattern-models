@@ -336,7 +336,7 @@ The pattern and its boundaries look like this:
 plot_project_data(data = fd_data_concat, boundaries = fd_data_boundaries)
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE, eval=FALSE}
 tikzDevice::tikz(file = "../figures/pattern-I.tex", width = 3.4, height = 1.8)
 plot_project_data(data = fd_data_concat, boundaries = fd_data_boundaries) +
   xlab("Normalized time") + ylab("Magnitude") +
