@@ -1719,16 +1719,16 @@ corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
                    tl.col = "black", tl.srt = 90)
 ```
 
-And here we got the result that was the most-expected. We get almost always positive correlations, and most of them range between medium and significant strength. If we look at the correlation for `sd_p`, it is almost perfect with `r round(corr["sd_p"], 3)`. The Jensen--Shannon divergence score (note: while called divergence, this is a score, the higher the better) of `r round(corr["jsd_m"], 3)` is at a high level now. I mention this because this measure is less primitive than the others and tends to capture more properties of the signals. If this is high, it means we get a robust measure that ought to be usable stand-alone. The other low-level scores probably would need to be combined instead.
+And here in figure \ref{fig:p3-avg-no-corr-mat} we got the result that was the most-expected. We get almost always positive correlations, and most of them range between medium and significant strength. If we look at the correlation for `sd_p`, it is almost perfect with `r round(corr["sd_p"], 3)`. The Jensen--Shannon divergence score (note: while called divergence, this is a score, the higher the better) of `r round(corr["jsd_m"], 3)` is at a high level now. I mention this because this measure is less primitive than the others and tends to capture more properties of the signals. If this is high, it means we get a robust measure that ought to be usable stand-alone. The other low-level scores probably would need to be combined instead.
 
 ### Linear combination of scores
 
 So far we have tested whether the calculated scores correlate with the scores of the ground truth, and we find some good examples. However, these scores are not scaled or translated in any way, so it is probably best to A) take multiple scores into account and B) create a regression model that makes these adjustments. We will test some linear combination of the scores `corr_p`, `jsd_m`, `RMS_m` and `sd_p`.
 
 ```{r}
-p3_avg_lm <- stats::lm(formula = gt_consensus ~ corr_p + jsd_m + RMS_m + sd_p, data = temp)
-plot(p3_avg_lm, ask = FALSE, which = 1:2)
+p3_avg_lm <- stats::glm(formula = gt_consensus ~ corr_p + jsd_m + RMS_m + sd_p, data = temp)
 stats::coef(p3_avg_lm)
+plot(p3_avg_lm, ask = FALSE, which = 1:2)
 ```
 
 Of course, this model should not be used to predict on the training data, but what we wanted to learn here is simply how to linearly combine the scores in order to get scores that are in the same range as the ground truth, we learn a re-scale so to say.
@@ -1828,7 +1828,8 @@ pAll_corr <- rbind(
   `rownames<-`(stats::cor(ground_truth$consensus, p2_no_scores), "Pattern II (no align)"),
   `rownames<-`(stats::cor(ground_truth$consensus, p3_avg_scores), "Pattern III (avg)"),
   `rownames<-`(stats::cor(ground_truth$consensus, p3_avg_no_scores), "Pattern III (avg, no align)"),
-  `rownames<-`(p3b_corr["P III (b) [numInt=6]",, drop = FALSE], "Pattern III (b, numInt=6)")
+  `rownames<-`(p3b_corr["P III (b) [numInt=4]",, drop = FALSE], "Pattern III (b, numInt=4)"),
+  `rownames<-`(p3b_corr["P III (b) [numInt=11]",, drop = FALSE], "Pattern III (b, numInt=11)")
 )
 
 corrplot::corrplot(corr = pAll_corr)
