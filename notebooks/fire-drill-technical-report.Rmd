@@ -23,9 +23,6 @@ output:
     toc_float: yes
     df_print: kable
   word_document: default
-  pdf_document:
-    toc: yes
-    toc_depth: '6'
 header-includes:
 - \usepackage{bm}
 - \usepackage{mathtools}
