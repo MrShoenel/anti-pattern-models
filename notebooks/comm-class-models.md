@@ -66,29 +66,35 @@ available from the parents or children.
 Load and prepare the data
 -------------------------
 
-    # the stateless data:
-    data_sl <- if (interactive()) {
-      getDataset("antipat_gt_all")
-    } else {
-      readRDS("../data/antipat_gt_all.rds")
-    }
+``` r
+# the stateless data:
+data_sl <- if (interactive()) {
+  getDataset("antipat_gt_all")
+} else {
+  readRDS("../data/antipat_gt_all.rds")
+}
 
-    # remove SHAs:
-    data_sl <- data_sl[, !(names(data_sl) %in% c("SHA1", "ParentCommitSHA1s"))]
-    # factorize the labels:
-    data_sl$label <- factor(
-      x = data_sl$label, levels = sort(unique(data_sl$label)))
+# remove SHAs:
+data_sl <- data_sl[, !(names(data_sl) %in% c("SHA1", "ParentCommitSHA1s"))]
+# factorize the labels:
+data_sl$label <- factor(
+  x = data_sl$label, levels = sort(unique(data_sl$label)))
+```
 
 The zero-variance predictors should be removed (if any).
 
-    nzv_sl <- caret::nearZeroVar(x = data_sl, saveMetrics = TRUE, names = TRUE)
+``` r
+nzv_sl <- caret::nearZeroVar(x = data_sl, saveMetrics = TRUE, names = TRUE)
 
-    print(paste0("Zero-variance predictors to be removed are: ",
-                 paste(names(data_sl)[nzv_sl$zeroVar], collapse = ", ")))
+print(paste0("Zero-variance predictors to be removed are: ",
+             paste(names(data_sl)[nzv_sl$zeroVar], collapse = ", ")))
+```
 
     ## [1] "Zero-variance predictors to be removed are: IsInitialCommit, IsMergeCommit, NumberOfParentCommits"
 
-    data_sl <- data_sl[, !nzv_sl$zeroVar]
+``` r
+data_sl <- data_sl[, !nzv_sl$zeroVar]
+```
 
 Define how the training works
 -----------------------------
@@ -99,16 +105,18 @@ Instead of sampling during training, we’ll work with a resample of the
 entire dataset, using the *synthetic minority over-sampling technique*
 (Chawla et al. 2002).
 
-    numFolds <- 5
-    numRepeats <- 5
+``` r
+numFolds <- 5
+numRepeats <- 5
 
-    tc_sl <- caret::trainControl(
-      method = "repeatedcv", p = 0.9,
-      returnResamp = "all", savePredictions = "all", classProbs = TRUE
-      , number = numFolds, repeats = numRepeats
-      , seeds = get_seeds(nh = 200, amount = 2 * numFolds * numRepeats)
-      #, sampling = "smote"
-    )
+tc_sl <- caret::trainControl(
+  method = "repeatedcv", p = 0.9,
+  returnResamp = "all", savePredictions = "all", classProbs = TRUE
+  , number = numFolds, repeats = numRepeats
+  , seeds = get_seeds(nh = 200, amount = 2 * numFolds * numRepeats)
+  #, sampling = "smote"
+)
+```
 
 Tuning of several models
 ------------------------
@@ -116,80 +124,84 @@ Tuning of several models
 We do this step to find which models work well with our data. Later, we
 can try to combine the best models into a meta-model.
 
-    set.seed(1337)
-    # Let's preserve 100 instances from the original data as validation data:
-    p <- caret::createDataPartition(
-      y = data_sl$label, p = 0.95, list = FALSE)
+``` r
+set.seed(1337)
+# Let's preserve 100 instances from the original data as validation data:
+p <- caret::createDataPartition(
+  y = data_sl$label, p = 0.95, list = FALSE)
 
-    train_sl <- data_sl[p, ]
-    valid_sl <- data_sl[-p,]
-
-
-    # As described above, we can use an oversampled dataset for this model.
-    # However, most recent changes indicate this may or may not be beneficial.
-    train_sl <- balanceDatasetSmote(
-      data = train_sl, stateColumn = "label")
-
-    # Caret itself needs e1071
-    library(e1071)
-
-    library(gbm)
-    library(plyr)
-
-    # LogitBoost
-    library(caTools)
-
-    # C5.0
-    library(C50)
-
-    # ranger, rf
-    library(ranger)
-    library(dplyr)
-    library(randomForest)
-
-    # naive_bayes
-    library(naivebayes)
-
-    # mlp, mlpMl etc.
-    library(RSNNS)
-
-    # nnet
-    library(nnet)
-
-    # svmPoly, svmRadial etc.
-    library(kernlab)
-
-    # xgbTree, xgbLinear, xgbDART
-    library(xgboost)
+train_sl <- data_sl[p, ]
+valid_sl <- data_sl[-p,]
 
 
-    results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
-      doWithParallelCluster(expr = {
-        resList <- list()
-        methods <- c("gbm", "LogitBoost", "C5.0", "rf",
-                     "ranger",
-                     "naive_bayes", "mlp", "nnet",
-                     "svmPoly",
-                     "svmRadial",
-                     "xgbTree",
-                     "xgbDART",
-                     "xgbLinear",
-                     "null"
-                     )
-        
-        for (method in methods) {
-          resList[[method]] <- base::tryCatch({
-            caret::train(
-              label ~ ., data = train_sl,
-              trControl = tc_sl,
-              preProcess = c("center", "scale"),
-              method = method, verbose = FALSE)
-          }, error = function(cond) cond)
-        }
-        
-        resList
-      })
-    })
+# As described above, we can use an oversampled dataset for this model.
+# However, most recent changes indicate this may or may not be beneficial.
+train_sl <- balanceDatasetSmote(
+  data = train_sl, stateColumn = "label")
+```
+
+``` r
+# Caret itself needs e1071
+library(e1071)
+
+library(gbm)
+library(plyr)
+
+# LogitBoost
+library(caTools)
+
+# C5.0
+library(C50)
+
+# ranger, rf
+library(ranger)
+library(dplyr)
+library(randomForest)
+
+# naive_bayes
+library(naivebayes)
+
+# mlp, mlpMl etc.
+library(RSNNS)
+
+# nnet
+library(nnet)
+
+# svmPoly, svmRadial etc.
+library(kernlab)
+
+# xgbTree, xgbLinear, xgbDART
+library(xgboost)
+
+
+results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    resList <- list()
+    methods <- c("gbm", "LogitBoost", "C5.0", "rf",
+                 "ranger",
+                 "naive_bayes", "mlp", "nnet",
+                 "svmPoly",
+                 "svmRadial",
+                 "xgbTree",
+                 "xgbDART",
+                 "xgbLinear",
+                 "null"
+                 )
+    
+    for (method in methods) {
+      resList[[method]] <- base::tryCatch({
+        caret::train(
+          label ~ ., data = train_sl,
+          trControl = tc_sl,
+          preProcess = c("center", "scale"),
+          method = method, verbose = FALSE)
+      }, error = function(cond) cond)
+    }
+    
+    resList
+  })
+})
+```
 
 ### Several models: correlation and performance
 
@@ -197,319 +209,39 @@ The following will give us a correlation matrix of the models’
 predictions. The goal is to find models with high performance and
 unrelated predictions, so that they can be combined.
 
-<table>
-<thead>
-<tr class="header">
-<th style="text-align: left;"></th>
-<th style="text-align: right;">gbm</th>
-<th style="text-align: right;">LogitBoost</th>
-<th style="text-align: right;">C5.0</th>
-<th style="text-align: right;">rf</th>
-<th style="text-align: right;">ranger</th>
-<th style="text-align: right;">naive_bayes</th>
-<th style="text-align: right;">mlp</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">gbm</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.1080</td>
-<td style="text-align: right;">-0.0689</td>
-<td style="text-align: right;">-0.0565</td>
-<td style="text-align: right;">0.1566</td>
-<td style="text-align: right;">0.0235</td>
-<td style="text-align: right;">0.0652</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">LogitBoost</td>
-<td style="text-align: right;">-0.1080</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.0281</td>
-<td style="text-align: right;">-0.0979</td>
-<td style="text-align: right;">-0.0054</td>
-<td style="text-align: right;">-0.0587</td>
-<td style="text-align: right;">0.1126</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">C5.0</td>
-<td style="text-align: right;">-0.0689</td>
-<td style="text-align: right;">-0.0281</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.0565</td>
-<td style="text-align: right;">-0.2741</td>
-<td style="text-align: right;">-0.2880</td>
-<td style="text-align: right;">0.4716</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">rf</td>
-<td style="text-align: right;">-0.0565</td>
-<td style="text-align: right;">-0.0979</td>
-<td style="text-align: right;">-0.0565</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.1473</td>
-<td style="text-align: right;">0.3730</td>
-<td style="text-align: right;">-0.0736</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">ranger</td>
-<td style="text-align: right;">0.1566</td>
-<td style="text-align: right;">-0.0054</td>
-<td style="text-align: right;">-0.2741</td>
-<td style="text-align: right;">-0.1473</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.0075</td>
-<td style="text-align: right;">-0.4465</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">naive_bayes</td>
-<td style="text-align: right;">0.0235</td>
-<td style="text-align: right;">-0.0587</td>
-<td style="text-align: right;">-0.2880</td>
-<td style="text-align: right;">0.3730</td>
-<td style="text-align: right;">-0.0075</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">0.0956</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">mlp</td>
-<td style="text-align: right;">0.0652</td>
-<td style="text-align: right;">0.1126</td>
-<td style="text-align: right;">0.4716</td>
-<td style="text-align: right;">-0.0736</td>
-<td style="text-align: right;">-0.4465</td>
-<td style="text-align: right;">0.0956</td>
-<td style="text-align: right;">1.0000</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">nnet</td>
-<td style="text-align: right;">0.2570</td>
-<td style="text-align: right;">0.2848</td>
-<td style="text-align: right;">0.0728</td>
-<td style="text-align: right;">0.0485</td>
-<td style="text-align: right;">0.1069</td>
-<td style="text-align: right;">-0.1905</td>
-<td style="text-align: right;">0.1516</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">svmPoly</td>
-<td style="text-align: right;">-0.1260</td>
-<td style="text-align: right;">-0.2447</td>
-<td style="text-align: right;">-0.1573</td>
-<td style="text-align: right;">-0.2841</td>
-<td style="text-align: right;">0.2096</td>
-<td style="text-align: right;">0.2341</td>
-<td style="text-align: right;">0.0764</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">svmRadial</td>
-<td style="text-align: right;">0.3147</td>
-<td style="text-align: right;">-0.1108</td>
-<td style="text-align: right;">0.1220</td>
-<td style="text-align: right;">0.4284</td>
-<td style="text-align: right;">-0.2944</td>
-<td style="text-align: right;">0.3539</td>
-<td style="text-align: right;">-0.0435</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbTree</td>
-<td style="text-align: right;">-0.0134</td>
-<td style="text-align: right;">0.2494</td>
-<td style="text-align: right;">-0.2393</td>
-<td style="text-align: right;">0.2115</td>
-<td style="text-align: right;">-0.1651</td>
-<td style="text-align: right;">0.0449</td>
-<td style="text-align: right;">0.0007</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">xgbDART</td>
-<td style="text-align: right;">-0.2682</td>
-<td style="text-align: right;">-0.0111</td>
-<td style="text-align: right;">0.1322</td>
-<td style="text-align: right;">-0.3900</td>
-<td style="text-align: right;">0.1307</td>
-<td style="text-align: right;">0.2583</td>
-<td style="text-align: right;">0.0966</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbLinear</td>
-<td style="text-align: right;">0.0560</td>
-<td style="text-align: right;">-0.2253</td>
-<td style="text-align: right;">0.0391</td>
-<td style="text-align: right;">0.2076</td>
-<td style="text-align: right;">-0.2322</td>
-<td style="text-align: right;">-0.1731</td>
-<td style="text-align: right;">-0.0618</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">null</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-</tr>
-</tbody>
-</table>
+|              |      gbm|  LogitBoost|     C5.0|       rf|   ranger|  naive\_bayes|      mlp|
+|:-------------|--------:|-----------:|--------:|--------:|--------:|-------------:|--------:|
+| gbm          |   1.0000|     -0.1080|  -0.0689|  -0.0565|   0.1566|        0.0235|   0.0652|
+| LogitBoost   |  -0.1080|      1.0000|  -0.0281|  -0.0979|  -0.0054|       -0.0587|   0.1126|
+| C5.0         |  -0.0689|     -0.0281|   1.0000|  -0.0565|  -0.2741|       -0.2880|   0.4716|
+| rf           |  -0.0565|     -0.0979|  -0.0565|   1.0000|  -0.1473|        0.3730|  -0.0736|
+| ranger       |   0.1566|     -0.0054|  -0.2741|  -0.1473|   1.0000|       -0.0075|  -0.4465|
+| naive\_bayes |   0.0235|     -0.0587|  -0.2880|   0.3730|  -0.0075|        1.0000|   0.0956|
+| mlp          |   0.0652|      0.1126|   0.4716|  -0.0736|  -0.4465|        0.0956|   1.0000|
+| nnet         |   0.2570|      0.2848|   0.0728|   0.0485|   0.1069|       -0.1905|   0.1516|
+| svmPoly      |  -0.1260|     -0.2447|  -0.1573|  -0.2841|   0.2096|        0.2341|   0.0764|
+| svmRadial    |   0.3147|     -0.1108|   0.1220|   0.4284|  -0.2944|        0.3539|  -0.0435|
+| xgbTree      |  -0.0134|      0.2494|  -0.2393|   0.2115|  -0.1651|        0.0449|   0.0007|
+| xgbDART      |  -0.2682|     -0.0111|   0.1322|  -0.3900|   0.1307|        0.2583|   0.0966|
+| xgbLinear    |   0.0560|     -0.2253|   0.0391|   0.2076|  -0.2322|       -0.1731|  -0.0618|
+| null         |       NA|          NA|       NA|       NA|       NA|            NA|       NA|
 
-<table>
-<thead>
-<tr class="header">
-<th style="text-align: left;"></th>
-<th style="text-align: right;">nnet</th>
-<th style="text-align: right;">svmPoly</th>
-<th style="text-align: right;">svmRadial</th>
-<th style="text-align: right;">xgbTree</th>
-<th style="text-align: right;">xgbDART</th>
-<th style="text-align: right;">xgbLinear</th>
-<th style="text-align: right;">null</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">gbm</td>
-<td style="text-align: right;">0.2570</td>
-<td style="text-align: right;">-0.1260</td>
-<td style="text-align: right;">0.3147</td>
-<td style="text-align: right;">-0.0134</td>
-<td style="text-align: right;">-0.2682</td>
-<td style="text-align: right;">0.0560</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">LogitBoost</td>
-<td style="text-align: right;">0.2848</td>
-<td style="text-align: right;">-0.2447</td>
-<td style="text-align: right;">-0.1108</td>
-<td style="text-align: right;">0.2494</td>
-<td style="text-align: right;">-0.0111</td>
-<td style="text-align: right;">-0.2253</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">C5.0</td>
-<td style="text-align: right;">0.0728</td>
-<td style="text-align: right;">-0.1573</td>
-<td style="text-align: right;">0.1220</td>
-<td style="text-align: right;">-0.2393</td>
-<td style="text-align: right;">0.1322</td>
-<td style="text-align: right;">0.0391</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">rf</td>
-<td style="text-align: right;">0.0485</td>
-<td style="text-align: right;">-0.2841</td>
-<td style="text-align: right;">0.4284</td>
-<td style="text-align: right;">0.2115</td>
-<td style="text-align: right;">-0.3900</td>
-<td style="text-align: right;">0.2076</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">ranger</td>
-<td style="text-align: right;">0.1069</td>
-<td style="text-align: right;">0.2096</td>
-<td style="text-align: right;">-0.2944</td>
-<td style="text-align: right;">-0.1651</td>
-<td style="text-align: right;">0.1307</td>
-<td style="text-align: right;">-0.2322</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">naive_bayes</td>
-<td style="text-align: right;">-0.1905</td>
-<td style="text-align: right;">0.2341</td>
-<td style="text-align: right;">0.3539</td>
-<td style="text-align: right;">0.0449</td>
-<td style="text-align: right;">0.2583</td>
-<td style="text-align: right;">-0.1731</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">mlp</td>
-<td style="text-align: right;">0.1516</td>
-<td style="text-align: right;">0.0764</td>
-<td style="text-align: right;">-0.0435</td>
-<td style="text-align: right;">0.0007</td>
-<td style="text-align: right;">0.0966</td>
-<td style="text-align: right;">-0.0618</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">nnet</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.4363</td>
-<td style="text-align: right;">0.0694</td>
-<td style="text-align: right;">0.0475</td>
-<td style="text-align: right;">-0.2216</td>
-<td style="text-align: right;">-0.0691</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">svmPoly</td>
-<td style="text-align: right;">-0.4363</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.2885</td>
-<td style="text-align: right;">-0.1363</td>
-<td style="text-align: right;">0.5035</td>
-<td style="text-align: right;">0.0248</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">svmRadial</td>
-<td style="text-align: right;">0.0694</td>
-<td style="text-align: right;">-0.2885</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">0.2385</td>
-<td style="text-align: right;">-0.1412</td>
-<td style="text-align: right;">0.1629</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbTree</td>
-<td style="text-align: right;">0.0475</td>
-<td style="text-align: right;">-0.1363</td>
-<td style="text-align: right;">0.2385</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.1642</td>
-<td style="text-align: right;">-0.0954</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">xgbDART</td>
-<td style="text-align: right;">-0.2216</td>
-<td style="text-align: right;">0.5035</td>
-<td style="text-align: right;">-0.1412</td>
-<td style="text-align: right;">-0.1642</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">-0.3693</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbLinear</td>
-<td style="text-align: right;">-0.0691</td>
-<td style="text-align: right;">0.0248</td>
-<td style="text-align: right;">0.1629</td>
-<td style="text-align: right;">-0.0954</td>
-<td style="text-align: right;">-0.3693</td>
-<td style="text-align: right;">1.0000</td>
-<td style="text-align: right;">NA</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">null</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">NA</td>
-<td style="text-align: right;">1</td>
-</tr>
-</tbody>
-</table>
+|              |     nnet|  svmPoly|  svmRadial|  xgbTree|  xgbDART|  xgbLinear|  null|
+|:-------------|--------:|--------:|----------:|--------:|--------:|----------:|-----:|
+| gbm          |   0.2570|  -0.1260|     0.3147|  -0.0134|  -0.2682|     0.0560|    NA|
+| LogitBoost   |   0.2848|  -0.2447|    -0.1108|   0.2494|  -0.0111|    -0.2253|    NA|
+| C5.0         |   0.0728|  -0.1573|     0.1220|  -0.2393|   0.1322|     0.0391|    NA|
+| rf           |   0.0485|  -0.2841|     0.4284|   0.2115|  -0.3900|     0.2076|    NA|
+| ranger       |   0.1069|   0.2096|    -0.2944|  -0.1651|   0.1307|    -0.2322|    NA|
+| naive\_bayes |  -0.1905|   0.2341|     0.3539|   0.0449|   0.2583|    -0.1731|    NA|
+| mlp          |   0.1516|   0.0764|    -0.0435|   0.0007|   0.0966|    -0.0618|    NA|
+| nnet         |   1.0000|  -0.4363|     0.0694|   0.0475|  -0.2216|    -0.0691|    NA|
+| svmPoly      |  -0.4363|   1.0000|    -0.2885|  -0.1363|   0.5035|     0.0248|    NA|
+| svmRadial    |   0.0694|  -0.2885|     1.0000|   0.2385|  -0.1412|     0.1629|    NA|
+| xgbTree      |   0.0475|  -0.1363|     0.2385|   1.0000|  -0.1642|    -0.0954|    NA|
+| xgbDART      |  -0.2216|   0.5035|    -0.1412|  -0.1642|   1.0000|    -0.3693|    NA|
+| xgbLinear    |  -0.0691|   0.0248|     0.1629|  -0.0954|  -0.3693|     1.0000|    NA|
+| null         |       NA|       NA|         NA|       NA|       NA|         NA|     1|
 
 Show for each model the performance during training, and also predict on
 our validation data to get an idea of their goodness.
@@ -520,191 +252,45 @@ Using a selection of the best models, we will train a corresponding best
 model using the best-working hyperparameters. These models will then be
 evaluated below and used in the stacking attempts.
 
-    models_sl <- loadResultsOrCompute(file = "../results/models_sl.rds", computeExpr = {
-      res <- list()
+``` r
+models_sl <- loadResultsOrCompute(file = "../results/models_sl.rds", computeExpr = {
+  res <- list()
 
-      for (modelName in names(results_sl)) {
-        m <- results_sl[[modelName]]
-        
-        res[[modelName]] <- caretFitOneModeltoAllData(
-          method = modelName, tuneGrid = m$bestTune,
-          data = train_sl)
-      }
-      
-      res
-    })
+  for (modelName in names(results_sl)) {
+    m <- results_sl[[modelName]]
+    
+    res[[modelName]] <- caretFitOneModeltoAllData(
+      method = modelName, tuneGrid = m$bestTune,
+      data = train_sl)
+  }
+  
+  res
+})
+```
 
 As for predicting on validation data, we will use the models that were
 fit to the entire training data.
 
-    generateModelOverview(results_sl, models_sl, validationData = valid_sl)
+``` r
+generateModelOverview(results_sl, models_sl, validationData = valid_sl)
+```
 
-<table>
-<colgroup>
-<col style="width: 12%" />
-<col style="width: 10%" />
-<col style="width: 12%" />
-<col style="width: 7%" />
-<col style="width: 16%" />
-<col style="width: 19%" />
-<col style="width: 10%" />
-<col style="width: 12%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">model</th>
-<th style="text-align: right;">train_acc</th>
-<th style="text-align: right;">train_Kappa</th>
-<th style="text-align: left;">predNA</th>
-<th style="text-align: right;">valid_acc_witNA</th>
-<th style="text-align: right;">valid_Kappa_withNA</th>
-<th style="text-align: right;">valid_acc</th>
-<th style="text-align: right;">valid_Kappa</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">gbm</td>
-<td style="text-align: right;">0.8030769</td>
-<td style="text-align: right;">0.7046154</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6971488</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6971488</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">LogitBoost</td>
-<td style="text-align: right;">0.8219242</td>
-<td style="text-align: right;">0.7282709</td>
-<td style="text-align: left;">TRUE</td>
-<td style="text-align: right;">0.7611940</td>
-<td style="text-align: right;">0.6199929</td>
-<td style="text-align: right;">0.8666667</td>
-<td style="text-align: right;">0.7906977</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">C5.0</td>
-<td style="text-align: right;">0.8035897</td>
-<td style="text-align: right;">0.7053846</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7761194</td>
-<td style="text-align: right;">0.6479860</td>
-<td style="text-align: right;">0.7761194</td>
-<td style="text-align: right;">0.6479860</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">rf</td>
-<td style="text-align: right;">0.8023077</td>
-<td style="text-align: right;">0.7034615</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7462687</td>
-<td style="text-align: right;">0.6057459</td>
-<td style="text-align: right;">0.7462687</td>
-<td style="text-align: right;">0.6057459</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">ranger</td>
-<td style="text-align: right;">0.8184615</td>
-<td style="text-align: right;">0.7276923</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">naive_bayes</td>
-<td style="text-align: right;">0.5038462</td>
-<td style="text-align: right;">0.2557692</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.5671642</td>
-<td style="text-align: right;">0.3075552</td>
-<td style="text-align: right;">0.5671642</td>
-<td style="text-align: right;">0.3075552</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">mlp</td>
-<td style="text-align: right;">0.7646154</td>
-<td style="text-align: right;">0.6469231</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7462687</td>
-<td style="text-align: right;">0.6062910</td>
-<td style="text-align: right;">0.7462687</td>
-<td style="text-align: right;">0.6062910</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">nnet</td>
-<td style="text-align: right;">0.7584615</td>
-<td style="text-align: right;">0.6376923</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7164179</td>
-<td style="text-align: right;">0.5541156</td>
-<td style="text-align: right;">0.7164179</td>
-<td style="text-align: right;">0.5541156</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">svmPoly</td>
-<td style="text-align: right;">0.7619231</td>
-<td style="text-align: right;">0.6428846</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7462687</td>
-<td style="text-align: right;">0.6097979</td>
-<td style="text-align: right;">0.7462687</td>
-<td style="text-align: right;">0.6097979</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">svmRadial</td>
-<td style="text-align: right;">0.7496154</td>
-<td style="text-align: right;">0.6244231</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.6716418</td>
-<td style="text-align: right;">0.4897889</td>
-<td style="text-align: right;">0.6716418</td>
-<td style="text-align: right;">0.4897889</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbTree</td>
-<td style="text-align: right;">0.8201282</td>
-<td style="text-align: right;">0.7301923</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7164179</td>
-<td style="text-align: right;">0.5545836</td>
-<td style="text-align: right;">0.7164179</td>
-<td style="text-align: right;">0.5545836</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">xgbDART</td>
-<td style="text-align: right;">0.8160256</td>
-<td style="text-align: right;">0.7240385</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7164179</td>
-<td style="text-align: right;">0.5506530</td>
-<td style="text-align: right;">0.7164179</td>
-<td style="text-align: right;">0.5506530</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbLinear</td>
-<td style="text-align: right;">0.8169231</td>
-<td style="text-align: right;">0.7253846</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7014925</td>
-<td style="text-align: right;">0.5273369</td>
-<td style="text-align: right;">0.7014925</td>
-<td style="text-align: right;">0.5273369</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">null</td>
-<td style="text-align: right;">0.3333333</td>
-<td style="text-align: right;">0.0000000</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.2089552</td>
-<td style="text-align: right;">0.0000000</td>
-<td style="text-align: right;">0.2089552</td>
-<td style="text-align: right;">0.0000000</td>
-</tr>
-</tbody>
-</table>
+| model        |  train\_acc|  train\_Kappa| predNA |  valid\_acc\_witNA|  valid\_Kappa\_withNA|  valid\_acc|  valid\_Kappa|
+|:-------------|-----------:|-------------:|:-------|------------------:|---------------------:|-----------:|-------------:|
+| gbm          |   0.8030769|     0.7046154| FALSE  |          0.8059701|             0.6971488|   0.8059701|     0.6971488|
+| LogitBoost   |   0.8219242|     0.7282709| TRUE   |          0.7611940|             0.6199929|   0.8666667|     0.7906977|
+| C5.0         |   0.8035897|     0.7053846| FALSE  |          0.7761194|             0.6479860|   0.7761194|     0.6479860|
+| rf           |   0.8023077|     0.7034615| FALSE  |          0.7462687|             0.6057459|   0.7462687|     0.6057459|
+| ranger       |   0.8184615|     0.7276923| FALSE  |          0.8208955|             0.7217030|   0.8208955|     0.7217030|
+| naive\_bayes |   0.5038462|     0.2557692| FALSE  |          0.5671642|             0.3075552|   0.5671642|     0.3075552|
+| mlp          |   0.7646154|     0.6469231| FALSE  |          0.7462687|             0.6062910|   0.7462687|     0.6062910|
+| nnet         |   0.7584615|     0.6376923| FALSE  |          0.7164179|             0.5541156|   0.7164179|     0.5541156|
+| svmPoly      |   0.7619231|     0.6428846| FALSE  |          0.7462687|             0.6097979|   0.7462687|     0.6097979|
+| svmRadial    |   0.7496154|     0.6244231| FALSE  |          0.6716418|             0.4897889|   0.6716418|     0.4897889|
+| xgbTree      |   0.8201282|     0.7301923| FALSE  |          0.7164179|             0.5545836|   0.7164179|     0.5545836|
+| xgbDART      |   0.8160256|     0.7240385| FALSE  |          0.7164179|             0.5506530|   0.7164179|     0.5506530|
+| xgbLinear    |   0.8169231|     0.7253846| FALSE  |          0.7014925|             0.5273369|   0.7014925|     0.5273369|
+| null         |   0.3333333|     0.0000000| FALSE  |          0.2089552|             0.0000000|   0.2089552|     0.0000000|
 
 Manual stacking of models
 =========================
@@ -716,41 +302,43 @@ model based on these models’ outputs. For that, we need a dataset. It
 will be generated by predicting class probabilities from each single
 model.
 
-    data_stack_train_sl <- data.frame(matrix(ncol = 0, nrow = nrow(train_sl)))
-    data_stack_valid_sl <- data.frame(matrix(ncol = 0, nrow = nrow(valid_sl)))
+``` r
+data_stack_train_sl <- data.frame(matrix(ncol = 0, nrow = nrow(train_sl)))
+data_stack_valid_sl <- data.frame(matrix(ncol = 0, nrow = nrow(valid_sl)))
 
-    # The name of the models to use from the previous section:
-    #stack_manual_models <- names(results_sl)[
-    #  !(names(results_sl) %in% c("naive_bayes", "mlp", "nnet", "svmPoly", "svmRadial", "xgbTree", "xgbLinear"))]
-    #stack_manual_models <- c("LogitBoost", "gbm", "xgbDART", "mlp") # <- This appears to work best
-    stack_manual_models <- c("LogitBoost", "gbm", "ranger") # <- This appears to work best
+# The name of the models to use from the previous section:
+#stack_manual_models <- names(results_sl)[
+#  !(names(results_sl) %in% c("naive_bayes", "mlp", "nnet", "svmPoly", "svmRadial", "xgbTree", "xgbLinear"))]
+#stack_manual_models <- c("LogitBoost", "gbm", "xgbDART", "mlp") # <- This appears to work best
+stack_manual_models <- c("LogitBoost", "gbm", "ranger") # <- This appears to work best
 
 
-    for (modelName in stack_manual_models) {
-      m <- models_sl[[modelName]]
-      
-      preds <- tryCatch({
-        predict(m, train_sl[, !(names(train_sl) %in% c("label"))], type = "prob")
-      }, error = function(cond) cond)
-      
-      preds_valid <- tryCatch({
-        predict(m, valid_sl[, !(names(valid_sl) %in% c("label"))], type = "prob")
-      }, error = function(cond) cond)
-      
-      if (any(class(preds) %in% c("simpleError", "error","condition"))) {
-        print(paste0("Cannot predict class probabilities for: ", modelName))
-      } else {
-        colnames(preds) <- paste0(colnames(preds), "_", modelName)
-        colnames(preds_valid) <- paste0(colnames(preds_valid), "_", modelName)
-        
-        data_stack_train_sl <- cbind(data_stack_train_sl, preds)
-        data_stack_valid_sl <- cbind(data_stack_valid_sl, preds_valid)
-      }
-    }
+for (modelName in stack_manual_models) {
+  m <- models_sl[[modelName]]
+  
+  preds <- tryCatch({
+    predict(m, train_sl[, !(names(train_sl) %in% c("label"))], type = "prob")
+  }, error = function(cond) cond)
+  
+  preds_valid <- tryCatch({
+    predict(m, valid_sl[, !(names(valid_sl) %in% c("label"))], type = "prob")
+  }, error = function(cond) cond)
+  
+  if (any(class(preds) %in% c("simpleError", "error","condition"))) {
+    print(paste0("Cannot predict class probabilities for: ", modelName))
+  } else {
+    colnames(preds) <- paste0(colnames(preds), "_", modelName)
+    colnames(preds_valid) <- paste0(colnames(preds_valid), "_", modelName)
+    
+    data_stack_train_sl <- cbind(data_stack_train_sl, preds)
+    data_stack_valid_sl <- cbind(data_stack_valid_sl, preds_valid)
+  }
+}
 
-    # Let's append the label-column:
-    data_stack_train_sl$label <- train_sl$label
-    data_stack_valid_sl$label <- valid_sl$label
+# Let's append the label-column:
+data_stack_train_sl$label <- train_sl$label
+data_stack_valid_sl$label <- valid_sl$label
+```
 
 Now that we have the data prepared for our manual ensemble, let’s
 attempt to train some models.
@@ -760,33 +348,39 @@ Manual neural network
 
 Before going back to caret, let’s try a neural network the manual way.
 
-    library(neuralnet)
-    library(e1071)
+``` r
+library(neuralnet)
+library(e1071)
 
-    nnet <- loadResultsOrCompute("../results/nnet.rds", computeExpr = {
-      set.seed(0xc0de)
-      neuralnet::neuralnet(
-        formula = label ~ ., data = data_stack_train_sl,
-        act.fct = function(x) 1.5 * x * sigmoid(x),
-        hidden = c(3), threshold = 5e-3,
-        stepmax = 2e5,
-        lifesign = if (interactive()) "full" else "minimal")
-    })
+nnet <- loadResultsOrCompute("../results/nnet.rds", computeExpr = {
+  set.seed(0xc0de)
+  neuralnet::neuralnet(
+    formula = label ~ ., data = data_stack_train_sl,
+    act.fct = function(x) 1.5 * x * sigmoid(x),
+    hidden = c(3), threshold = 5e-3,
+    stepmax = 2e5,
+    lifesign = if (interactive()) "full" else "minimal")
+})
+```
 
 The network has the following structure:
 
-    plot(nnet, rep = "best")
+``` r
+plot(nnet, rep = "best")
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-14-1.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-14-1.png)
 
-    nnet_pred <- predict(nnet, data_stack_valid_sl)
-    colnames(nnet_pred) <- levels(valid_sl$label)
+``` r
+nnet_pred <- predict(nnet, data_stack_valid_sl)
+colnames(nnet_pred) <- levels(valid_sl$label)
 
-    nnet_pred_label <- factor(
-      x = levels(valid_sl$label)[apply(nnet_pred, 1, which.max)],
-      levels = levels(valid_sl$label))
+nnet_pred_label <- factor(
+  x = levels(valid_sl$label)[apply(nnet_pred, 1, which.max)],
+  levels = levels(valid_sl$label))
 
-    caret::confusionMatrix(valid_sl$label, nnet_pred_label)
+caret::confusionMatrix(valid_sl$label, nnet_pred_label)
+```
 
     ## Confusion Matrix and Statistics
     ## 
@@ -832,261 +426,48 @@ best tune and all available training data.
 
 Now show the overview:
 
-    generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
+``` r
+generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
+```
 
-<table style="width:100%;">
-<colgroup>
-<col style="width: 11%" />
-<col style="width: 10%" />
-<col style="width: 12%" />
-<col style="width: 7%" />
-<col style="width: 16%" />
-<col style="width: 19%" />
-<col style="width: 10%" />
-<col style="width: 12%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">model</th>
-<th style="text-align: right;">train_acc</th>
-<th style="text-align: right;">train_Kappa</th>
-<th style="text-align: left;">predNA</th>
-<th style="text-align: right;">valid_acc_witNA</th>
-<th style="text-align: right;">valid_Kappa_withNA</th>
-<th style="text-align: right;">valid_acc</th>
-<th style="text-align: right;">valid_Kappa</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">gbm</td>
-<td style="text-align: right;">0.9928205</td>
-<td style="text-align: right;">0.9892308</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">LogitBoost</td>
-<td style="text-align: right;">0.9930732</td>
-<td style="text-align: right;">0.9896098</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7910448</td>
-<td style="text-align: right;">0.6767746</td>
-<td style="text-align: right;">0.7910448</td>
-<td style="text-align: right;">0.6767746</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">ranger</td>
-<td style="text-align: right;">0.9929487</td>
-<td style="text-align: right;">0.9894231</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">mlp</td>
-<td style="text-align: right;">0.9932051</td>
-<td style="text-align: right;">0.9898077</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8358209</td>
-<td style="text-align: right;">0.7448944</td>
-<td style="text-align: right;">0.8358209</td>
-<td style="text-align: right;">0.7448944</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">nnet</td>
-<td style="text-align: right;">0.9930769</td>
-<td style="text-align: right;">0.9896154</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8358209</td>
-<td style="text-align: right;">0.7448944</td>
-<td style="text-align: right;">0.8358209</td>
-<td style="text-align: right;">0.7448944</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">svmRadial</td>
-<td style="text-align: right;">0.9939744</td>
-<td style="text-align: right;">0.9909615</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7611940</td>
-<td style="text-align: right;">0.6288089</td>
-<td style="text-align: right;">0.7611940</td>
-<td style="text-align: right;">0.6288089</td>
-</tr>
-</tbody>
-</table>
+| model      |  train\_acc|  train\_Kappa| predNA |  valid\_acc\_witNA|  valid\_Kappa\_withNA|  valid\_acc|  valid\_Kappa|
+|:-----------|-----------:|-------------:|:-------|------------------:|---------------------:|-----------:|-------------:|
+| gbm        |   0.9928205|     0.9892308| FALSE  |          0.8208955|             0.7217030|   0.8208955|     0.7217030|
+| LogitBoost |   0.9930732|     0.9896098| FALSE  |          0.7910448|             0.6767746|   0.7910448|     0.6767746|
+| ranger     |   0.9929487|     0.9894231| FALSE  |          0.8208955|             0.7217030|   0.8208955|     0.7217030|
+| mlp        |   0.9932051|     0.9898077| FALSE  |          0.8358209|             0.7448944|   0.8358209|     0.7448944|
+| nnet       |   0.9930769|     0.9896154| FALSE  |          0.8358209|             0.7448944|   0.8358209|     0.7448944|
+| svmRadial  |   0.9939744|     0.9909615| FALSE  |          0.7611940|             0.6288089|   0.7611940|     0.6288089|
 
 The overview for all models, using oversampled training data, was this:
 
-    results_ms_all <- readRDS("../results/ms_all.rds")
-    models_ms_all <- readRDS("../results/models_ms_all.rds")
+``` r
+results_ms_all <- readRDS("../results/ms_all.rds")
+models_ms_all <- readRDS("../results/models_ms_all.rds")
 
-    generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
+generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
+```
 
-<table>
-<colgroup>
-<col style="width: 12%" />
-<col style="width: 10%" />
-<col style="width: 12%" />
-<col style="width: 7%" />
-<col style="width: 16%" />
-<col style="width: 19%" />
-<col style="width: 10%" />
-<col style="width: 12%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">model</th>
-<th style="text-align: right;">train_acc</th>
-<th style="text-align: right;">train_Kappa</th>
-<th style="text-align: left;">predNA</th>
-<th style="text-align: right;">valid_acc_witNA</th>
-<th style="text-align: right;">valid_Kappa_withNA</th>
-<th style="text-align: right;">valid_acc</th>
-<th style="text-align: right;">valid_Kappa</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">gbm</td>
-<td style="text-align: right;">0.9932051</td>
-<td style="text-align: right;">0.9898077</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">LogitBoost</td>
-<td style="text-align: right;">0.9930732</td>
-<td style="text-align: right;">0.9896098</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7910448</td>
-<td style="text-align: right;">0.6767746</td>
-<td style="text-align: right;">0.7910448</td>
-<td style="text-align: right;">0.6767746</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">C5.0</td>
-<td style="text-align: right;">0.9921795</td>
-<td style="text-align: right;">0.9882692</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6997587</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6997587</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">ranger</td>
-<td style="text-align: right;">0.9932051</td>
-<td style="text-align: right;">0.9898077</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">rf</td>
-<td style="text-align: right;">0.9932051</td>
-<td style="text-align: right;">0.9898077</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">naive_bayes</td>
-<td style="text-align: right;">0.9908974</td>
-<td style="text-align: right;">0.9863462</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6972541</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6972541</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">mlp</td>
-<td style="text-align: right;">0.9929487</td>
-<td style="text-align: right;">0.9894231</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7910448</td>
-<td style="text-align: right;">0.6749827</td>
-<td style="text-align: right;">0.7910448</td>
-<td style="text-align: right;">0.6749827</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">nnet</td>
-<td style="text-align: right;">0.9929487</td>
-<td style="text-align: right;">0.9894231</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8358209</td>
-<td style="text-align: right;">0.7448944</td>
-<td style="text-align: right;">0.8358209</td>
-<td style="text-align: right;">0.7448944</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">svmPoly</td>
-<td style="text-align: right;">0.9942308</td>
-<td style="text-align: right;">0.9913462</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6998622</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6998622</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">svmRadial</td>
-<td style="text-align: right;">0.9941026</td>
-<td style="text-align: right;">0.9911538</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.7761194</td>
-<td style="text-align: right;">0.6534483</td>
-<td style="text-align: right;">0.7761194</td>
-<td style="text-align: right;">0.6534483</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbTree</td>
-<td style="text-align: right;">0.9930769</td>
-<td style="text-align: right;">0.9896154</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6972541</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6972541</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">xgbDART</td>
-<td style="text-align: right;">0.9937179</td>
-<td style="text-align: right;">0.9905769</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6972541</td>
-<td style="text-align: right;">0.8059701</td>
-<td style="text-align: right;">0.6972541</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">xgbLinear</td>
-<td style="text-align: right;">0.9929487</td>
-<td style="text-align: right;">0.9894231</td>
-<td style="text-align: left;">FALSE</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-<td style="text-align: right;">0.8208955</td>
-<td style="text-align: right;">0.7217030</td>
-</tr>
-</tbody>
-</table>
+| model        |  train\_acc|  train\_Kappa| predNA |  valid\_acc\_witNA|  valid\_Kappa\_withNA|  valid\_acc|  valid\_Kappa|
+|:-------------|-----------:|-------------:|:-------|------------------:|---------------------:|-----------:|-------------:|
+| gbm          |   0.9932051|     0.9898077| FALSE  |          0.8208955|             0.7217030|   0.8208955|     0.7217030|
+| LogitBoost   |   0.9930732|     0.9896098| FALSE  |          0.7910448|             0.6767746|   0.7910448|     0.6767746|
+| C5.0         |   0.9921795|     0.9882692| FALSE  |          0.8059701|             0.6997587|   0.8059701|     0.6997587|
+| ranger       |   0.9932051|     0.9898077| FALSE  |          0.8208955|             0.7217030|   0.8208955|     0.7217030|
+| rf           |   0.9932051|     0.9898077| FALSE  |          0.8208955|             0.7217030|   0.8208955|     0.7217030|
+| naive\_bayes |   0.9908974|     0.9863462| FALSE  |          0.8059701|             0.6972541|   0.8059701|     0.6972541|
+| mlp          |   0.9929487|     0.9894231| FALSE  |          0.7910448|             0.6749827|   0.7910448|     0.6749827|
+| nnet         |   0.9929487|     0.9894231| FALSE  |          0.8358209|             0.7448944|   0.8358209|     0.7448944|
+| svmPoly      |   0.9942308|     0.9913462| FALSE  |          0.8059701|             0.6998622|   0.8059701|     0.6998622|
+| svmRadial    |   0.9941026|     0.9911538| FALSE  |          0.7761194|             0.6534483|   0.7761194|     0.6534483|
+| xgbTree      |   0.9930769|     0.9896154| FALSE  |          0.8059701|             0.6972541|   0.8059701|     0.6972541|
+| xgbDART      |   0.9937179|     0.9905769| FALSE  |          0.8059701|             0.6972541|   0.8059701|     0.6972541|
+| xgbLinear    |   0.9929487|     0.9894231| FALSE  |          0.8208955|             0.7217030|   0.8208955|     0.7217030|
 
-    results_ms_all <- NULL
-    models_ms_all <- NULL
+``` r
+results_ms_all <- NULL
+models_ms_all <- NULL
+```
 
 It appears that the manual stacking was slightly useful, and we decide
 to use the `nnet` meta-model, that is based on the single models
@@ -1097,74 +478,78 @@ class memberships (once using each single model), combine all votes into
 a new dataset, predict final label based on these votes (using the meta
 model)).
 
-    create_final_model <- function() {
-      # The meta-model from the manual stacking:
-      meta_model <- models_ms$nnet
-      # The single models from earlier training:
-      single_models <- models_sl[stack_manual_models]
-      
-      predict_class_membership <- function(data, modelList = single_models, labelCol = "label") {
-        dataLabel <- if (labelCol %in% colnames(data)) {
-          data[[labelCol]]
-        } else {
-          matrix(ncol = 0, nrow = nrow(data))
-        }
-        data <- data[, !(names(data) %in% labelCol)]
-        dataCM <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
-        
-        for (modelName in names(modelList)) {
-          m <- modelList[[modelName]]
-          temp <- stats::predict(m, data, type = "prob")
-          colnames(temp) <- paste0(colnames(temp), "_", modelName)
-          dataCM <- cbind(dataCM, temp)
-        }
-        
-        return(cbind(dataCM, dataLabel))
-      }
-      
-      predict <- function(data, labelCol = "label", type = c("raw", "prob", "both")) {
-        type <- if (missing(type)) type[1] else type
-        dataCM <- predict_class_membership(data = data, labelCol = labelCol)
-        res <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
-        
-        doRaw <- type == "raw"
-        doProb <- type == "prob"
-        
-        asRaw <- stats::predict(meta_model, dataCM, type = "raw")
-        asProb <- stats::predict(meta_model, dataCM, type = "prob")
-        if (is.factor(data[[labelCol]])) {
-          colnames(asProb) <- levels(data[[labelCol]])
-        }
-        
-        if (doRaw) {
-          return(asRaw)
-        } else if (doProb) {
-          return(asProb)
-        }
-        
-        # Both:
-        res <- cbind(res, asRaw)
-        colnames(res) <- labelCol
-        res <- cbind(res, asProb)
-        return(res)
-      }
-      
-      return(list(
-        meta_model = meta_model,
-        single_models = single_models,
-        predict_class_membership = predict_class_membership,
-        predict = predict
-      ))
+``` r
+create_final_model <- function() {
+  # The meta-model from the manual stacking:
+  meta_model <- models_ms$nnet
+  # The single models from earlier training:
+  single_models <- models_sl[stack_manual_models]
+  
+  predict_class_membership <- function(data, modelList = single_models, labelCol = "label") {
+    dataLabel <- if (labelCol %in% colnames(data)) {
+      data[[labelCol]]
+    } else {
+      matrix(ncol = 0, nrow = nrow(data))
     }
+    data <- data[, !(names(data) %in% labelCol)]
+    dataCM <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
+    
+    for (modelName in names(modelList)) {
+      m <- modelList[[modelName]]
+      temp <- stats::predict(m, data, type = "prob")
+      colnames(temp) <- paste0(colnames(temp), "_", modelName)
+      dataCM <- cbind(dataCM, temp)
+    }
+    
+    return(cbind(dataCM, dataLabel))
+  }
+  
+  predict <- function(data, labelCol = "label", type = c("raw", "prob", "both")) {
+    type <- if (missing(type)) type[1] else type
+    dataCM <- predict_class_membership(data = data, labelCol = labelCol)
+    res <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
+    
+    doRaw <- type == "raw"
+    doProb <- type == "prob"
+    
+    asRaw <- stats::predict(meta_model, dataCM, type = "raw")
+    asProb <- stats::predict(meta_model, dataCM, type = "prob")
+    if (is.factor(data[[labelCol]])) {
+      colnames(asProb) <- levels(data[[labelCol]])
+    }
+    
+    if (doRaw) {
+      return(asRaw)
+    } else if (doProb) {
+      return(asProb)
+    }
+    
+    # Both:
+    res <- cbind(res, asRaw)
+    colnames(res) <- labelCol
+    res <- cbind(res, asProb)
+    return(res)
+  }
+  
+  return(list(
+    meta_model = meta_model,
+    single_models = single_models,
+    predict_class_membership = predict_class_membership,
+    predict = predict
+  ))
+}
 
 
-    final_model <- create_final_model()
+final_model <- create_final_model()
 
-    saveRDS(final_model, file = "../results/final_model.rds")
+saveRDS(final_model, file = "../results/final_model.rds")
+```
 
 A quick test of the final model:
 
-    caret::confusionMatrix(final_model$predict(train_sl), train_sl$label)
+``` r
+caret::confusionMatrix(final_model$predict(train_sl), train_sl$label)
+```
 
     ## Confusion Matrix and Statistics
     ## 
@@ -1197,58 +582,22 @@ A quick test of the final model:
     ## Detection Prevalence   0.3333   0.3308   0.3359
     ## Balanced Accuracy      0.9986   0.9933   0.9952
 
-    head(final_model$predict(valid_sl, type = "both"))
+``` r
+head(final_model$predict(valid_sl, type = "both"))
+```
 
-<table>
-<thead>
-<tr class="header">
-<th style="text-align: left;">label</th>
-<th style="text-align: right;">a</th>
-<th style="text-align: right;">c</th>
-<th style="text-align: right;">p</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">c</td>
-<td style="text-align: right;">0.0012107</td>
-<td style="text-align: right;">0.9972771</td>
-<td style="text-align: right;">0.0015122</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">c</td>
-<td style="text-align: right;">0.0008457</td>
-<td style="text-align: right;">0.9979259</td>
-<td style="text-align: right;">0.0012284</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">c</td>
-<td style="text-align: right;">0.0137335</td>
-<td style="text-align: right;">0.9410197</td>
-<td style="text-align: right;">0.0452468</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">a</td>
-<td style="text-align: right;">0.9983508</td>
-<td style="text-align: right;">0.0006940</td>
-<td style="text-align: right;">0.0009553</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">p</td>
-<td style="text-align: right;">0.0275879</td>
-<td style="text-align: right;">0.3715442</td>
-<td style="text-align: right;">0.6008679</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">c</td>
-<td style="text-align: right;">0.0011113</td>
-<td style="text-align: right;">0.9973306</td>
-<td style="text-align: right;">0.0015581</td>
-</tr>
-</tbody>
-</table>
+| label |          a|          c|          p|
+|:------|----------:|----------:|----------:|
+| c     |  0.0012107|  0.9972771|  0.0015122|
+| c     |  0.0008457|  0.9979259|  0.0012284|
+| c     |  0.0137335|  0.9410197|  0.0452468|
+| a     |  0.9983508|  0.0006940|  0.0009553|
+| p     |  0.0275879|  0.3715442|  0.6008679|
+| c     |  0.0011113|  0.9973306|  0.0015581|
 
-    caret::confusionMatrix(final_model$predict(valid_sl), valid_sl$label)
+``` r
+caret::confusionMatrix(final_model$predict(valid_sl), valid_sl$label)
+```
 
     ## Confusion Matrix and Statistics
     ## 
@@ -1289,11 +638,13 @@ The last thing to do is creating an ensemble using `caretEnsemble`.
 problems, and we will not attempt to modify the problem to fit the model
 at this time. The following tests below do not work.
 
-    library(caretEnsemble)
+``` r
+library(caretEnsemble)
 
-    tc_sl_es <- caret::trainControl(
-      method = "cv", savePredictions = "final",
-      classProbs = TRUE)
+tc_sl_es <- caret::trainControl(
+  method = "cv", savePredictions = "final",
+  classProbs = TRUE)
+```
 
 Now let’s create a list of models we would like to use.
 
@@ -1302,15 +653,17 @@ Now let’s create a list of models we would like to use.
 Using the list of trained models from the previous section, we create an
 ensemble that is a linear combination of all models.
 
-    #model_es_linear <- caretEnsemble::caretStack(
-    #  all.models = es_list,
-    #  method = "glm",
-    #  #metric = "Accuracy",
-    #  trControl = caret::trainControl(
-    #    classProbs = TRUE)
-    #)
-    #
-    #summary(model_es_linear)
+``` r
+#model_es_linear <- caretEnsemble::caretStack(
+#  all.models = es_list,
+#  method = "glm",
+#  #metric = "Accuracy",
+#  trControl = caret::trainControl(
+#    classProbs = TRUE)
+#)
+#
+#summary(model_es_linear)
+```
 
 Some tests using Angular
 ========================
@@ -1319,24 +672,26 @@ Let’s load the data we extracted using *Git-Tools* (Hönel 2020) from the
 Angular repository (begin 2020 - now). After loading, we will predict
 the maintenance activity and save the file.
 
-    # GitTools.exe -r C:\temp\angular\ -o 'C:\temp\angular.csv' -s '2019-01-01 00:00'
-    dateFormat <- "%Y-%m-%d %H:%M:%S"
-    angularFile <- "../data/angular.csv"
-    angular <- read.csv(angularFile)
-    temp <- final_model$predict(data = angular, type = "both")
-    angular$label <- temp$label
-    angular$prob_a <- temp$a
-    angular$prob_c <- temp$c
-    angular$prob_p <- temp$p
+``` r
+# GitTools.exe -r C:\temp\angular\ -o 'C:\temp\angular.csv' -s '2019-01-01 00:00'
+dateFormat <- "%Y-%m-%d %H:%M:%S"
+angularFile <- "../data/angular.csv"
+angular <- read.csv(angularFile)
+temp <- final_model$predict(data = angular, type = "both")
+angular$label <- temp$label
+angular$prob_a <- temp$a
+angular$prob_c <- temp$c
+angular$prob_p <- temp$p
 
-    angular$CommitterTimeObj <- strptime(
-      angular$CommitterTime, format = dateFormat)
-    angular$AuthorTimeObj <- strptime(
-      angular$AuthorTime, format = dateFormat)
+angular$CommitterTimeObj <- strptime(
+  angular$CommitterTime, format = dateFormat)
+angular$AuthorTimeObj <- strptime(
+  angular$AuthorTime, format = dateFormat)
 
-    write.csv(angular, file = angularFile, row.names = FALSE)
+write.csv(angular, file = angularFile, row.names = FALSE)
 
-    table(angular$label)
+table(angular$label)
+```
 
     ## 
     ##    a    c    p 
@@ -1345,48 +700,60 @@ the maintenance activity and save the file.
 Let’s attempt some straightforward density plots for each activity,
 using the relative timestamp of each commit.
 
-    ggplot2::ggplot(
-      #data = angular[angular$AuthorTimeUnixEpochMilliSecs <= 1.57e12, ],
-      data = angular[angular$AuthorTimeObj < as.POSIXct("2019-11-01"), ],
-      ggplot2::aes(
-        AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
-      ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
+``` r
+ggplot2::ggplot(
+  #data = angular[angular$AuthorTimeUnixEpochMilliSecs <= 1.57e12, ],
+  data = angular[angular$AuthorTimeObj < as.POSIXct("2019-11-01"), ],
+  ggplot2::aes(
+    AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
+  ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-1.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-27-1.png)
 
-    ggplot2::ggplot(
-      #data = angular[angular$AuthorTimeUnixEpochMilliSecs <= 1.57e12, ],
-      data = angular[angular$AuthorTimeObj >= as.POSIXct("2019-11-01"), ],
-      ggplot2::aes(
-        AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
-      ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
+``` r
+ggplot2::ggplot(
+  #data = angular[angular$AuthorTimeUnixEpochMilliSecs <= 1.57e12, ],
+  data = angular[angular$AuthorTimeObj >= as.POSIXct("2019-11-01"), ],
+  ggplot2::aes(
+    AuthorTimeUnixEpochMilliSecs, color = label, fill = label)) +
+  ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-27-2.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-27-2.png)
 
 It appears that the activities after 2019-11-01 are much more balanced.
 Let’s look at a much smaller window:
 
-    temp <- ggplot2::ggplot(
-      data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") &
-                       angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
-      ggplot2::aes(
-        AuthorTimeUnixEpochMilliSecs, color = label, fill = label))
+``` r
+temp <- ggplot2::ggplot(
+  data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") &
+                   angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
+  ggplot2::aes(
+    AuthorTimeUnixEpochMilliSecs, color = label, fill = label))
 
-    temp + ggplot2::geom_density(size = 1, alpha = 0.4)
+temp + ggplot2::geom_density(size = 1, alpha = 0.4)
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-1.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-28-1.png)
 
-    temp + ggplot2::geom_density(size = 1, alpha = 0.4, position = "fill")
+``` r
+temp + ggplot2::geom_density(size = 1, alpha = 0.4, position = "fill")
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-2.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-28-2.png)
 
-    temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular")
+``` r
+temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular")
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-3.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-28-3.png)
 
-    temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular", position = "fill")
+``` r
+temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular", position = "fill")
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-28-4.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-28-4.png)
 
 The above plot is a 3-week snapshot, with weeks starting at Monday,
 00:00, and ending at Sunday, 23:59. It appears that each week starts
@@ -1395,29 +762,35 @@ a rectangular Kernel in a non-filled plot.
 
 Here are some attempts with a rolling mean over the class-probabilities:
 
-    library(zoo)
+``` r
+library(zoo)
 
-    data<-AirPassengers
-    plot(data,main='Simple Moving Average (SMA)',ylab='Passengers')
-    lines(rollmean(data,5),col='blue')
-    lines(rollmean(data,40),col='red')
-    legend(1950,600,col=c('black','blue', 'red'),legend=c('Raw', 'SMA 5', 'SMA 40'),lty=1,cex=0.8)
+data<-AirPassengers
+plot(data,main='Simple Moving Average (SMA)',ylab='Passengers')
+lines(rollmean(data,5),col='blue')
+lines(rollmean(data,40),col='red')
+legend(1950,600,col=c('black','blue', 'red'),legend=c('Raw', 'SMA 5', 'SMA 40'),lty=1,cex=0.8)
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-29-1.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-29-1.png)
 
-    data <- angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),]
+``` r
+data <- angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),]
 
-    plot(list(
-      #x = as.Date(data$AuthorTimeObj),
-      x = 1:nrow(data),
-      y = data$prob_a
-    ))
-    #lines(rollmean(data$prob_c, 5), col='red')
-    lines(rollmean(data$prob_c, 10), col='blue')
+plot(list(
+  #x = as.Date(data$AuthorTimeObj),
+  x = 1:nrow(data),
+  y = data$prob_a
+))
+#lines(rollmean(data$prob_c, 5), col='red')
+lines(rollmean(data$prob_c, 10), col='blue')
+```
 
-![](comm-class-models_files/figure-markdown_strict/unnamed-chunk-30-1.png)
+![](comm-class-models_files/figure-markdown_github/unnamed-chunk-30-1.png)
 
-    #plot(rollmean(data$prob_a, 5))
+``` r
+#plot(rollmean(data$prob_a, 5))
+```
 
 References
 ==========
