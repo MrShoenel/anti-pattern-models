@@ -9,6 +9,7 @@ output:
     toc: yes
     toc_depth: 6
     df_print: kable
+    variant: gfm
   bookdown::pdf_document2:
     fig_caption: yes
     number_sections: yes

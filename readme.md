@@ -1,27 +1,25 @@
-Detecting the Fire Drill anti-pattern using Source Code
-=======================================================
+# Detecting the Fire Drill anti-pattern using Source Code
 
 In this repository, we develop methods that can model and detect the
 presence of so-called anti-patterns (AP). In this repository, you will
 find:
 
--   [**Models** (R)](./models) - Multivariate models (arbitrary many)
+  - [**Models** (R)](./models) - Multivariate models (arbitrary many)
     that can encapsulate the definition of an anti-pattern, using
     arbitrary user-defined intervals and losses. The models can then be
     fit to the data (or vice versa). Also, there is lots of
     functionality for **quantifying differences**, esp. for **scoring**.
--   [**Notebooks** (R)](./notebooks) - Notebooks that can be (re-)run by
+  - [**Notebooks** (R)](./notebooks) - Notebooks that can be (re-)run by
     users to reproduce our results. All results are included, such that
     the notebooks will only recompute them if you delete them. The
     notebooks are very detailed and document all steps necessary. See
     (Hönel 2021) for a pre-rendered PDF.
--   [**Data** (CSV)](./data) and (precomputed) [**Results**
+  - [**Data** (CSV)](./data) and (precomputed) [**Results**
     (RDS)](./results) - All data required for reproduction is included.
     All the results, too. Some of them take days to compute, so be
     aware. Also see (Hönel et al. 2021).
 
-Abstract
-========
+# Abstract
 
 Detecting the presence of project management anti-patterns (AP)
 currently requires experts on the matter and is an expensive endeavor.
@@ -48,14 +46,25 @@ that the presence of similar patterns is most certainly detectable.
 Furthermore, any pattern that can be characteristically modelled using
 the proposed approach is potentially well detectable.
 
-References
-==========
+# References
+
+<div id="refs" class="references hanging-indent">
+
+<div id="ref-honel2021technical">
 
 Hönel, Sebastian. 2021. “Technical Reports Compilation: Detecting the
 Fire Drill Anti-Pattern Using Source Code.”
 <http://arxiv.org/abs/2104.15090>.
 
+</div>
+
+<div id="ref-honel_picha_2021">
+
 Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2021.
-“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects with
-Ground Truth, Issue-Tracking Data, Source Code Density, Models and
+“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects
+with Ground Truth, Issue-Tracking Data, Source Code Density, Models and
 Code.” Zenodo. <https://doi.org/10.5281/zenodo.4734053>.
+
+</div>
+
+</div>

@@ -5,6 +5,7 @@ output:
   md_document:
     toc: no
     df_print: kable
+    variant: gfm
 ---
 
 # Detecting the Fire Drill anti-pattern using Source Code

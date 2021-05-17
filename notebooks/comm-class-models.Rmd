@@ -9,7 +9,7 @@ output:
     toc: true
     toc_depth: 6
     df_print: kable
-    variant: markdown_github
+    variant: gfm
   pdf_document:
     number_sections: true
     toc: true
