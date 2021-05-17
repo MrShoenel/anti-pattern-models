@@ -55,6 +55,115 @@ This is the complementary technical report for the paper/article tentatively ent
 
 All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md)^ version. All code can be found in this repository, too.
 
+# Fire Drill - anti-pattern
+
+We describe the Fire Drill (FD) anti-pattern for usage in models that are based on the source code (i.e., not from a managerial or project management perspective). The purpose also is to start with a best guess, and then to iteratively improve the description when new evidence is available.
+
+FD is described now both from a managerial and a technical perspective^[[Link]](https://github.com/ReliSA/Software-process-antipatterns-catalogue/pull/13/commits/78c06c30b1880795e6c1dd0f20f146c548212675?short_path=01589ac#diff-01589ac85c3fc29739823b5a41ab1bbfba7fbc2579aaf63de0f1ce31713689ab)^. The technical description is limited to variables we can observe, such as the amount (frequency) of commits and source code, the density of source code, and maintenance activities (a/c/p).
+
+In literature, FD is described in [@silva2015software] and [@brown1998refactoring], as well as at^[[Link]](https://web.archive.org/web/20210414150555/https://sourcemaking.com/antipatterns/fire-drill)^.
+
+Currently, FD is defined to have these symptoms and consequences:
+
+*   Rock-edge burndown (especially when viewing implementation tasks only)
+*   Long period at project start where activities connected to requirements, analysis and planning prevale, and design and implementation activities are rare
+*   Only analytical or documentational artefacts for a long time
+*   Relatively short period towards project end with sudden increase in development efforts
+*   Little testing/QA and project progress tracking activities during development period
+*   Final product with poor code quality, many open bug reports, poor or patchy documentation
+*   Stark contrast between inter-level communication in project hierarchy (management - developers) during the first period (close to silence) and after realizing the problem (panic and loud noise
+
+From these descriptions, we have attempted to derive the following symptoms and consequences in source code:
+
+*   Rock-edge burndown of esp. implementation tasks mean there are no or just very few adaptive maintenance activities before the burning down starts
+*   The long period at project start translates to few modifications made to the source code, resulting in fewer commits (lower overall relative frequency)
+*   Likewise, documentational artifacts have a lower source code density, as less functionality is delivered; this density should increase as soon as adaptive activities are registered
+*   The short period at project end is characterized by a higher frequency of higher-density implementation tasks, with little to no perfective or corrective work
+*   At the end of the project, code quality is comparatively lower, while complexity is probably higher, due to pressure exerted on developers in the burst phase
+
+## Prerequisites
+
+Through source code, we can observe the following variables (and how they change over time). We have the means to model and match complex behavior for each variable over time. By temporally subdividing the course of a random variable, we can introduce additional measures for a pattern, that are based on comparing the two intervals (e.g., mean, steepest slope, comparisons of the shape etc.).
+
+*   Amount of commits over interval of time (frequency) -- We can observe any commit, both at when it was authored first, and when it was added to the repository (author-/committer-date).
+*   Amount/Frequency of each maintenance activity separately
+*   Density of the source code (also possibly per activity if required)
+Any other metric, if available (e.g., total Quality or Complexity of project at each commit) -- however, we need to distinguish random variables by whether their relative frequency (when they are changing or simply when they are observed) changes the shape of the function, or whether it only leads to different sample rates. In case of metrics, the latter is the case. In other words, for some variables their occurrence is important, while for others it is the observed value.
+
+It is probably the most straightforward way to decompose a complex pattern such as Fire Drill into sub-processes, one for each random variable. That has several advantages:
+
+*   We are not bound/limited to only one global aggregated match, which could hide alignment details.
+*   We can quantify the goodness of match for each variable separately, including details such as the interval in which it matched, and how well it matched in it.
+*   Matching separately allows us to come up with our own scoring methods; e.g., it could be that the matching-score of one variable needs to be differently computed than the score of another, or simply the weights between variables are different.
+*   If a larger process was temporally subdivided, we may want to score a variable in one of the intervals differently, or not at all. This is useful for when we cannot make sufficient assumptions.
+
+## Modeling the Fire Drill
+
+In this section, we will collect attempts to model the Fire Drill anti-pattern. The first attempt is our initial guess, and subsequent attempts are based on new input (evidence, opinions/discussions etc.).
+
+### Initial Best Guess
+
+Our initial best guess is solely based on the literature and descriptions from above, and no dataset was inspected yet. We chose to model our initial best guess using a visual process. Figure \ref{fig:initial-best-guess} must be understood as a simplified and idealized approximation. While we could add a confidence interval for each variable represented, we will later show how align (fit) a project (process) to this pattern (process model), and then measure its deviation from it. The modeled pattern is a **continuous-time stochastic process model**, and we will demonstrate means to quantify the difference between this **process model** and a **process**, which is shown in section \ref{ssec:model-metrics-kde}.
+
+```{r initial-best-guess, echo=FALSE, out.width="75%", fig.cap="Modeling of the Fire Drill anti-pattern over the course of an entire project, according to what we know from literature.", fig.align="center", fig.pos="ht!"}
+knitr::include_graphics(
+  path = "../figures/Fire-Drill_first-best-guess.png",
+  )
+```
+
+The pattern is divided into four intervals (five if one counts $t_{\text{x-over}}$ as delimiter, but it is more like an additional point of interest). These intervals are:
+
+1.    $[0, t_1)$ -- Begin
+2.    $[t_1, t_2)$ -- Long Stretch
+3.    $[t_2, t_{\text{end}}]$ -- Fire Drill
+4.    $(t_{\text{end}}, t_3]$ -- Aftermath
+
+In each interval and for each of the random variables modeled, we can perform matching. This also means that a) we do not have to attempt matching in each interval, b) we do not have to perform matching for each variable, and c) that we can select a different set of appropriate measures for each variable in each interval (this is useful if, e.g., we do not have much information for some of them).
+
+Each variable is its own sub-pattern. As of now, we track the maintenance activities, and their frequency over time. A higher accumulation results in a higher peak. One additional variable, the source code density (blue), is not measured by its frequency (occurrences), but rather by its value. We may include and model additional metrics, such as complexity or quality.
+
+Whenever we temporally subdivide the pattern into two intervals, we can take these measurements:
+
+*   Compute the goodness-of-fit of the curve of a variable, compared to its behavior in the data. As of now, that includes a rich set of metrics, all of which can quantify these differences, and for all of which we have developed scores. While we can compute scores for the actual match, we do also have the means to compute the score of the dynamic time warping. Among others, we have these metrics:
+    *   Reference and Query signal: Start/end (cut-in/-out) for both absolute & relative
+About the DTW match: (relative) monotonicity (continuity of the warping function), residuals of (relative) warping function (against its LM or optimized own version (fitted using RSS))
+    *   Between two curves (all of these are normalized as they are computed in the unit square, see R notebook): area (by integration), generic statistics by sampling (mae, rmse, correlation (pearson, kendall, spearman), covariance, standard-deviation, variance, symmetric Kullback-Leibler divergence, symmetric Jenson-Shannon Divergence)
+*   Sub-division allows for comparisons of properties of the two intervals, e.g.,
+    *   Compare averages of the variable in each interval. This can be easily implemented as a score, as we know the min/max and also do have expectations (lower/higher).
+    *   Perform a linear regression/create a linear model (LM) over the variable in each interval, so that we can compare slopes, residuals etc.
+*   Cross-over of two variables: This means that a) the two slopes of their respective LM converge and b) that there is a crossover within the interval.
+
+#### Description of Figure \ref{fig:initial-best-guess}
+
+*   The frequency of activities (purple) is the sum of all activities, i.e., this curve is green (corrective + perfective) plus red (adaptive).
+*   The frequency is the only variable that may be modeled with its actual maximum of 1, as we expect it to reach its maximum at $t_{\text{end}}$. The frequency also has to be actually 0, before the first commit is made.
+    *   Some of our metrics can measure how well one curve resembles the other, regardless of their “vertical difference”. Other metrics can describe the distance better. What I want to say is, it is not very important what the value of a variable in our modeled pattern actually is. But it is important however if it touches 0 or 1. A variable should only be modeled as touching 0 or 1 if it is a) monotonically increasing over the course of the project and b) actually assumes its theoretical min/max.
+*   Corrective and Perfective have been aggregated into one variable, as according to the description of Fire Drill, there is only a distinction between adding features and performing other, such as Q/A related, tasks.
+*   The source code density (blue) should, with the first commit, jump to its expected value, which is the average over all commits in the project. A steep but short increase is expected in $[t_2, t_{\text{end}}]$ as less focus is spent on documentational artifacts.
+*   We do not know much about the activities’ frequency and relative distribution up till $t_2$. That leaves us with two options: either, we make only very modest assumptions about the progression of a variable, such as the slope of its LM in that interval or the residuals. Otherwise, we can also choose not to assess the variable in that interval. It is not yet clear how useful the results from the DTW would be, as we can only model a straight line (that’s why I am suggesting LMs instead). For Fire Drill, the interval $[t_2, t_3]$ is most characteristic. We can however extract some constraints for our expectations between the intervals $[t_2, t_3]$ and everything that happens before. For example, in [BRO’98] it is described that $[0, t_2)$ is about 5-7x longer than $[t_2, t_{\text{end}}]$.
+*   $t_{\text{end}}$ is not a delimiter we set manually, but it is rather discovered by the sub-patterns’ matches. However, it needs to be sufficiently close to the project’s actual end (or there needs to be a viable explanation for the difference, such as holidays in between etc.)
+*   $t_{\text{x-over}}$ must happen; but other than that, there is not much we can assume about it. We could specify properties as to where approximately we’d expect it to happen (I suppose in the first half of the interval) or how steep the crossover actually is but it is probably hard to rely on.
+
+
+#### Description Phase-by-Phase
+
+**Begin**: A short phase of a few days, probably not more than a week. While there will be few commits, $t_1$ does not really start until the frequency stabilizes. We expect the maintenance activities’ relative frequency to decrease towards the end of Begin, before they become rather constant in the next phase. In this phase, the source code density is expected to be close to its average, as initial code as well as documentation are added.
+
+**Long Stretch**: This is the phase we do not know much about, except for that the amount of adaptive activities is comparatively lower, especially when compared to the aggregated corrective and perfective activities (approx. less than half of these two). While the activities’ variables will most likely not be perfectly linear, the LM over these should show rather small residuals. Also the slope of the LM is expected to be rather flat (probably less than +/-10°). The source code density is expected to fall slightly below its average after Begin, as less code is shipped.
+
+**Fire Drill**: The actual Fire Drill happens in $[t_2, t_{\text{end}}]$, and we detect $t_{\text{end}}$ by finding the apex of the frequency. However, we choose to extend this interval to include $(t_{\text{end}}, t_3]$, as by doing so, we can craft more characteristics of the anti-pattern and impose more assumptions. These are a) that the steep decline in that last phase has a more extreme slope than its increase before $t_{\text{end}}$ (because after shipping/project end, probably no activity is performed longer). B) This last sub-phase should be shorter than the phase before (probably just up to a few days; note that the phase $[t_2, t_{\text{end}}]$ is described to be approximately one week long in literature).
+
+With somewhat greater confidence, we can define the following:
+
+*   The source code density will rise suddenly and approach its maximum of 1 (however we should not model it with its maximum value to improve matching). It is expected to last until $t_{\text{end}}$, with a sudden decline back to its average from Begin. We do not have more information for after $t_{\text{end}}$, so the average is the expected value.
+*   Perfective and corrective activities will vanish quickly and together become the least frequent activity in the project. The average of these activities is expected to be less than half compared to the Long Stretch. Until $t_3$ (the very end), the amount of these activities keeps monotonically decreasing.
+*   At the same time, we will see a steep increase of adaptive activity. The increase is expected to be greater than or equal to the decrease of perfective and corrective activities. In other words, the average of adaptive activities is expected to be more than double, compared to what it was in the Long Stretch. Also, adaptive activities will reach their maximum frequency over the course of the project here.
+*   The nature of a Fire Drill is a frantic and desperate phase. While adaptive approaches its maximum, the commit frequency also approaches its maximum, even though perfective and corrective activities decline (that is why the purple curve is less steep than the adaptive one but still goes to its global maximum).
+*   There will be a sharp crossover between perfective+corrective and adaptive activities. It is expected to happen sooner than later in the phase $[t_2, t_{\text{end}}]$.
+
+**Aftermath**: Again, we do not know how this phase looks, but it will help us to more confidently identify the Fire Drill, as the curves of the activities, frequencies and other metrics have very characteristic curves that we can efficiently match. All metrics that are invariant to the frequency are expected to approach their expected value, without much variance (rather constant slope of their resp. LMs). Any of the maintenance activities will continue to fall. In case of adaptive activities we will see an extraordinary steep decline, as after project end/shipping, no one adds functionality. It should probably even fall below all other activities, resulting in another crossover. We do not set any of the activities to be exactly zero however, to allow more efficient matching.
+
+
 # Data
 
 We have $9$ projects conducted by students, and two raters have __independently__, i.e., without prior communication, assessed to what degree the AP is present in each project. This was done using a scale from zero to ten, where zero means that the AP was not present, and ten would indicate a strong manifestation.
@@ -292,7 +401,7 @@ dev.off()
 ```
 
 
-## Modeling of metrics and events using KDE
+## Modeling of metrics and events using KDE\label{ssec:model-metrics-kde}
 
 We need to make an important distinction between events and metrics. An event does not carry other information, other than that it occurred. One could thus say that such an event is _nulli_-variate. If an event were to carry extra information, such as a measurement that was taken, it would be _uni_-variate. That is the case for many metrics in software: the time of their measurement coincides with an event, such as a commit that was made. On the time-axis we thus know __when__ it occurred and __what__ was its value. Such a metric could be easily understood as a _bivariate x/y_ variable and be plotted in a two-dimensional Cartesian coordinate system.
 
