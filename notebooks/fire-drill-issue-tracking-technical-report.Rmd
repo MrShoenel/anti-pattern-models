@@ -1,0 +1,347 @@
+---
+title: "Technical Report: Detecting the Fire Drill anti-pattern using issue-tracking data"
+author: "Sebastian Hönel"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
+output:
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
+  md_document:
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    variant: gfm
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+    df_print: kable
+  word_document: default
+header-includes:
+- \usepackage{bm}
+- \usepackage{mathtools}
+- \usepackage{xurl}
+---
+
+\newcommand*\mean[1]{\overline{#1}}
+\newcommand{\norm}[1]{\left\lvert#1\right\rvert}
+\newcommand{\infdiv}[2]{#1\;\|\;#2}
+
+
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+# Introduction\label{tr:fire-drill-issue-tracking-technical-report}
+
+
+
+
+# Importing the data
+
+```{r}
+library(readxl)
+
+load_project_issue_data <- function(pId) {
+  data <- read_excel(
+    "../data/FD_issue-based_detection.xlsx", sheet = pId)
+  
+  req_cs <- cumsum(data$req) / sum(data$req)
+  dev_cs <- cumsum(data$dev) / sum(data$dev)
+  X <- seq(from = 0, to = 1, length.out = length(req_cs))
+  
+  signal_rec <- Signal$new(
+    name = "REQ", support = c(0,1), isWp = TRUE,
+    func = stats::approxfun(x = X, y = req_cs, yleft = 0, yright = 1))
+  signal_dev <- Signal$new(
+    name = "DEV", support = c(0,1), isWp = TRUE,
+    func = stats::approxfun(x = X, y = dev_cs, yleft = 0, yright = 1))
+  
+  list(
+    REQ = signal_rec,
+    DEV = signal_dev
+  )
+}
+```
+
+Let's attempt to replicate the graphs of the first project:
+
+```{r}
+p1_signals <- load_project_issue_data(pId = "Project1")
+req_f <- p1_signals$REQ$get0Function()
+dev_f <- p1_signals$DEV$get0Function()
+
+curve(req_f, 0, 1, col = "blue")
+curve(dev_f, 0, 1, col = "red", add = TRUE)
+legend(0, 1, legend = c("cum. req %", "cum. dev %"), col = c("blue", "red"), lty = 1)
+```
+
+OK, that works well. It'll be the same for all projects, i.e., only two variables, time spent on requirements- and time spent on development-issues, is tracked. That means we will only be fitting two variables later.
+
+Let's load and store all projects:
+
+```{r load-data}
+all_signals <- list()
+for (pId in paste0("Project", 1:9)) {
+  all_signals[[pId]] <- load_project_issue_data(pId = pId)
+}
+```
+
+
+# Patterns for scoring the projects
+
+
+## Pattern I: Consensus of two experts
+
+The initial pattern as defined for the detection of the Fire Drill AP is imported/created/defined here, and its variables and confidence intervals are modeled as continuous functions over time.
+
+There are some values (x/y coordinates) for which we want to guarantee that the confidence intervals or the variables themselves pass through. Also, the two points in time $t_1,t_2$ are defined to be at $0.4$ and $0.85$, respectively.
+
+```{r p1-constants}
+t_1 <- 0.4
+t_2 <- 0.85
+# req(t_1)
+req_t_1 <- 0.7
+
+# dev(t_1), dev(t_2)
+dev_t_1 <- 0.075
+dev_t_2 <- 0.4
+```
+
+This initial version of the pattern is not based on any data, observation or ground truth, but solely on two independent experts that reached a consensus for every value a priori any of the detection approaches.
+
+
+### Variable: Requirements, analysis, planning
+
+The variable itself is not given, only its upper- and lower confidence-intervals (CI), where the latter simply is $\operatorname{req}^{\text{CI}}_{\text{lower}}(x)=x$. The upper CI is given by the informal expression $\operatorname{req}^{\text{CI}}_{\text{upper}}(x)=1.02261-1.02261\times\exp{(-3.811733\times x)}$.
+
+The variable itself is not given, as it was not important for the binary decision rule, whether or not a project's variable is within the confidence interval. It is still not important, what matters is that it runs through the confidence interval, and we will design it by fitting a polynomial through some inferred points from the plot. In some practical case however, the variable's course may be important, and while we will later use the variable to compute some kind of loss between it, the confidence interval and some project's variable, we only do this for demonstration purposes.
+
+Let's first define the variable using some supporting x/y coordinates. It needs to be constrained such that it runs through 0,0 and 1,1:
+
+```{r}
+req_poly <- cobs::cobs(
+  x = seq(from = 0, to = 1, by = .1),
+  y = c(0, .25, .425, .475, .7, .8, .85, .9, .95, .975, 1),
+  pointwise = matrix(data = c(
+    c(0, 0, 0),
+    c(0, t_1, req_t_1),
+    c(0, 1, 1)
+  ), byrow = TRUE, ncol = 3)
+)
+
+# Now we can define the variable simply by predicting from
+# the polynomial (btw. this is vectorized automatically):
+req <- function(x) {
+  stats::predict(object = req_poly, z = x)[, "fit"]
+}
+```
+
+And now for the confidence intervals:
+
+```{r}
+req_ci_lower <- function(x) x
+req_ci_upper <- function(x) 1.02261 - 1.02261 * exp(-3.811733 * x)
+
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+     xlab = "Relative time", ylab = "Relative cumulative time spent")
+grid()
+
+polygon(
+  x = seq(from = 0, to = 1, length.out = 50),
+  y = req_ci_upper(seq(from = 0, to = 1, length.out = 50)),
+  col = "#ff000033",
+  border = NA)
+curve(req_ci_lower, 0, 1, col = "red", lty = 2, add = TRUE)
+curve(req_ci_upper, 0, 1, col = "red", lty = 3, add = TRUE)
+curve(req, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+legend(.74, .3, legend = c("upper CI", "lower CI", "req%"),
+       col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2))
+abline(v = 0, col = "#888888")
+abline(v = 1, col = "#888888")
+
+
+# t_1:
+abline(v = t_1)
+text(x = .47, y = .98, paste0("t_1=", t_1))
+
+# other thresholds:
+abline(h = req(t_1), col = "#888888")
+text(x = .5, y = .65, paste0("req(t_1)=", round(req(t_1), 2)))
+abline(h = req_ci_upper(t_1), col = "#888888")
+text(x = .24, y = .86, paste0("req_ci_upper(t_1)=", round(req_ci_upper(t_1), 2)))
+```
+
+
+### Variables: Design, implementation, testing, bugfixing and Descoping
+
+Again, the variable for design etc. is not given, but rather only its upper confidence interval. Its lower CI is simply always zero. The upper CI is given by the informal expression $\operatorname{dev}^{\text{CI}}_{\text{upper}}(x)=0.07815904\times x+0.6222767\times x^2+0.2995643\times x^3$. The variable for de-scoping comes without confidence interval, and is defined by $\operatorname{desc}(x)=0.01172386\times x + 0.0933415\times x^2 + 0.04493464\times x^3$.
+
+First we will define/fit a polynomial that describes the variable for design etc., the same way we did for requirements etc. we do know that it should pass through the points $[t_1,\approx0.075]$, as well as $[t_2,\approx0.4]$.
+
+```{r}
+options(warn = -1)
+dev_poly <- cobs::cobs(
+  x = seq(from = 0, to = 1, by = .1),
+  y = c(0, .0175, .035, .055, dev_t_1, .014, .165, .2, .28, .475, 1),
+  pointwise = matrix(data = c(
+    #c(0, 0, 0),
+    c(0, t_1, dev_t_1),
+    c(0, t_2, dev_t_2),
+    c(0, 1, 1)
+  ), byrow = TRUE, ncol = 3)
+)
+
+# Now we can define the variable simply by predicting from
+# the polynomial (btw. this is vectorized automatically):
+dev <- function(x) {
+  temp <- stats::predict(object = dev_poly, z = x)[, "fit"]
+  # I cannot constrain the polynomial at 0,0 and it returns
+  # a very slight negative value there, so let's do it this way:
+  temp[temp < 0] <- 0
+  temp[temp > 1] <- 1
+  temp
+}
+```
+
+
+
+```{r}
+dev_ci_upper <- function(x) 0.07815904 * x + 0.6222767 * x^2 + 0.2995643 * x^3
+desc <- function(x) 0.01172386 * x + 0.0933415 * x^2 + 0.04493464 * x^3
+
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+     xlab = "Relative time", ylab = "Relative cumulative time spent")
+grid()
+
+polygon(
+  x = c(seq(from = 0, to = 1, length.out = 50), 1),
+  y = c(dev_ci_upper(seq(from = 0, to = 1, length.out = 50)), 0),
+  col = "#0000ff33",
+  border = NA)
+
+curve(dev_ci_upper, 0, 1, col = "blue", lty = 2, add = TRUE)
+curve(desc, 0, 1, add = TRUE, col = "#00cc00", lty = 1, lwd = 3)
+curve(dev, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
+legend(.02, 1.01, legend = c("dev upper CI", "dev%", "desc%"),
+       col = c("blue", "blue", "#00cc00"), lty = c(3, 1, 1), lwd = c(1, 3, 3))
+
+abline(v = 0, col = "#888888")
+abline(v = 1, col = "#888888")
+
+# t_1,t_2:
+abline(v = t_1)
+text(x = .47, y = .98, paste0("t_1=", t_1))
+abline(v = t_2)
+text(x = .775, y = .98, paste0("t_2=", t_2))
+
+# other thresholds:
+abline(h = dev_ci_upper(t_2), col = "#888888")
+text(x = .565, y = .76, paste0("dev_ci_upper(t_2)=", round(dev_ci_upper(t_2), 2)))
+abline(h = desc(1), col = "#888888")
+text(x = .94, y = .24, paste0("desc(1)\n   =", round(desc(1), 2)))
+
+# t_1(dev), t_2(dev):
+abline(h = dev(t_1), col = "#888888")
+text(x = .29, y = .2, paste0("dev(t_1)=", round(dev(t_1), 3)))
+abline(h = dev(t_2), col = "#888888")
+text(x = .5, y = .46, paste0("dev(t_2)=", round(dev(t_2), 2)))
+```
+
+
+## Pattern II: Partial adaptation of first pattern
+
+We will be attempting three kinds of adaptations to the first pattern:
+
+1.    Learn $t_1,t_2$ from the data: There is not much to learn, but we will attempt to define these two thresholds as weighted average over the ground truth.
+2.    Additionally to 1. (after learning $t_1,t_2$), we will apply *amplitude-warping* using `srBTAW`.
+3.    Take the first pattern and apply both, *boundary time warping* __and__ *boundary amplitude warping*, to produce a pattern that is (hopefully) closest to all projects in the ground truth. This is the very same approach we attempted for adapting the pattern of type I that we defined for the Fire Drill in source code. 
+
+
+## Pattern III: Averaging the ground truth
+
+This is the same approach we undertook for pattern type III (average) for the Fire Drill in source code. However, we will also learn an **empirical confidence interval**, which is later used for an additional detection method.
+
+
+# Other tests
+
+
+
+```{r eval=FALSE}
+for (i in 20:10000) {
+  set.seed(i)
+  d <- rnorm(5e3)
+  bla1 <- shapiro.test(d)
+  bla2 <- moments::agostino.test(d)
+  bla3 <- nortest::ad.test(d)
+  bla4 <- nortest::lillie.test(d)
+  bla5 <- nortest::pearson.test(d)
+  bla6 <- nortest::sf.test(d)
+  
+  if (all(unlist(lapply(list(bla1, bla2, bla3, bla4, bla5, bla6), function(b) b$p.value)) < 0.025)) break
+}
+i
+```
+
+```{r eval=FALSE}
+data(akima)
+plot(y ~ x, data = akima, main = "akima example data")
+with(akima, text(x, y, formatC(z,dig=2), adj = -0.1))
+
+## linear interpolation
+akima.li <- interp(akima$x, akima$y, akima$z)
+li.zmin <- min(akima.li$z,na.rm=TRUE)
+li.zmax <- max(akima.li$z,na.rm=TRUE)
+breaks <- pretty(c(li.zmin,li.zmax),10)
+colors <- heat.colors(length(breaks)-1)
+with(akima.li, image  (x,y,z, breaks=breaks, col=colors))
+with(akima.li,contour(x,y,z, levels=breaks, add=TRUE))
+points (akima, pch = 3)
+```
+
+```{r eval=FALSE}
+akima.smooth <-
+    with(akima, interp(x, y, z, nx=100, ny=100))
+si.zmin <- min(akima.smooth$z,na.rm=TRUE)
+si.zmax <- max(akima.smooth$z,na.rm=TRUE)
+breaks <- pretty(c(si.zmin,si.zmax),10)
+colors <- heat.colors(length(breaks)-1)
+
+image  (akima.smooth, main = "interp(<akima data>, *) on finer grid",
+        breaks=breaks, col=colors)
+contour(akima.smooth, add = TRUE, levels=breaks, col = "thistle")
+points(akima, pch = 3, cex = 2, col = "blue")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
