@@ -365,14 +365,72 @@ b)    Additionally to a (after learning $t_1,t_2$), we will apply _amplitude war
 c)    Take the first pattern and apply both, _boundary time warping_ __and__ _boundary amplitude warping_, to produce a pattern that is (hopefully) closest to all projects in the ground truth. This is the very same approach we attempted for adapting the pattern of type I that we defined for the Fire Drill in source code.
 
 
-## Pattern III: Averaging the ground truth
+### Type II (a): Adapt type I using thresholds $t_1,t_2$
 
-This is the same approach we undertook for pattern type III (average) for the Fire Drill in source code. However, we will also learn an **empirical confidence interval**, which is later used for an additional detection method.
+The two variables `REQ` and `DEV` in the first pattern describe the cumulative time spent on two distinct activities. It was designed with focus on the confidence intervals, and a binary decision rule, such that the actual variables' course was not of interest.
+
+To find the optimal value for a threshold, we could look at when each project is closest to $\operatorname{req}(t_1)$ and $\operatorname{dev}(t_2)$ (in relative time), and then compute a weighted average over it. However, since we already modeled each project's variables as *continuous-time stochastic process*, I suggest we use an optimization-based approach.
+
+```{r t1t2-example}
+tempf <- all_signals$Project5$REQ$get0Function()
+tempf1 <- function(x) abs(tempf(x) - req_t_1)
+optR <- optimize(tempf1, interval = c(0, 1))
+optR
+```
+
+```{r t1t2-example-fig, echo=FALSE, fig.cap="The non-optimal optimum found by gradient-based optimization in project 5.", fig.align="center", fig.pos="ht!"}
+curve(tempf1, 0, 1, xlab = "Relative time", ylab = "abs(REQ_p5(x) - req_t_1)")
+points(x = optR$minimum, y = optR$objective,
+       col = "red", pch = 4, cex = 1.5)
+```
+
+We will find the optimum using `nlopt` and a global optimization, because we actually will have a global optimum by re-arranging each project's variables. Also, gradient-based methods do not work well because of the nature of the variables, having large horizontal plateaus. This can be seen in figure \ref{fig:t1t2-example-fig}. Approaches using the built-in `optim` do hence not work well, the problem is clearly demonstrated in the previous code chunk, resulting in an objective $\gg0$ (which should ideally be $0$).
+
+We want to find out when each project is closest to the previously defined thresholds. Each variable is a cumulative aggregation of the underlying values, which means that we have monotonic behavior.
+
+$$
+\begin{aligned}
+  \min_{\hat{t}_1,\hat{t}_2\in R}&\;{\operatorname{req}(\hat{t}_1), \operatorname{dev}(\hat{t}_2)}\;\text{,}
+  \\[1ex]
+  \text{subject to}&\;0\leq\hat{t}_1,\hat{t}_2\leq1\;\text{, using}
+  \\[1ex]
+  \mathcal{L}_{\operatorname{req}}(x)=&\;\norm{\operatorname{req}(x)-\operatorname{req}(t_1)}\;\text{, and}
+  \\[1ex]
+  \mathcal{L}_{\operatorname{dev}}(x)=&\;\norm{\operatorname{dev}(x)-\operatorname{dev}(t_2)}\;\text{(quasi-convex loss functions).}
+\end{aligned}
+$$
+
+The objective functions hence will be to find the global optimum (minimum), which occurs at $y\approx0$. Since we have plateaus in our data, we will potentially have infinitely many global optima. However, we are satisfied with any that is $\approx0$.
+
+$$
+\begin{aligned}
+  \mathcal{O}_{\operatorname{dev}}(x)=&\;\argmin{\hat{x}\in R}\;{L_{\operatorname{dev}}(x)}\;\text{, and}
+  \\[1ex]
+  \mathcal{O}_{\operatorname{req}}(x)=&\;\argmin{\hat{x}\in R}\;{L_{\operatorname{req}}(x)}\text{.}
+\end{aligned}
+$$
 
 
-# Other tests
+```{r t1t2-nlopt}
+library(nloptr)
 
+set.seed(1)
 
+t1t2_opt <- matrix(ncol = 4, nrow = length(all_signals))
+rownames(t1t2_opt) <- names(all_signals)
+colnames(t1t2_opt) <- c("req_sol", "dev_sol", "req_obj", "dev_obj")
+
+find_global_low <- function(f) {
+  nloptr(
+    x0 = 0.5,
+    opts = list(
+      maxeval = 1e3,
+      algorithm = "NLOPT_GN_DIRECT_L_RAND"),
+    eval_f = f,
+    lb = 0,
+    ub = 1
+  )
+}
 
 ```{r eval=FALSE}
 for (i in 20:10000) {
