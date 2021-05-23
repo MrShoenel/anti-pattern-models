@@ -432,36 +432,153 @@ find_global_low <- function(f) {
   )
 }
 
-```{r eval=FALSE}
-for (i in 20:10000) {
-  set.seed(i)
-  d <- rnorm(5e3)
-  bla1 <- shapiro.test(d)
-  bla2 <- moments::agostino.test(d)
-  bla3 <- nortest::ad.test(d)
-  bla4 <- nortest::lillie.test(d)
-  bla5 <- nortest::pearson.test(d)
-  bla6 <- nortest::sf.test(d)
+for (pId in paste0("Project", 1:9)) {
+  sig_REQ <- all_signals[[pId]]$REQ$get0Function()
+  req_abs <- function(x) abs(sig_REQ(x) - req_t_1)
   
-  if (all(unlist(lapply(list(bla1, bla2, bla3, bla4, bla5, bla6), function(b) b$p.value)) < 0.025)) break
+  sig_DEV <- all_signals[[pId]]$DEV$get0Function()
+  dev_abs <- function(x) abs(sig_DEV(x) - dev_t_2)
+  
+  optRes_REQ <- find_global_low(f = req_abs)
+  optRes_DEV <- find_global_low(f = dev_abs)
+  
+  t1t2_opt[pId, ] <- c(optRes_REQ$solution, optRes_DEV$solution,
+                       optRes_REQ$objective, optRes_DEV$objective)
 }
-i
 ```
 
-```{r eval=FALSE}
-data(akima)
-plot(y ~ x, data = akima, main = "akima example data")
-with(akima, text(x, y, formatC(z,dig=2), adj = -0.1))
 
-## linear interpolation
-akima.li <- interp(akima$x, akima$y, akima$z)
-li.zmin <- min(akima.li$z,na.rm=TRUE)
-li.zmax <- max(akima.li$z,na.rm=TRUE)
-breaks <- pretty(c(li.zmin,li.zmax),10)
-colors <- heat.colors(length(breaks)-1)
-with(akima.li, image  (x,y,z, breaks=breaks, col=colors))
-with(akima.li,contour(x,y,z, levels=breaks, add=TRUE))
-points (akima, pch = 3)
+```{r echo=FALSE}
+if (interactive()) {
+  t1t2_opt
+} else {
+  knitr::kable(
+    x = t1t2_opt,
+    booktabs = TRUE,
+    caption = "Optimum values for $t_1$ and $t_2$ for each project, together with the loss of each project's objective function at that offset (ideally 0).",
+    label = "t1t2-optvals"
+  )
+}
+```
+
+From the table \ref{tab:t1t2-optvals}, we can take an example to demonstrate that the optimization indeed found the global optimum (or a value very close to it, usually with a deviation $<1e^{-15}$). For the picked example of project 5, we can clearly observe a value for $x$ that results in a solution that is $\approx0$.
+
+```{r test-test, echo=FALSE, fig.cap="Example of finding the optimum for req($t_1$) in project 5.", fig.align="center", fig.pos="ht!"}
+pId <- "Project5"
+tempf <- function(x) {
+  abs(all_signals[[pId]]$REQ$get0Function()(x) - req_t_1)
+}
+curve(tempf, 0, 1)
+points(x = t1t2_opt[pId, 1], y = t1t2_opt[pId, 3],
+       col = "red", pch = 4, cex = 1.5)
+```
+
+Figure \ref{fig:test-test} depicts the optimal solution as found by using global optimization. Now what is left, is to calculate the weighted average for the optimized $\bm{\hat{t}_1},\bm{\hat{t}_2}$. The weighted arithmetic mean is defined as:
+
+$$
+\begin{aligned}
+  \text{weighted mean}=&\;\Big[\sum\bm{\omega}\Big]^{-1}\times\sum_{i=1}^{N}\bm{\omega}_i\times\bm{\hat{t}_i}\;\text{, where}
+  \\[1ex]
+  \bm{\omega}\dots&\;\text{weight vector that corresponds to the consensus-score, and}
+  \\[1ex]
+  \bm{\hat{t}_1},\bm{\hat{t}_2}\dots&\;\text{vectors with optimal values for}\;t_1,t_2\;\text{(as learned earlier).}
+\end{aligned}
+$$
+
+```{r}
+omega <- ground_truth$consensus_score
+t1_wavg <- sum(t1t2_opt[, 1] * omega) / sum(omega)
+print(c(t_1, t1_wavg))
+t2_wavg <- sum(t1t2_opt[, 2] * omega) / sum(omega)
+print(c(t_2, t2_wavg))
+```
+
+Originally, $t_1$ was guessed to be located at `r t_1`, with $\operatorname{req}(t_1)=0.7$. The weighted average over the optimized values (where $\operatorname{req}(\hat{t}_1)\approx0.7$) suggests defining $\hat{t}_1$=`r round(t1_wavg, 5)`.
+
+$t_2$ on the other hand was originally located at `r t_2`, with $\operatorname{dev}(t_2)=0.4$. The weighted average over the optimized values (where $\operatorname{dev}(\hat{t}_2)\approx0.4$) suggests defining $\hat{t}_2$=`r round(t2_wavg, 5)`.
+
+Having learned these values, we can now adapt the pattern using time warping. For that, we have to instantiate the pattern using `srBTAW`, add the original boundaries and set them according to what we learned. Below, we define a function that can warp a single variable.
+
+```{r}
+timewarp_variable <- function(f, t, t_new) {
+  temp <- SRBTW$new(
+    wp = f, wc = f,
+    theta_b = c(0, t_new, 1),
+    gamma_bed = c(0, 1, sqrt(.Machine$double.eps)),
+    lambda = c(0, 0),
+    begin = 0, end = 1,
+    openBegin = FALSE, openEnd = FALSE)
+  temp$setParams(`names<-`(c(t, 1 - t), c("vtl_1", "vtl_2")))
+  function(x) sapply(X = x, FUN = temp$M)
+}
+```
+
+```{r}
+req_p1a <- timewarp_variable(f = req, t = t_1, t_new = t1_wavg)
+req_ci_lower_p1a <- timewarp_variable(f = req_ci_lower, t = t_1, t_new = t1_wavg)
+req_ci_upper_p1a <- timewarp_variable(f = req_ci_upper, t = t_1, t_new = t1_wavg)
+```
+
+
+```{r req-p1a-cis, echo=FALSE, fig.cap="req\\% and its lower- and upper confidence interval after time warping for pattern type I (a).", fig.align="center", fig.pos="ht!"}
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+     xlab = "Relative time", ylab = "Relative cumulative time spent")
+grid()
+
+polygon(
+  x = c(seq(from = 0, to = 1, length.out = 50), t1_wavg),
+  y = c(req_ci_upper_p1a(seq(from = 0, to = 1, length.out = 50)), req_ci_lower_p1a(t1_wavg)),
+  col = "#ff000033",
+  border = NA)
+curve(req_ci_lower_p1a, 0, 1, col = "red", lty = 2, add = TRUE)
+curve(req_ci_upper_p1a, 0, 1, col = "red", lty = 3, add = TRUE)
+curve(req_p1a, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+legend(.65, .3, legend = c("Pt. I(a) upper CI", "Pt. I(a) lower CI", "Pt. I(a) req%"),
+       col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2))
+abline(v = 0, col = "#888888")
+abline(v = 1, col = "#888888")
+
+
+# t1_wavg:
+abline(v = t1_wavg)
+text(x = .42, y = .93, paste0("t1_wavg=", round(t1_wavg, 4)))
+```
+
+Moving the boundary $t_1$ farther behind, changes the variable `REQ` and its confidence interval slightly, as can be seen in figure \ref{fig:req-p1a-cis}. Next, we will adapt the remaining variables and their confidence intervals.
+
+```{r}
+dev_p1a <- timewarp_variable(f = dev, t = t_2, t_new = t2_wavg)
+dev_ci_upper_p1a <- timewarp_variable(f = dev_ci_upper, t = t_2, t_new = t2_wavg)
+desc_p1a <- timewarp_variable(f = desc, t = t_2, t_new = t2_wavg)
+```
+
+```{r dev-desc-p1a-cis, echo=FALSE, fig.cap="The variable dev\\% and its upper confidence interval, as well as the variable desc\\%, after time warping for pattern type I (a).", fig.align="center", fig.pos="ht!"}
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+     xlab = "Relative time", ylab = "Relative cumulative time spent")
+grid()
+
+polygon(
+  x = c(seq(from = 0, to = 1, length.out = 50), 1),
+  y = c(dev_ci_upper_p1a(seq(from = 0, to = 1, length.out = 50)), 0),
+  col = "#0000ff33",
+  border = NA)
+
+curve(dev_ci_upper_p1a, 0, 1, col = "blue", lty = 2, add = TRUE)
+curve(desc_p1a, 0, 1, add = TRUE, col = "#00cc00", lty = 1, lwd = 3)
+curve(dev_p1a, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
+legend(.02, 1.01, legend = c("Pt. I(a) dev upper CI", "Pt. I(a) dev%", "Pt. I(a) desc%"),
+       col = c("blue", "blue", "#00cc00"), lty = c(3, 1, 1), lwd = c(1, 3, 3))
+
+abline(v = 0, col = "#888888")
+abline(v = 1, col = "#888888")
+
+# t2_wavg:
+abline(v = t2_wavg)
+text(x = .71, y = .94, paste0("t2_wavg=", round(t2_wavg, 4)))
+```
+
+Moving the boundary $t_2$ was a more significant change for variables `DEV` and `DESC` than it was for `REQ`, as of figure \ref{fig:dev-desc-p1a-cis}.
+
 ```
 
 ```{r eval=FALSE}
