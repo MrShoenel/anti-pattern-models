@@ -579,32 +579,111 @@ text(x = .71, y = .94, paste0("t2_wavg=", round(t2_wavg, 4)))
 
 Moving the boundary $t_2$ was a more significant change for variables `DEV` and `DESC` than it was for `REQ`, as of figure \ref{fig:dev-desc-p1a-cis}.
 
+
+
+## Pattern III: Averaging the ground truth
+
+This is the same approach we undertook for pattern type III (average) for the Fire Drill in source code. However, we will also learn an __empirical confidence interval__, which is later used for an additional detection method.
+
+```{r}
+p3_weighted_var <- function(name) {
+  funcs <- list()
+  for (pId in names(all_signals)) {
+    funcs[[pId]] <- all_signals[[pId]][[name]]$get0Function()
+  }
+  omega <- ground_truth$consensus_score
+  
+  function(x) sapply(X = x, FUN = function(x_) {
+    sum(omega * unlist(lapply(funcs, function(f) f(x_)))) / sum(omega)
+  })
+}
 ```
 
-```{r eval=FALSE}
-akima.smooth <-
-    with(akima, interp(x, y, z, nx=100, ny=100))
-si.zmin <- min(akima.smooth$z,na.rm=TRUE)
-si.zmax <- max(akima.smooth$z,na.rm=TRUE)
-breaks <- pretty(c(si.zmin,si.zmax),10)
-colors <- heat.colors(length(breaks)-1)
+```{r}
+req_p3 <- p3_weighted_var(name = "REQ")
+dev_p3 <- p3_weighted_var(name = "DEV")
 
-image  (akima.smooth, main = "interp(<akima data>, *) on finer grid",
-        breaks=breaks, col=colors)
-contour(akima.smooth, add = TRUE, levels=breaks, col = "thistle")
-points(akima, pch = 3, cex = 2, col = "blue")
+curve(req_p3, 0, 1)
+curve(dev_p3, 0, 1)
 ```
 
+### Determining an empirical confidence interval
+
+Also, we want to calculate an empirical confidence interval and -surface, based on the projects' data and the consensus of the ground truth. The boundary of the lower confidence interval is defined as the infimum of all signals (and the upper CI as the supremum of all signals):
+
+$$
+\begin{aligned}
+  \bm{f}\dots&\;\text{vector of functions (here: project signals),}
+  \\[1ex]
+  \operatorname{CI}_{\text{upper}}(x)=&\;\sup{(\bm{f}_1(x),\;\dots,\;\bm{f}_n(x))}
+  \\[1ex]
+  \operatorname{CI}_{\text{lower}}(x)=&\;\inf{(\bm{f}_1(x),\;\dots,\;\bm{f}_n(x))}\text{.}
+\end{aligned}
+$$
+
+While the above expressions define the _boundaries_ of the lower and upper confidence intervals, we also need a function that interpolates in between. Recall that the CI of the first pattern was __homogeneous__, i.e., it provided no gradation, and was used for a binary decision rule. If we define a function that bases the strength of the confidence on the values of the ground truth of each project's variable, then it also means that with that pattern, all projects are included in the binary decision rule. Having gradation in the CI will allow us to make more probabilistic statements by computing some kind of score.
+
+But first, we define a function $f:R^2\mapsto R$ to compute a CI with gradation. For each x/y coordinate, it shall output a confidence based on the weights as of the ground truth, and all projects' variables that output a $y$ that is smaller than (larger than) the given $y$ shall be excluded.
+
+$$
+\begin{aligned}
+  h_{\text{upper}}(f,x,y)=&\;\begin{cases}
+    f(x),&\text{if}\;f(x)\geq y,
+    \\
+    0,&\text{otherwise}
+  \end{cases}\;\text{,}
+  \\
+  \operatorname{CI}^+(x,y)=&\;\bm{\omega}^\top\cdot h_{\text{upper}}(\bm{f},x,y)\times\Big[\sum\bm{\omega}\Big]^{-1}\text{.}
+\end{aligned}
+$$
+
+$\operatorname{CI}^+$ is to be used for the upper confidence region, and likewise, we define $\operatorname{CI}^-$ to be equivalent, but it uses $h_{\text{lower}}$, that switches the condition to $f(x)\leq y$. The decision on whether to use $\operatorname{CI}^+$ or $\operatorname{CI}^-$ depends on whether the given $y$ is above or below the _computed average variable_, i.e.,
+
+$$
+\begin{aligned}
+  \bar{g}(x)\dots&\;\text{the computed average variable,}
+  \\[1ex]
+  \operatorname{CI}(x,y)=&\;\begin{cases}
+    0,&\text{if}\;y>\operatorname{CI}_{\text{upper}}(x)\;\text{,}
+    \\
+    0,&\text{if}\;y<\operatorname{CI}_{\text{lower}}(x)\;\text{,}
+    \\
+    \bm{\omega}^\top\cdot\Bigg[\begin{cases}
+      h_{\text{upper}}(\bm{f},x,y),&\text{if}\;\bar{g}(x)<y,
+      \\
+      h_{\text{lower}}(\bm{f},x,y),&\text{otherwise}
+    \end{cases}\Bigg]\times\Big[\sum\bm{\omega}\Big]^{-1},&\text{otherwise}
+  \end{cases}\;\text{.}
+\end{aligned}
+$$
+
+With this definition, we can compute a loss that is then based on a path that goes through this hyperplane. That path is a project's variable.
 
 
+### Loss based on CI hyperplane
+
+Simply put, this loss is based on the confidence interval's hyperplane, and calculates an absolute average confidence based on it.
+
+$$
+\begin{aligned}
+  \mathit{L}^{\text{avgweight}}(x_1,x_2,f)=&\;\Bigg[\int_{x_1}^{x_2}\,\operatorname{CI}(x, f(x))\,dx\Bigg]\times(x_2-x_1)^{-1}\;\text{,}
+  \\
+  &\;\text{where}\;f\;\text{is the signal/variable and}\;x_2>x_1\text{.}
+\end{aligned}
+$$
 
 
+### Loss based on distance to average
 
+We may choose to ignore the previously computed confidence hyperplane and compute a cost by, e.g., quantifying the distance between the previously computed average variable and another signal/variable. More precisely, we quantify the area between both variables, and compare it to the largest possible area, thereby obtaining an upper bound (with the lower bound being $0$ obviously).
 
-
-
-
-
+$$
+\begin{aligned}
+  \mathit{L}^{\text{areadist}}(x_1,x_2,f)=&\;\int_{x_1}^{x_2}\,\norm{\bar{g}(x)-\overbrace{\min{\Big(\operatorname{CI}_{\text{upper}}(x),\;\max{\big(\operatorname{CI}_{\text{lower}}(x), f(x)\big)}\Big)}}^{\text{Confining of}\;f\;\text{to the confidence intervals.}}}\,dx
+  \\[1ex]
+  &\;\times\Bigg[\;\overbrace{\int_{x_1}^{x_2}\,\sup{\Big(\bar{g}(x)-\operatorname{CI}_{\text{lower}}(x)\;,\;\operatorname{CI}_{\text{upper}}(x)-\bar{g}(x)\Big)\,dx}}^{\text{maximum possible area between}\;\bar{g}(x)\;\text{and either CI.}}\;\Bigg]^{-1}\;\text{.}
+\end{aligned}
+$$
 
 
 
