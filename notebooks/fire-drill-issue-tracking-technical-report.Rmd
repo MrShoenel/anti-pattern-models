@@ -216,7 +216,7 @@ This initial version of the pattern is not based on any data, observation or gro
 
 ### Variable: Requirements, analysis, planning
 
-The variable itself is not given, only its upper- and lower confidence-intervals (CI), where the latter simply is $\operatorname{req}^{\text{CI}}_{\text{lower}}(x)=x$. The upper CI is given by the informal expression $\operatorname{req}^{\text{CI}}_{\text{upper}}(x)=1.02261-1.02261\times\exp{(-3.811733\times x)}$.
+The variable itself is not given, only its upper- and lower confidence-intervals (CI), where the latter simply is $\operatorname{req}^{\text{CI}}_{\text{lower}}(x)=x$. The upper CI is given by the informal expression $\operatorname{req}^{\text{CI}}_{\text{upper}}(x)=1.02261-1.02261\times\exp{(-3.811733\times x)}$. All together is shown in figure \ref{fig:req-cis}.
 
 The variable itself is not given, as it was not important for the binary decision rule, whether or not a project's variable is within the confidence interval. It is still not important, what matters is that it runs through the confidence interval, and we will design it by fitting a polynomial through some inferred points from the plot. In some practical case however, the variable's course may be important, and while we will later use the variable to compute some kind of loss between it, the confidence interval and some project's variable, we only do this for demonstration purposes.
 
@@ -245,7 +245,10 @@ And now for the confidence intervals:
 ```{r}
 req_ci_lower <- function(x) x
 req_ci_upper <- function(x) 1.02261 - 1.02261 * exp(-3.811733 * x)
+```
 
+
+```{r req-cis, echo=FALSE, fig.cap="req\\% and its lower- and upper confidence interval.", fig.align="center", fig.pos="ht!"}
 plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
      xlab = "Relative time", ylab = "Relative cumulative time spent")
 grid()
@@ -283,12 +286,10 @@ Again, the variable for design etc. is not given, but rather only its upper conf
 First we will define/fit a polynomial that describes the variable for design etc., the same way we did for requirements etc. we do know that it should pass through the points $[t_1,\approx0.075]$, as well as $[t_2,\approx0.4]$.
 
 ```{r}
-options(warn = -1)
 dev_poly <- cobs::cobs(
   x = seq(from = 0, to = 1, by = .1),
   y = c(0, .0175, .035, .055, dev_t_1, .014, .165, .2, .28, .475, 1),
   pointwise = matrix(data = c(
-    #c(0, 0, 0),
     c(0, t_1, dev_t_1),
     c(0, t_2, dev_t_2),
     c(0, 1, 1)
@@ -307,12 +308,15 @@ dev <- function(x) {
 }
 ```
 
-
+Next we define the upper confidence interval for the variable `DEV`, then the variable for de-scoping. All is shown in figure \ref{fig:dev-desc-cis}.
 
 ```{r}
 dev_ci_upper <- function(x) 0.07815904 * x + 0.6222767 * x^2 + 0.2995643 * x^3
 desc <- function(x) 0.01172386 * x + 0.0933415 * x^2 + 0.04493464 * x^3
+```
 
+
+```{r dev-desc-cis, echo=FALSE, fig.cap="The variable dev\\% and its upper confidence interval, as well as the variable desc\\%.", fig.align="center", fig.pos="ht!"}
 plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
      xlab = "Relative time", ylab = "Relative cumulative time spent")
 grid()
@@ -356,9 +360,9 @@ text(x = .5, y = .46, paste0("dev(t_2)=", round(dev(t_2), 2)))
 
 We will be attempting three kinds of adaptations to the first pattern:
 
-1.    Learn $t_1,t_2$ from the data: There is not much to learn, but we will attempt to define these two thresholds as weighted average over the ground truth.
-2.    Additionally to 1. (after learning $t_1,t_2$), we will apply *amplitude-warping* using `srBTAW`.
-3.    Take the first pattern and apply both, *boundary time warping* __and__ *boundary amplitude warping*, to produce a pattern that is (hopefully) closest to all projects in the ground truth. This is the very same approach we attempted for adapting the pattern of type I that we defined for the Fire Drill in source code. 
+a)    Learn $t_1,t_2$ from the data: There is not much to learn, but we could attempt to define these two thresholds as weighted average over the ground truth. Alternatively, we could formulate an optimization problem. We then use _time warping_ to alter the first pattern, __including__ its confidence intervals.
+b)    Additionally to a (after learning $t_1,t_2$), we will apply _amplitude warping_ using __`srBTAW`__.
+c)    Take the first pattern and apply both, _boundary time warping_ __and__ _boundary amplitude warping_, to produce a pattern that is (hopefully) closest to all projects in the ground truth. This is the very same approach we attempted for adapting the pattern of type I that we defined for the Fire Drill in source code.
 
 
 ## Pattern III: Averaging the ground truth
