@@ -31,8 +31,10 @@ header-includes:
 ---
 
 \newcommand*\mean[1]{\overline{#1}}
-\newcommand{\norm}[1]{\left\lvert#1\right\rvert}
+\newcommand{\norm}[1]{\left\lvert\,#1\,\right\rvert}
 \newcommand{\infdiv}[2]{#1\;\|\;#2}
+\newcommand\argmax[1]{\underset{#1}{arg\,max}}
+\newcommand\argmin[1]{\underset{#1}{arg\,min}}
 
 
 ```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
@@ -57,46 +59,84 @@ library(ggpubr)
 
 # Importing the data
 
+## Ground truth
+
+We have $9$ projects conducted by students, and two raters have __independently__, i.e., without prior communication, assessed to what degree the AP is present in each project. This was done using a scale from zero to ten, where zero means that the AP was not present, and ten would indicate a strong manifestation The entire ground truth is shown in table \ref{tab:groundtruth}.
+
+```{r}
+ground_truth <- read.csv(file = "../data/ground-truth.csv", sep = ";")
+ground_truth$consensus_score <- ground_truth$consensus / 10
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  ground_truth
+} else {
+  knitr::kable(
+    x = ground_truth,
+    booktabs = TRUE,
+    caption = "Entire ground truth as of both raters",
+    label = "groundtruth"
+  )
+}
+```
+
+
+## Project data
+
+In this section we import the projects' __issue-tracking__-data. All projects' data will be normalized w.r.t. the time, i.e., each project will have a support of $[0,1]$. The variables are modeled as cumulative time spent on issues. Each variable in each project will be loaded into an instance of `Signal`.
+
 ```{r}
 library(readxl)
 
 load_project_issue_data <- function(pId) {
   data <- read_excel(
     "../data/FD_issue-based_detection.xlsx", sheet = pId)
+  data$desc[is.na(data$desc)] <- 0
   
   req_cs <- cumsum(data$req) / sum(data$req)
   dev_cs <- cumsum(data$dev) / sum(data$dev)
+  desc_cs <- cumsum(data$desc) / max(cumsum(data$dev))
   X <- seq(from = 0, to = 1, length.out = length(req_cs))
   
   signal_rec <- Signal$new(
-    name = "REQ", support = c(0,1), isWp = TRUE,
-    func = stats::approxfun(x = X, y = req_cs, yleft = 0, yright = 1))
+    func = stats::approxfun(x = X, y = req_cs, yleft = 0, yright = 1),
+    name = "REQ", support = c(0,1), isWp = TRUE)
   signal_dev <- Signal$new(
-    name = "DEV", support = c(0,1), isWp = TRUE,
-    func = stats::approxfun(x = X, y = dev_cs, yleft = 0, yright = 1))
+    func = stats::approxfun(x = X, y = dev_cs, yleft = 0, yright = 1),
+    name = "DEV", support = c(0,1), isWp = TRUE)
+  signal_desc <- Signal$new(
+    func = stats::approxfun(x = X, y = desc_cs, yleft = 0, yright = max(desc_cs)),
+    name = "DESC", support = c(0,1), isWp = TRUE)
   
   list(
     REQ = signal_rec,
-    DEV = signal_dev
+    DEV = signal_dev,
+    DESC = signal_desc
   )
 }
 ```
 
-Let's attempt to replicate the graphs of the first project:
+Let's attempt to replicate the graphs of the first project (cf. figure \ref{fig:p1-example}):
 
 ```{r}
-p1_signals <- load_project_issue_data(pId = "Project1")
-req_f <- p1_signals$REQ$get0Function()
-dev_f <- p1_signals$DEV$get0Function()
+p3_signals <- load_project_issue_data(pId = "Project3")
+req_f <- p3_signals$REQ$get0Function()
+dev_f <- p3_signals$DEV$get0Function()
+desc_f <- p3_signals$DESC$get0Function()
+```
 
-curve(req_f, 0, 1, col = "blue")
+
+```{r p1-example, echo=FALSE, fig.cap="The two variables of the first project.", fig.align="center", fig.pos="ht!"}
+curve(req_f, 0, 1, col = "blue", xlab = "Relative time", ylab = "Cumulative time spent")
 curve(dev_f, 0, 1, col = "red", add = TRUE)
-legend(0, 1, legend = c("cum. req %", "cum. dev %"), col = c("blue", "red"), lty = 1)
+curve(desc_f, 0, 1, col = "gold", add = TRUE)
+legend(0, 1, legend = c("cum. req%", "cum. dev%", "cum. desc%"), col = c("blue", "red", "gold"), lty = 1, lwd = 2)
 ```
 
 OK, that works well. It'll be the same for all projects, i.e., only two variables, time spent on requirements- and time spent on development-issues, is tracked. That means we will only be fitting two variables later.
 
-Let's load and store all projects:
+Let's load, store and visualize all projects (cf. figure \ref{fig:project-it-vars}):
 
 ```{r load-data}
 all_signals <- list()
@@ -105,6 +145,50 @@ for (pId in paste0("Project", 1:9)) {
 }
 ```
 
+```{r echo=FALSE}
+tempdf <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(tempdf) <- c("x", "y", "p", "v")
+n <- 500
+x <- seq(from = 0, to = 1, length.out = n)
+for (pId in names(all_signals)) {
+  for (v in c("REQ", "DEV", "DESC")) {
+    tempdf <- rbind(tempdf, data.frame(
+      x = x,
+      y = sapply(X = x, FUN = all_signals[[pId]][[v]]$get0Function()),
+      p = pId,
+      v = v
+    ))
+  }
+}
+```
+
+```{r project-it-vars, echo=FALSE, fig.cap="All variables over each project's time span.", fig.align="top", fig.pos="ht!"}
+plot_all_req_dev <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
+  geom_line() +
+  scale_color_manual(values = c("gold", "blue", "red")) +
+  facet_wrap(p ~.) +
+  theme_light() +
+  labs(color = "Variable") + xlab("Relative Time") + ylab("Cumulative Time spent") +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_rect(fill="#dfdfdf"),
+    strip.text = element_text(color="black"))
+plot_all_req_dev
+```
+
+```{r echo=FALSE, eval=FALSE}
+# Let's save this as tikz:
+tikzDevice::tikz(file = "../figures/all_it_acp.tex", width = 3.4, height = 1.8)
+plot_all_req_dev +
+  theme_light(base_size = 10) +
+  theme(
+    axis.title.x.bottom = element_text(margin = margin(b=5), size = 10),
+    axis.title.y.left = element_text(margin = margin(r=3), size = 10),
+    legend.position = "bottom",
+    legend.margin = margin(-7.5, 0, 0, 0),
+    strip.background = element_rect(fill="#dfdfdf"))
+dev.off()
+```
 
 # Patterns for scoring the projects
 
@@ -118,6 +202,7 @@ There are some values (x/y coordinates) for which we want to guarantee that the 
 ```{r p1-constants}
 t_1 <- 0.4
 t_2 <- 0.85
+
 # req(t_1)
 req_t_1 <- 0.7
 
