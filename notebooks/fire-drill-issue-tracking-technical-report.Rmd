@@ -1023,4 +1023,260 @@ At `x=0.8`, the average variable is at $\approx0.71$, the average confidence for
 
 
 
+# Scoring of projects
+
+In the technical report for detecting the Fire Drill using source code data, we already explored a wide range of possible patterns and scoring mechanisms. All of them are based on comparing/scoring the variables (process model vs. process). Some of these we will apply here, too, but our focus is first on detection mechanisms that can facilitate the __confidence intervals__.
+
+
+## Pattern I
+
+This is the expert-guess of how the Fire Drill would manifest in issue-tracking data. The pattern was conceived with precise values for the confidence intervals at certain points ($t_1,t_2$), and the variables were not of importance. It was only used thus far using a binary decision rule.
+
+
+### Binary detection decision rule
+
+In this section, we will only replicate earlier results by applying the existing rule. It is further formulated using indicators and thresholds as:
+
+$$
+\begin{aligned}
+  I_1 =&\;\operatorname{req}(t_1) < y_1 \land \operatorname{req}(t_1) > y_2,
+  \\[1ex]
+  I_2 =&\;\operatorname{dev}(t_1) < y_3 \land \operatorname{dev}(t_2) < y_4,
+  \\[1ex]
+  I_3 =&\;\operatorname{desc}(1) > y_5,
+  \\[1em]
+  \operatorname{detect}^{\text{binary}}(I_1,I_2,I_3) =&\;\begin{cases}
+    1,&\text{if}\;I_1 \land (I_2 \lor I_3),
+    \\
+    0,&\text{otherwise}
+  \end{cases}\;\text{, using the threshold values}
+  \\[1ex]
+  \bm{y}=&\;\{0.8,0.4,0.15,0.7,0.15\}^\top\;\text{.}
+\end{aligned}
+$$
+
+This can be encapsulated in a single function:
+
+```{r}
+p1_dr <- function(projName, y = c(0.8, 0.4, 0.15, 0.7, 0.15)) {
+  req <- all_signals[[projName]]$REQ$get0Function()
+  dev <- all_signals[[projName]]$DEV$get0Function()
+  desc <- all_signals[[projName]]$DESC$get0Function()
+  
+  I1 <- req(t_1) < y[1] && req(t_1) > y[2]
+  I2 <- dev(t_1) < y[3] && dev(t_2) < y[4]
+  I3 <- desc(1) > y[5]
+  
+  I1 && (I2 || I3)
+}
+```
+
+```{r}
+temp <- sapply(X = names(all_signals), FUN = p1_dr)
+p1_detect <- data.frame(
+  detect = temp,
+  ground_truth = ground_truth$consensus,
+  correct = (temp & ground_truth$consensus >= 5) | (!temp & ground_truth$consensus < 5)
+)
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  p1_detect
+} else {
+  knitr::kable(
+    x = p1_detect,
+    booktabs = TRUE,
+    caption = "Binary detection using a decision rule based on homogeneous confidence intervals of pattern I.",
+    label = "p1-bin-detect"
+  )
+}
+```
+
+In table \ref{tab:p1-bin-detect} we show the results of the binary detection, which is based on the manually defined homogeneous confidence intervals.
+
+
+## Pattern II
+
+
+
+## Pattern III (average)
+
+The third kind of pattern is based on data only, all the variables, confidence intervals and the strength thereof are based on the nine projects and the weight, which is the same as their consensus score.
+
+
+### Scoring based on the confidence intervals
+
+We have calculated gradated confidence intervals, which means two things. First, we cannot apply a binary detection rule any longer, as the boundaries of the intervals include each project, only the weight is different. Second, when calculating a score, we will obtain a continuous measure, of which we can calculate a correlation to the consensus score of the ground truth, or, e.g., fit a linear model for scaling these scores.
+
+
+```{r}
+p3_avg_ci_scores <- loadResultsOrCompute(file = "../results/p3_avg_ci_scores.rds", computeExpr =  {
+  doWithParallelCluster(numCores = length(all_signals), expr = {
+    library(foreach)
+    
+    foreach::foreach(
+      pId = names(all_signals),
+      .inorder = TRUE,
+      .combine = rbind
+    ) %dopar% {
+      req <- all_signals[[pId]]$REQ$get0Function()
+      dev <- all_signals[[pId]]$DEV$get0Function()
+      
+      `rownames<-`(data.frame(
+        REQ = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = req, CI = CI_req_p3avg),
+        DEV = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = dev, CI = CI_dev_p3avg)
+      ), pId)
+    }
+  })
+})
+```
+
+Table \ref{tab:p3-avg-ci-scores} shows the computed scores.
+
+```{r echo=FALSE}
+if (interactive()) {
+  p3_avg_ci_scores
+} else {
+  knitr::kable(
+    x = p3_avg_ci_scores,
+    booktabs = TRUE,
+    caption = "Correlation of the scores as computed over the inhomogeneous confidence interval with the ground truth.",
+    label = "p3-avg-ci-scores"
+  )
+}
+```
+
+Let's test the correlation between either kind of score and the ground truth consensus score. The null hypothesis of this test states that both samples have no correlation.
+
+```{r}
+cor.test(x = ground_truth$consensus_score, y = p3_avg_ci_scores[, "REQ"])
+```
+
+For the variable `REQ` we get a significant correlation of $\approx0.83$, and there is no significant evidence for the null hypothesis, so must reject it.
+
+
+```{r}
+cor.test(x = ground_truth$consensus_score, y = p3_avg_ci_scores[, "DEV"])
+```
+
+For the variable `DEV` however, the correlation is quite low, $\approx0.17$. Also, we have significant evidence for accepting the null hypothesis (no correlation).
+
+
+
+### Scoring based on the distance to average
+
+
+```{r}
+p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores", computeExpr =  {
+  doWithParallelCluster(numCores = length(all_signals), expr = {
+    library(foreach)
+    
+    foreach::foreach(
+      pId = names(all_signals),
+      .inorder = TRUE,
+      .combine = rbind
+    ) %dopar% {
+      req <- all_signals[[pId]]$REQ$get0Function()
+      dev <- all_signals[[pId]]$DEV$get0Function()
+      
+      `rownames<-`(data.frame(
+        REQ = L_areadist_p3_avg(
+          x1 = 0, x2 = 1, f = req, gbar = req_p3,
+          CI_upper = req_ci_upper_p3avg, CI_lower = req_ci_lower_p3avg)["dist"],
+        
+        DEV = L_areadist_p3_avg(
+          x1 = 0, x2 = 1, f = dev, gbar = dev_p3,
+          CI_upper = dev_ci_upper_p3avg, CI_lower = dev_ci_lower_p3avg)["dist"]
+      ), pId)
+    }
+  })
+})
+```
+
+Table \ref{tab:p3-avg-area-scores} shows the computed scores.
+
+```{r echo=FALSE}
+if (interactive()) {
+  p3_avg_area_scores
+} else {
+  knitr::kable(
+    x = p3_avg_area_scores,
+    booktabs = TRUE,
+    caption = "Correlation of the scores as computed per the average distance to the averaged variable.",
+    label = "p3-avg-area-scores"
+  )
+}
+```
+
+As for the correlation tests, ideally, we get negative correlations, as the computed score is __lower__, the less distance we find between the area of the average variable and a project's variable, hence the relation must be antiproportional.
+
+
+```{r}
+cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "REQ"])
+```
+
+For the variable `REQ` we get a weaker, yet moderate correlation of $\approx-0.50$, and there is no significant evidence for the null hypothesis either, so must reject it.
+
+
+```{r}
+cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "DEV"])
+```
+
+The correlation for the variable `DEV` is poor again. Also, it is positive, which means that the scores calculated using this method are proportional, when they should not be.
+
+
+### Linear combination of the two methods
+
+```{r}
+temp <- data.frame(
+  gt_consensus = ground_truth$consensus_score,
+  ci = p3_avg_ci_scores$REQ,
+  area = p3_avg_area_scores$REQ,
+  ci_dev = p3_avg_ci_scores$DEV,
+  area_dev = p3_avg_area_scores$DEV)
+
+p3_avg_lm <- stats::lm(formula = gt_consensus ~ ci + area + ci_dev + area_dev, data = temp)
+stats::coef(p3_avg_lm)
+par(mfrow=c(1,2))
+plot(p3_avg_lm, ask = FALSE, which = 1:2)
+```
+
+Using the approximate coefficients of the linear model, we can define the detector as follows:
+
+$$
+\begin{aligned}
+  x_1,x_2,\operatorname{req},\operatorname{dev}\dots&\;\text{lower/upper integration interval and project signals,}
+  \\[1ex]
+  \bm{\tau}=&\;\Big\{\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{req}),\;\mathit{L}^{\text{areadist}}(x_1,x_2,\operatorname{req}),\;\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{dev}),\;\mathit{L}^{\text{areadist}}(x_1,x_2,\operatorname{dev})\Big\}\;\text{,}
+  \\[1ex]
+  \operatorname{detect}^{\text{ci+area}}(\bm{\tau})=&\;-1.889 + 5.786\times\bm{\tau}_1 + 1.149\times\bm{\tau}_2 + 1.431\times\bm{\tau}_3 + 0.585\times\bm{\tau}_4\;\text{.}
+\end{aligned}
+$$
+
+
+```{r}
+p3_avg_lm_scores <- stats::predict(p3_avg_lm, temp)
+# Since we are attempting a regression to positive scores,
+# we set any negative predictions to 0. Same goes for >1.
+p3_avg_lm_scores[p3_avg_lm_scores < 0] <- 0
+p3_avg_lm_scores[p3_avg_lm_scores > 1] <- 1
+
+round(p3_avg_lm_scores * 10, 3)
+stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
+```
+
+With this linear combination, we were able to significantly boost the detection to $\approx0.94$, which implies that combining both methods is of worth for a detection using inhomogeneous confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting.
+
+
+
+
+
+
+
+
+
+
+
+
 
