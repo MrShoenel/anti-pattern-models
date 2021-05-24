@@ -588,7 +588,7 @@ Moving the boundary $t_2$ was a more significant change for variables `DEV` and 
 This is the same approach we undertook for pattern type III (average) for the Fire Drill in source code. However, we will also learn an __empirical confidence interval__, which is later used for an additional detection method.
 
 ```{r}
-p3_weighted_var <- function(name) {
+p3_weighted_var <- function(name, omega) {
   funcs <- list()
   for (pId in names(all_signals)) {
     funcs[[pId]] <- all_signals[[pId]][[name]]$get0Function()
@@ -601,8 +601,9 @@ p3_weighted_var <- function(name) {
 ```
 
 ```{r}
-req_p3 <- p3_weighted_var(name = "REQ")
-dev_p3 <- p3_weighted_var(name = "DEV")
+req_p3 <- p3_weighted_var(name = "REQ", omega = omega)
+dev_p3 <- p3_weighted_var(name = "DEV", omega = omega)
+desc_p3 <- p3_weighted_var(name = "DESC", omega = omega)
 ```
 
 The computed weighted average-variables for `REQ` and `DEV` are shown in figure \ref{fig:avg-req-dev}.
@@ -610,7 +611,8 @@ The computed weighted average-variables for `REQ` and `DEV` are shown in figure 
 ```{r avg-req-dev, echo=FALSE, fig.cap="The weighted average for the two variables req\\% and dev\\%.", fig.align="center", fig.pos="ht!"}
 curve(req_p3, 0, 1, col = "red", xlab = "Relative time", ylab = "Cumulative time spent")
 curve(dev_p3, 0, 1, col = "blue", add = TRUE)
-legend(0, 1, legend = c("cum. emp. req%", "cum. emp. dev%"), col = c("blue", "red"), lty = 1, lwd = 2)
+curve(desc_p3, 0, 1, col = "gold", add = TRUE)
+legend(0, 1, legend = c("cum. emp. req%", "cum. emp. dev%", "cum. emp. desc%"), col = c("blue", "red", "gold"), lty = 1, lwd = 2)
 ```
 
 ### Determining an empirical and inhomogeneous confidence interval
@@ -638,9 +640,11 @@ $$
 ```{r}
 funclist_REQ <- list()
 funclist_DEV <- list()
+funclist_DESC <- list()
 for (pId in names(all_signals)) {
   funclist_REQ[[pId]] <- all_signals[[pId]]$REQ$get0Function()
   funclist_DEV[[pId]] <- all_signals[[pId]]$DEV$get0Function()
+  funclist_DESC[[pId]] <- all_signals[[pId]]$DESC$get0Function()
 }
 
 CI_bound_p3avg <- function(x, funclist, omega, upper = TRUE) {
@@ -657,7 +661,13 @@ req_ci_upper_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_REQ,
 req_ci_lower_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_REQ, omega = omega, upper = FALSE)
 dev_ci_upper_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_DEV, omega = omega, upper = TRUE)
 dev_ci_lower_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_DEV, omega = omega, upper = FALSE)
+desc_ci_upper_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_DESC, omega = omega, upper = TRUE)
+desc_ci_lower_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_DESC, omega = omega, upper = FALSE)
 ```
+
+While the above expressions define the _boundaries_ of the lower and upper confidence intervals, we also need a function that interpolates in between. Recall that the CI of the first pattern was __homogeneous__, i.e., it provided no gradation, and was used for a binary decision rule. If we define a function that bases the strength of the confidence on the values of the ground truth of each project's variable, then it also means that with that pattern, all projects are included in the binary decision rule. Having gradation in the CI will allow us to make more probabilistic statements by computing some kind of score.
+
+Figures \ref{fig:req-dev-p3avg-cis} and \ref{fig:desc-p3avg-cis} show the average variables and the empirical confidence intervals.
 
 ```{r req-dev-p3avg-cis, echo=FALSE, fig.height=8, fig.cap="Empirical (average) req\\% and dev\\% and their lower- and upper empirical weighted confidence intervals (here without gradation).", fig.align="center", fig.pos="ht!"}
 
@@ -681,6 +691,7 @@ polygon(
   col = "#ff000044",
   border = NA)
 
+
 curve(req_p3, 0, 1, col = "red", add = TRUE)
 
 curve(req_ci_upper, 0, 1, col = "#ff000033", add = TRUE, lty = 2)
@@ -689,7 +700,8 @@ curve(req_ci_lower, 0, 1, col = "#ff000033", add = TRUE, lty = 3)
 curve(req_ci_upper_p3avg, 0, 1, col = "#ff000033", add = TRUE, lty = 2)
 curve(req_ci_lower_p3avg, 0, 1, col = "#ff000033", add = TRUE, lty = 3)
 
-legend(0.61, .31, legend = c("Pt. 3 (avg) upper CI", "Pt. III (avg) lower CI", "Pt. III (avg) req%"),
+
+legend(0.5, .37, legend = c("Pt. 3 (avg) req% upper CI", "Pt. III (avg) req% lower CI", "Pt. III (avg) req%"),
        col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2))
 
 
@@ -723,8 +735,26 @@ legend(0.01, .98, legend = c("Pt. 3 (avg) upper CI", "Pt. III (avg) lower CI", "
        col = "blue", lty = c(3, 2, 1), lwd = c(1, 1, 2))
 ```
 
+```{r desc-p3avg-cis, echo=FALSE, fig.height=4, fig.cap="Empirical (average) desc\\% and its lower- and upper empirical weighted confidence intervals (here without gradation).", fig.align="center", fig.pos="ht!"}
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+     main = "Variable: DESC",
+     xlab = "Relative time", ylab = "Relative cumulative time spent")
+grid()
 
-While the above expressions define the _boundaries_ of the lower and upper confidence intervals, we also need a function that interpolates in between. Recall that the CI of the first pattern was __homogeneous__, i.e., it provided no gradation, and was used for a binary decision rule. If we define a function that bases the strength of the confidence on the values of the ground truth of each project's variable, then it also means that with that pattern, all projects are included in the binary decision rule. Having gradation in the CI will allow us to make more probabilistic statements by computing some kind of score.
+polygon(
+  x = polygon_x,
+  y = c(desc_ci_upper_p3avg(head(polygon_x, 500)), desc_ci_lower_p3avg(tail(polygon_x, 500))),
+  col = "#ffd70044",
+  border = NA)
+
+curve(desc_p3, 0, 1, col = "gold", add = TRUE)
+curve(desc_ci_upper_p3avg, 0, 1, col = "#ffd70033", add = TRUE, lty = 2)
+curve(desc_ci_lower_p3avg, 0, 1, col = "#ffd70033", add = TRUE, lty = 3)
+
+legend(0.01, .98, legend = c("Pt. 3 (avg) desc% upper CI", "Pt. III (avg) desc% lower CI", "Pt. III (avg) desc%"),
+       col = "gold", lty = c(3, 2, 1), lwd = c(1, 1, 2))
+```
+
 
 But first, we define a function $f:R^2\mapsto R$ to compute a CI with gradation. For each x/y coordinate, it shall output a confidence based on the weights as of the ground truth, and all projects' variables that output a $y$ that is smaller than (larger than) the given $y$ shall be excluded.
 
@@ -773,7 +803,7 @@ h_p3avg <- function(funclist, x, y, upper = TRUE) {
 h_upper_p3avg <- function(funclist, x, y) h_p3avg(funclist = funclist, x = x, y = y, upper = TRUE)
 h_lower_p3avg <- function(funclist, x, y) h_p3avg(funclist = funclist, x = x, y = y, upper = FALSE)
 
-CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar) {
+CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar, omega) {
   if (y > f_ci_upper(x) || y < f_ci_lower(x)) {
     return(0)
   }
@@ -788,8 +818,9 @@ CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar) {
   omega %*% hval / sum(omega)
 }
 
-CI_req_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_REQ, f_ci_upper = req_ci_upper_p3avg, f_ci_lower = req_ci_lower_p3avg, gbar = req_p3)
-CI_dev_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DEV, f_ci_upper = dev_ci_upper_p3avg, f_ci_lower = dev_ci_lower_p3avg, gbar = dev_p3)
+CI_req_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_REQ, f_ci_upper = req_ci_upper_p3avg, f_ci_lower = req_ci_lower_p3avg, gbar = req_p3, omega = omega)
+CI_dev_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DEV, f_ci_upper = dev_ci_upper_p3avg, f_ci_lower = dev_ci_lower_p3avg, gbar = dev_p3, omega = omega)
+CI_desc_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DESC, f_ci_upper = desc_ci_upper_p3avg, f_ci_lower = desc_ci_lower_p3avg, gbar = desc_p3, omega = omega)
 ```
 
 
@@ -800,7 +831,13 @@ y <- seq(0, 1, length.out = 200)
 compute_z_p3avg <- function(varname) {
   # We cannot call outer because our functions are not properly vectorized.
   #z <- outer(X = x, Y = y, FUN = CI_req_p3avg)
-  f <- if (varname == "REQ") CI_req_p3avg else CI_dev_p3avg
+  f <- if (varname == "REQ") {
+    CI_req_p3avg
+  } else if (varname == "DEV") {
+    CI_dev_p3avg
+  } else {
+    CI_desc_p3avg
+  }
   
   z <- matrix(nrow = length(x), ncol = length(y))
   for (i in 1:length(x)) {
@@ -817,9 +854,12 @@ z_req <- loadResultsOrCompute(file = "../results/ci_p3avg_z_req.rds", computeExp
 z_dev <- loadResultsOrCompute(file = "../results/ci_p3avg_z_dev.rds", computeExpr = {
   compute_z_p3avg(varname = "DEV")
 })
+z_desc <- loadResultsOrCompute(file = "../results/ci_p3avg_z_desc.rds", computeExpr = {
+  compute_z_p3avg(varname = "DESC")
+})
 ```
 
-Finally, we show the empirical confidence intervals in figure \ref{fig:p3-emp-cis}. Note that the minimum non-zero confidence is `r round(min(z_req[z_req>0]),6)`, while the maximum is $1$. Therefore, while we gradate the colors from $0$ to $1$, we slightly scale and transform the grid's non-zero values using the expression $0.9\times z+0.1$, to improve the visibility.
+Finally, we show the empirical confidence intervals in figures \ref{fig:p3-emp-cis} and \ref{fig:p3-emp-desc-cis}. Note that the minimum non-zero confidence is `r round(min(z_req[z_req>0]),6)`, while the maximum is $1$. Therefore, while we gradate the colors from $0$ to $1$, we slightly scale and transform the grid's non-zero values using the expression $0.9\times z+0.1$, to improve the visibility.
 
 ```{r p3-emp-cis, echo=FALSE, fig.height=8, fig.cap="The empirical confidence intervals for the two variables req\\% and dev\\%. Higher saturation of the color correlates with higher confidence.", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(2,1))
@@ -831,6 +871,7 @@ image(x = x, y = y, z = z_req, main = "Variable: REQ",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
       col = colorRampPalette(colors = c("#ffffff", "#ff0000"))(100), zlim = c(0,1))
 grid()
+
 curve(req_p3, 0, 1, col = "red", add = TRUE)
 
 curve(req_ci_upper_p3avg, 0, 1, col = "#ff000033", add = TRUE, lty = 2)
@@ -851,6 +892,21 @@ curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 2)
 curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 3)
 ```
 
+
+```{r p3-emp-desc-cis, echo=FALSE, fig.height=4, fig.cap="The empirical confidence intervals for the variable desc\\%. Higher saturation of the color correlates with higher confidence.", fig.align="center", fig.pos="ht!"}
+
+z_desc <- z_desc * 0.9 + 0.1
+z_desc[z_desc == .1] <- 0
+
+image(x = x, y = y, z = z_desc, main = "Variable: DESC",
+      xlab = "Relative time", ylab = "Relative cumulative time spent",
+      col = colorRampPalette(colors = c("#ffffff", "#FFD700"))(100), zlim = c(0, max(z_desc)))
+grid()
+curve(desc_p3, 0, 1, col = "#eebb00", add = TRUE)
+
+curve(desc_ci_upper_p3avg, 0, 1, col = "#FFD70033", add = TRUE, lty = 2)
+curve(desc_ci_lower_p3avg, 0, 1, col = "#FFD70033", add = TRUE, lty = 3)
+```
 
 
 ### Loss based on CI hyperplane
@@ -994,7 +1050,7 @@ tempf <- function(x) {
   })
 }
 curve(tempf, 0, 1, col = "blue", add = TRUE)
-legend(0.01, 0.49, legend = c("Pr. 2 req% dist", "max. dist."), col = c("red", "blue"), lty = 1, lwd = 2)
+legend(0.01, 0.49, legend = c("Pr. 4 req% dist", "max. dist."), col = c("red", "blue"), lty = 1, lwd = 2)
 ```
 
 ### Loss based on the two previous approaches
@@ -1098,11 +1154,14 @@ In table \ref{tab:p1-bin-detect} we show the results of the binary detection, wh
 
 ## Pattern II
 
+_TODO_.
 
 
 ## Pattern III (average)
 
 The third kind of pattern is based on data only, all the variables, confidence intervals and the strength thereof are based on the nine projects and the weight, which is the same as their consensus score.
+
+_TODO_.
 
 
 ### Scoring based on the confidence intervals
@@ -1122,10 +1181,12 @@ p3_avg_ci_scores <- loadResultsOrCompute(file = "../results/p3_avg_ci_scores.rds
     ) %dopar% {
       req <- all_signals[[pId]]$REQ$get0Function()
       dev <- all_signals[[pId]]$DEV$get0Function()
+      desc <- all_signals[[pId]]$DESC$get0Function()
       
       `rownames<-`(data.frame(
         REQ = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = req, CI = CI_req_p3avg),
-        DEV = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = dev, CI = CI_dev_p3avg)
+        DEV = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = dev, CI = CI_dev_p3avg),
+        DESC = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = desc, CI = CI_desc_p3avg)
       ), pId)
     }
   })
@@ -1162,6 +1223,12 @@ cor.test(x = ground_truth$consensus_score, y = p3_avg_ci_scores[, "DEV"])
 
 For the variable `DEV` however, the correlation is quite low, $\approx0.17$. Also, we have significant evidence for accepting the null hypothesis (no correlation).
 
+```{r}
+cor.test(x = ground_truth$consensus_score, y = p3_avg_ci_scores[, "DESC"])
+```
+
+Looks like we are getting some strong positive correlation for the variable `DESC` of $\approx0.85$. There is almost no evidence at all for accepting the null hypothesis.
+
 
 
 ### Scoring based on the distance to average
@@ -1179,6 +1246,7 @@ p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores
     ) %dopar% {
       req <- all_signals[[pId]]$REQ$get0Function()
       dev <- all_signals[[pId]]$DEV$get0Function()
+      desc <- all_signals[[pId]]$DESC$get0Function()
       
       `rownames<-`(data.frame(
         REQ = L_areadist_p3_avg(
@@ -1187,7 +1255,11 @@ p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores
         
         DEV = L_areadist_p3_avg(
           x1 = 0, x2 = 1, f = dev, gbar = dev_p3,
-          CI_upper = dev_ci_upper_p3avg, CI_lower = dev_ci_lower_p3avg)["dist"]
+          CI_upper = dev_ci_upper_p3avg, CI_lower = dev_ci_lower_p3avg)["dist"],
+        
+        DESC = L_areadist_p3_avg(
+          x1 = 0, x2 = 1, f = desc, gbar = desc_p3,
+          CI_upper = desc_ci_upper_p3avg, CI_lower = desc_ci_lower_p3avg)["dist"]
       ), pId)
     }
   })
@@ -1225,18 +1297,27 @@ cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "DEV"])
 
 The correlation for the variable `DEV` is poor again. Also, it is positive, which means that the scores calculated using this method are proportional, when they should not be.
 
+```{r}
+cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "DESC"])
+```
+
+
 
 ### Linear combination of the two methods
 
 ```{r}
 temp <- data.frame(
   gt_consensus = ground_truth$consensus_score,
-  ci = p3_avg_ci_scores$REQ,
-  area = p3_avg_area_scores$REQ,
+  ci_req = p3_avg_ci_scores$REQ,
+  area_req = p3_avg_area_scores$REQ,
   ci_dev = p3_avg_ci_scores$DEV,
-  area_dev = p3_avg_area_scores$DEV)
+  area_dev = p3_avg_area_scores$DEV,
+  ci_desc = p3_avg_ci_scores$DESC,
+  area_desc = p3_avg_area_scores$DESC)
 
-p3_avg_lm <- stats::lm(formula = gt_consensus ~ ci + area + ci_dev + area_dev, data = temp)
+# ci_req + area_desc gives us ~0.951 already!
+# ci_req + ci_dev + area_desc gives ~0.962
+p3_avg_lm <- stats::lm(formula = gt_consensus ~ ci_req + ci_dev + area_desc, data = temp)
 stats::coef(p3_avg_lm)
 par(mfrow=c(1,2))
 plot(p3_avg_lm, ask = FALSE, which = 1:2)
@@ -1246,11 +1327,11 @@ Using the approximate coefficients of the linear model, we can define the detect
 
 $$
 \begin{aligned}
-  x_1,x_2,\operatorname{req},\operatorname{dev}\dots&\;\text{lower/upper integration interval and project signals,}
+  x_1,x_2,\operatorname{req},\operatorname{dev},\operatorname{desc}\dots&\;\text{lower/upper integration interval and project signals,}
   \\[1ex]
-  \bm{\tau}=&\;\Big\{\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{req}),\;\mathit{L}^{\text{areadist}}(x_1,x_2,\operatorname{req}),\;\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{dev}),\;\mathit{L}^{\text{areadist}}(x_1,x_2,\operatorname{dev})\Big\}\;\text{,}
+  \bm{\tau}=&\;\Big\{\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{req}),\;\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{dev}),\;\mathit{L}^{\text{areadist}}(x_1,x_2,\operatorname{desc})\Big\}\;\text{,}
   \\[1ex]
-  \operatorname{detect}^{\text{ci+area}}(\bm{\tau})=&\;-1.889 + 5.786\times\bm{\tau}_1 + 1.149\times\bm{\tau}_2 + 1.431\times\bm{\tau}_3 + 0.585\times\bm{\tau}_4\;\text{.}
+  \operatorname{detect}^{\text{ci+area}}(\bm{\tau})=&\;-0.254 + 3.636\times\bm{\tau}_1 + 1.206\times\bm{\tau}_2 - 0.555\times\bm{\tau}_3\;\text{.}
 \end{aligned}
 $$
 
@@ -1266,7 +1347,7 @@ round(p3_avg_lm_scores * 10, 3)
 stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
 ```
 
-With this linear combination, we were able to significantly boost the detection to $\approx0.94$, which implies that combining both methods is of worth for a detection using inhomogeneous confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting.
+With this linear combination of only three scores (out of six), we were able to significantly boost the detection to $\approx0.962$, which implies that combining both methods is of worth for a detection using (inhomogeneous) confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting. Using four or more scores goes beyond $0.97$.
 
 
 
