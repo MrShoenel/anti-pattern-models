@@ -761,10 +761,14 @@ But first, we define a function $f:R^2\mapsto R$ to compute a CI with gradation.
 $$
 \begin{aligned}
   h_{\text{upper}}(f,x,y)=&\;\begin{cases}
-    f(x),&\text{if}\;f(x)\geq y,
+    \begin{cases}
+      f(x),&\text{if}\;f(x)\neq0,
+      \\
+      \epsilon,&\text{otherwise,}
+    \end{cases},&\text{if}\;f(x)\geq y,
     \\
     0,&\text{otherwise}
-  \end{cases}\;\text{,}
+  \end{cases}\;\text{, where}\;\epsilon\;\text{is small non-zero constant,}
   \\
   \operatorname{CI}^+(x,y)=&\;\bm{\omega}^\top\cdot h_{\text{upper}}(\bm{f},x,y)\times\Big[\sum\bm{\omega}\Big]^{-1}\text{.}
 \end{aligned}
@@ -796,6 +800,7 @@ With this definition, we can compute a loss that is then based on a path that go
 h_p3avg <- function(funclist, x, y, upper = TRUE) {
   unlist(lapply(X = funclist, FUN = function(f) {
     val <- f(x)
+    if (val == 0) val <- sqrt(.Machine$double.eps)
     if ((upper && val >= y) || (!upper && val <= y)) val else 0
   }))
 }
