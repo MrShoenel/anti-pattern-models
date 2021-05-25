@@ -144,7 +144,8 @@ loadResultsOrCompute <- function(file, computeExpr) {
   res <- base::tryCatch(
     expr = computeExpr, error = function(cond) cond)
   
-  if (class(res) %in% c("simpleError", "error", "condition")) {
+  # 'res' may have more than one class.
+  if (any(class(res) %in% c("simpleError", "error", "condition"))) {
     print(traceback())
     stop(paste0("The computation failed: ", res))
   }
