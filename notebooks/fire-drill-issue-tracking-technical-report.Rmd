@@ -585,7 +585,8 @@ Moving the boundary $t_2$ was a more significant change for variables `DEV` and 
 
 ## Pattern III: Averaging the ground truth
 
-This is the same approach we undertook for pattern type III (average) for the Fire Drill in source code. However, we will also learn an __empirical confidence interval__, which is later used for an additional detection method.
+This is the same approach we undertook for pattern type III (average) for the Fire Drill in source code. However, we will also learn an __empirical confidence interval__, which is later used for two additional detection methods. These methods have the advantage that they work over arbitrary (integration) intervals, making them also applicable for early detection of the process (i.e., not the entire process needs to be observed, and we can just attempt to detect what we have so far).
+
 
 ```{r}
 p3_weighted_var <- function(name, omega) {
@@ -1238,6 +1239,7 @@ Looks like we are getting some strong positive correlation for the variable `DES
 
 ### Scoring based on the distance to average
 
+Here we compute the distance of each project's variables to the previously averaged variables. This approach does not rely on inhomogeneous confidence intervals, and only considers the intervals' boundaries to integrate some distance. Ideally, the distance is $0$, and in the worst case it is $1$. If this ought to be used as score, we probably would want to compute it as $\mathit{S}^{\text{areadist}}=1-\mathit{L}^{\text{areadist}}$.
 
 ```{r}
 p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores", computeExpr =  {
@@ -1293,19 +1295,20 @@ As for the correlation tests, ideally, we get negative correlations, as the comp
 cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "REQ"])
 ```
 
-For the variable `REQ` we get a weaker, yet moderate correlation of $\approx-0.50$, and there is no significant evidence for the null hypothesis either, so must reject it.
+For the variable `REQ` we get a weaker, yet moderate correlation of $\approx-0.50$. However, there is evidence for the null hypothesis, which suggests that there is no statistical significant correlation. This means, we will have to use this with care, if at all.
 
 
 ```{r}
 cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "DEV"])
 ```
 
-The correlation for the variable `DEV` is poor again. Also, it is positive, which means that the scores calculated using this method are proportional, when they should not be.
+The correlation for the variable `DEV` is poor again. Also, it is positive, which means that the scores calculated using this method are proportional, when they should not be. The p-value is significant, so there is most likely no significant correlation for this variable and the ground truth.
 
 ```{r}
 cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "DESC"])
 ```
 
+The correlation for `DESC` is still respectable, and also it is negative like it should be. The p-value is quite high, suggesting no correlation. Again, if at all, this must be used with care.
 
 
 ### Linear combination of the two methods
