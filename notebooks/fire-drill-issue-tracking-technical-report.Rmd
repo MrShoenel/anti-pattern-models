@@ -516,9 +516,9 @@ timewarp_variable <- function(f, t, t_new) {
 ```
 
 ```{r}
-req_p1a <- timewarp_variable(f = req, t = t_1, t_new = t1_wavg)
-req_ci_lower_p1a <- timewarp_variable(f = req_ci_lower, t = t_1, t_new = t1_wavg)
-req_ci_upper_p1a <- timewarp_variable(f = req_ci_upper, t = t_1, t_new = t1_wavg)
+req_p2a <- timewarp_variable(f = req, t = t_1, t_new = t1_wavg)
+req_ci_lower_p2a <- timewarp_variable(f = req_ci_lower, t = t_1, t_new = t1_wavg)
+req_ci_upper_p2a <- timewarp_variable(f = req_ci_upper, t = t_1, t_new = t1_wavg)
 ```
 
 
@@ -529,12 +529,12 @@ grid()
 
 polygon(
   x = c(seq(from = 0, to = 1, length.out = 50), t1_wavg),
-  y = c(req_ci_upper_p1a(seq(from = 0, to = 1, length.out = 50)), req_ci_lower_p1a(t1_wavg)),
+  y = c(req_ci_upper_p2a(seq(from = 0, to = 1, length.out = 50)), req_ci_lower_p2a(t1_wavg)),
   col = "#ff000033",
   border = NA)
-curve(req_ci_lower_p1a, 0, 1, col = "red", lty = 2, add = TRUE)
-curve(req_ci_upper_p1a, 0, 1, col = "red", lty = 3, add = TRUE)
-curve(req_p1a, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+curve(req_ci_lower_p2a, 0, 1, col = "red", lty = 2, add = TRUE)
+curve(req_ci_upper_p2a, 0, 1, col = "red", lty = 3, add = TRUE)
+curve(req_p2a, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
 legend(.65, .3, legend = c("Pt. I(a) upper CI", "Pt. I(a) lower CI", "Pt. I(a) req%"),
        col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2))
 abline(v = 0, col = "#888888")
@@ -549,9 +549,9 @@ text(x = .42, y = .93, paste0("t1_wavg=", round(t1_wavg, 4)))
 Moving the boundary $t_1$ farther behind, changes the variable `REQ` and its confidence interval slightly, as can be seen in figure \ref{fig:req-p1a-cis}. Next, we will adapt the remaining variables and their confidence intervals.
 
 ```{r}
-dev_p1a <- timewarp_variable(f = dev, t = t_2, t_new = t2_wavg)
-dev_ci_upper_p1a <- timewarp_variable(f = dev_ci_upper, t = t_2, t_new = t2_wavg)
-desc_p1a <- timewarp_variable(f = desc, t = t_2, t_new = t2_wavg)
+dev_p2a <- timewarp_variable(f = dev, t = t_2, t_new = t2_wavg)
+dev_ci_upper_p2a <- timewarp_variable(f = dev_ci_upper, t = t_2, t_new = t2_wavg)
+desc_p2a <- timewarp_variable(f = desc, t = t_2, t_new = t2_wavg)
 ```
 
 ```{r dev-desc-p1a-cis, echo=FALSE, fig.cap="The variable dev\\% and its upper confidence interval, as well as the variable desc\\%, after time warping for pattern type I (a).", fig.align="center", fig.pos="ht!"}
@@ -561,13 +561,13 @@ grid()
 
 polygon(
   x = c(seq(from = 0, to = 1, length.out = 50), 1),
-  y = c(dev_ci_upper_p1a(seq(from = 0, to = 1, length.out = 50)), 0),
+  y = c(dev_ci_upper_p2a(seq(from = 0, to = 1, length.out = 50)), 0),
   col = "#0000ff33",
   border = NA)
 
-curve(dev_ci_upper_p1a, 0, 1, col = "blue", lty = 2, add = TRUE)
-curve(desc_p1a, 0, 1, add = TRUE, col = "forestgreen", lty = 1, lwd = 3)
-curve(dev_p1a, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
+curve(dev_ci_upper_p2a, 0, 1, col = "blue", lty = 2, add = TRUE)
+curve(desc_p2a, 0, 1, add = TRUE, col = "forestgreen", lty = 1, lwd = 3)
+curve(dev_p2a, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
 legend(.02, 1.01, legend = c("Pt. I(a) dev upper CI", "Pt. I(a) dev%", "Pt. I(a) desc%"),
        col = c("blue", "blue", "forestgreen"), lty = c(3, 1, 1), lwd = c(1, 3, 3))
 
@@ -867,7 +867,7 @@ z_desc <- loadResultsOrCompute(file = "../results/ci_p3avg_z_desc.rds", computeE
 
 Finally, we show the empirical confidence intervals in figures \ref{fig:p3-emp-cis} and \ref{fig:p3-emp-desc-cis}. Note that the minimum non-zero confidence is `r round(min(z_req[z_req>0]),6)`, while the maximum is $1$. Therefore, while we gradate the colors from $0$ to $1$, we slightly scale and transform the grid's non-zero values using the expression $0.9\times z+0.1$, to improve the visibility.
 
-```{r p3-emp-cis, echo=FALSE, fig.height=8, fig.cap="The empirical confidence intervals for the two variables req\\% and dev\\%. Higher saturation of the color correlates with higher confidence.", fig.align="center", fig.pos="ht!"}
+```{r p3-emp-cis, echo=FALSE, fig.height=8, fig.cap="The empirical confidence intervals for the two variables req\\% and dev\\%. Higher saturation of the color correlates with higher confidence. Projects with zero weight contribute to the CIs' boundaries, but not to the hyperplane.", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(2,1))
 
 z_req <- z_req * 0.9 + 0.1
@@ -883,6 +883,15 @@ curve(req_p3, 0, 1, col = "red", add = TRUE)
 curve(req_ci_upper_p3avg, 0, 1, col = "#ff000033", add = TRUE, lty = 2)
 curve(req_ci_lower_p3avg, 0, 1, col = "#ff000033", add = TRUE, lty = 3)
 
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$REQ$get0Function()
+  curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
+       col = "#00000033", lty = c(3, 2), lwd = 2)
+
 
 
 z_dev <- z_dev * 0.9 + 0.1
@@ -896,6 +905,15 @@ curve(dev_p3, 0, 1, col = "blue", add = TRUE)
 
 curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 2)
 curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 3)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$DEV$get0Function()
+  curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
+       col = "#00000033", lty = c(3, 2), lwd = 2)
 ```
 
 
@@ -912,6 +930,15 @@ curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
 
 curve(desc_ci_upper_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 2)
 curve(desc_ci_lower_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 3)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$DESC$get0Function()
+  curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+legend(0.01, desc_ci_upper_p3avg(1) * 1.1 - .02, legend = c("Weight = 0", "Weight > 0"),
+       col = "#00000033", lty = c(3, 2), lwd = 2)
 ```
 
 
@@ -980,6 +1007,9 @@ From this example we can clearly see a difference in average confidence, which s
 
 We may choose to ignore the previously computed confidence hyperplane and compute a cost by, e.g., quantifying the distance between the previously computed average variable and another signal/variable. More precisely, we quantify the area between both variables, and compare it to the largest possible area, thereby obtaining an upper bound (with the lower bound being $0$ obviously). Unlike the previous attempt, this function is a loss, that maps to the range $[0,1]$, where $1$ means the largest possible distance (i.e., the variable compared is entirely outside (or collinear with) the confidence intervals). Hence this function is an attempt of measuring of dissimilarity.
 
+This method requires three features: A reference-variable, an upper- and a lower confidence interval. However, none of these are required to be of empirical nature. For example, we can even apply this method to the first of our patterns. A reference-variable may be generated as the average between the confidence intervals, etc. All this makes this method versatile. Its robustness comes from the fact any variable it scores, is confined to the boundaries of the confidence intervals.
+
+
 $$
 \begin{aligned}
   \mathit{L}^{\text{areadist}}(x_1,x_2,f)=&\;\int_{x_1}^{x_2}\,\norm{\bar{g}(x)-\overbrace{\min{\Big(\operatorname{CI}_{\text{upper}}(x),\;\max{\big(\operatorname{CI}_{\text{lower}}(x), f(x)\big)}\Big)}}^{\text{Confining of}\;f\;\text{to the confidence intervals.}}}\,dx
@@ -988,10 +1018,26 @@ $$
 \end{aligned}
 $$
 
+This loss may also be alternatively defined using the following denominator:
+
+$$
+\begin{aligned}
+  \mathit{L}^{\text{areadist2}}(x_1,x_2,f)=&\;\int_{x_1}^{x_2}\,\norm{\bar{g}(x)-\min{\Big(\operatorname{CI}_{\text{upper}}(x),\;\max{\big(\operatorname{CI}_{\text{lower}}(x), f(x)\big)}\Big)}}\,dx
+  \\[1ex]
+  &\;\times\Bigg[\;\int_{x_1}^{x_2}\,\begin{cases}
+    \operatorname{CI}_{\text{upper}}(x)-\bar{g}(x),&\text{if}\;f(x)\geq\bar{g}(x),
+    \\
+    \bar{g}(x)-\operatorname{CI}_{\text{lower}}(x),&\text{otherwise.}
+  \end{cases}\,dx\;\Bigg]^{-1}\;\text{.}
+\end{aligned}
+$$
+
+The difference is subtle but important, and corrects better for asymmetric confidence intervals. It now captures the maximum possible area, based on the currently valid confidence interval (at $x$). For the remainder, we will always be using the __second variant of this loss__ because of this.
+
 Again, we will do a full evaluation later, but let's just attempt computing this loss once.
 
 ```{r}
-L_areadist_p3_avg <- function(x1, x2, f, gbar, CI_upper, CI_lower) {
+L_areadist_p3_avg <- function(x1, x2, f, gbar, CI_upper, CI_lower, use2ndVariant = FALSE) {
   int1 <- cubature::cubintegrate(
     f = function(x) {
       abs(gbar(x) - min(CI_upper(x), max(CI_lower(x), f(x))))
@@ -1001,7 +1047,16 @@ L_areadist_p3_avg <- function(x1, x2, f, gbar, CI_upper, CI_lower) {
   
   int2 <- cubature::cubintegrate(
     f = function(x) {
-      max(gbar(x) - CI_lower(x), CI_upper(x) - gbar(x))
+      gbarval <- gbar(x)
+      if (use2ndVariant) {
+        if (f(x) >= gbarval) {
+          CI_upper(x) - gbarval
+        } else {
+          gbarval - CI_lower(x)
+        }
+      } else {
+        max(gbarval - CI_lower(x), CI_upper(x) - gbarval)
+      }
     },
     lower = x1, upper = x2
   )$integral
@@ -1012,10 +1067,10 @@ L_areadist_p3_avg <- function(x1, x2, f, gbar, CI_upper, CI_lower) {
 loadResultsOrCompute(file = "../results/ci_p3avg_Larea-test.rds", computeExpr = {
   list(
     "P2_REQ" = L_areadist_p3_avg(
-      x1 = 0, x2 = 1, f = all_signals$Project2$REQ$get0Function(),
+      x1 = 0, x2 = 1, f = all_signals$Project2$REQ$get0Function(), use2ndVariant = TRUE,
       gbar = req_p3, CI_upper = req_ci_upper_p3avg, CI_lower = req_ci_lower_p3avg),
     "P4_REQ" = L_areadist_p3_avg(
-      x1 = 0, x2 = 1, f = all_signals$Project4$REQ$get0Function(),
+      x1 = 0, x2 = 1, f = all_signals$Project4$REQ$get0Function(), use2ndVariant = TRUE,
       gbar = req_p3, CI_upper = req_ci_upper_p3avg, CI_lower = req_ci_lower_p3avg)
   )
 })
@@ -1242,7 +1297,7 @@ Looks like we are getting some strong positive correlation for the variable `DES
 Here we compute the distance of each project's variables to the previously averaged variables. This approach does not rely on inhomogeneous confidence intervals, and only considers the intervals' boundaries to integrate some distance. Ideally, the distance is $0$, and in the worst case it is $1$. If this ought to be used as score, we probably would want to compute it as $\mathit{S}^{\text{areadist}}=1-\mathit{L}^{\text{areadist}}$.
 
 ```{r}
-p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores", computeExpr =  {
+p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores.rds", computeExpr =  {
   doWithParallelCluster(numCores = length(all_signals), expr = {
     library(foreach)
     
@@ -1257,15 +1312,15 @@ p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores
       
       `rownames<-`(data.frame(
         REQ = L_areadist_p3_avg(
-          x1 = 0, x2 = 1, f = req, gbar = req_p3,
+          x1 = 0, x2 = 1, f = req, gbar = req_p3, use2ndVariant = TRUE,
           CI_upper = req_ci_upper_p3avg, CI_lower = req_ci_lower_p3avg)["dist"],
         
         DEV = L_areadist_p3_avg(
-          x1 = 0, x2 = 1, f = dev, gbar = dev_p3,
+          x1 = 0, x2 = 1, f = dev, gbar = dev_p3, use2ndVariant = TRUE,
           CI_upper = dev_ci_upper_p3avg, CI_lower = dev_ci_lower_p3avg)["dist"],
         
         DESC = L_areadist_p3_avg(
-          x1 = 0, x2 = 1, f = desc, gbar = desc_p3,
+          x1 = 0, x2 = 1, f = desc, gbar = desc_p3, use2ndVariant = TRUE,
           CI_upper = desc_ci_upper_p3avg, CI_lower = desc_ci_lower_p3avg)["dist"]
       ), pId)
     }
@@ -1288,14 +1343,14 @@ if (interactive()) {
 }
 ```
 
-As for the correlation tests, ideally, we get negative correlations, as the computed score is __lower__, the less distance we find between the area of the average variable and a project's variable, hence the relation must be antiproportional.
+As for the correlation tests, ideally, we get negative correlations, as the computed score is __lower__ the less distance we find between the area of the average variable and a project's variable, hence the relation must be antiproportional.
 
 
 ```{r}
 cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "REQ"])
 ```
 
-For the variable `REQ` we get a weaker, yet moderate correlation of $\approx-0.50$. However, there is evidence for the null hypothesis, which suggests that there is no statistical significant correlation. This means, we will have to use this with care, if at all.
+For the variable `REQ` we get a weaker, yet moderate correlation of $\approx-0.42$. However, there is evidence for the null hypothesis, which suggests that there is no statistical significant correlation. This means, we will have to use this with care, if at all.
 
 
 ```{r}
@@ -1308,8 +1363,222 @@ The correlation for the variable `DEV` is poor again. Also, it is positive, whic
 cor.test(x = ground_truth$consensus_score, y = p3_avg_area_scores[, "DESC"])
 ```
 
-The correlation for `DESC` is still respectable, and also it is negative like it should be. The p-value is quite high, suggesting no correlation. Again, if at all, this must be used with care.
+The correlation for `DESC` is substantial, and also it is negative like it should be. The p-value is below the significance level $0.05$, suggesting correlation. We might be able to use this score.
 
+
+#### Scoring against pattern type I and II (a)
+
+As a bonus, to demonstrate the versatility and robustness of this method, we will score the projects against the first pattern, and the second pattern type II (a), which is supposed to be a slight improvement over type I. We will use the variables and confidence intervals as they were defined there, i.e., those are neither data-based nor data-enhanced. For the following tests, the variables `REQ` and `DEV` will be considered, as `DESC` does not have non-empirical confidence intervals.
+
+Pattern I's CIs for the `REQ` variable align quite well with the boundaries of the empirical CIs, which means that most projects lie, by a large degree, within the expert-guessed CIs, so this method should work well. For the `DEV` variable's CIs in pattern I however, only a fraction of the projects are within the guessed CI, the averaged-variable appears even to be completely outside of the empirical CI. Therefore, we cannot expect the method to work well in any way in this scenario (cf. figure \ref{fig:req-dev-p3avg-cis}).
+
+```{r echo=FALSE}
+p3_avg_area_scores_p1 <- loadResultsOrCompute(file = "../results/p3_avg_area_scores_p1.rds", computeExpr =  {
+  doWithParallelCluster(numCores = length(all_signals), expr = {
+    library(foreach)
+    # There is no 'dev_ci_lower', because it would just be f(x)=0
+    
+    foreach::foreach(
+      pId = names(all_signals),
+      .inorder = TRUE,
+      .combine = rbind,
+      .packages = c("cobs")
+    ) %dopar% {
+      req_p <- all_signals[[pId]]$REQ$get0Function()
+      dev_p <- all_signals[[pId]]$DEV$get0Function()
+      
+      `rownames<-`(data.frame(
+        REQ = L_areadist_p3_avg(
+          x1 = 0, x2 = 1, f = req_p, gbar = req,
+          CI_upper = req_ci_upper, CI_lower = req_ci_lower, use2ndVariant = TRUE)["dist"],
+        
+        DEV = L_areadist_p3_avg(
+          x1 = 0, x2 = 1, f = dev_p, gbar = dev,
+          CI_upper = dev_ci_upper, CI_lower = function(x) 0, use2ndVariant = TRUE)["dist"]
+      ), pId)
+    }
+  })
+})
+```
+
+```{r p3-avg-area-scores-p1, echo=FALSE, fig.height=8, fig.cap="All projects plotted against the two variables req\\% and dev\\% of the first pattern.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(2,1))
+
+set.seed(1)
+myCol = sample(c("pink1", "violet", "mediumpurple1", "slateblue1", "purple", "purple3",
+          "turquoise2", "skyblue", "steelblue", "blue2", "navyblue",
+          "orange", "tomato", "coral2", "palevioletred", "violetred", "red2",
+          "springgreen2", "yellowgreen", "palegreen4",
+          "wheat2", "tan", "tan2", "tan3", "brown",
+          "grey70", "grey50", "grey30"))
+
+
+curve(req, 0, 1, col="red", lwd=2)
+curve(req_ci_upper, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
+curve(req_ci_lower, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
+polygon(
+  x = seq(from = 0, to = 1, length.out = 50),
+  y = req_ci_upper(seq(from = 0, to = 1, length.out = 50)),
+  col = "#ff00000d",
+  border = NA)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$DEV$get0Function()
+  curve(tempf, 0, 1, col=myCol[i], lty=2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("req%", "req% CI", paste0("Pr. ", 1:9)),
+       bg="transparent", cex = 3/4,
+       col = c("blue", "blue", myCol[1:9]), lty = c(1, 2, rep(2, 9)), lwd = c(3, 2, rep(1.5, 9)))
+
+
+
+curve(dev, 0, 1, col="blue", lwd=2)
+tempf <- function(x) rep(0, length(x))
+curve(tempf, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
+curve(dev_ci_upper, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
+polygon(
+  x = c(seq(from = 0, to = 1, length.out = 50), 1),
+  y = c(dev_ci_upper(seq(from = 0, to = 1, length.out = 50)), 0),
+  col = "#0000ff0d",
+  border = NA)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$DEV$get0Function()
+  curve(tempf, 0, 1, col=myCol[i], lty=2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("dev%", "dev% CI", paste0("Pr. ", 1:9)),
+       bg="transparent", cex = 3/4,
+       col = c("blue", "blue", myCol[1:9]), lty = c(1, 2, rep(2, 9)), lwd = c(3, 2, rep(1.5, 9)))
+```
+
+In figure \ref{fig:p3-avg-area-scores-p1} we show the first pattern and its confidence intervals, plotted against all projects' variables. The method used here to compute a score calculates the area between the pattern's variable (here: `REQ` or `DEV`) and a project's variable, where the upper bound would be the confidence intervals. While the first variant of this loss uses as max distance the CI that is farther away, the 2nd variant uses the CI based on whether the signal is above or below the compared-to variable. If we look at figure \ref{fig:p3-avg-area-scores-p1}, it becomes apparent why that is better: Consider, e.g., project 9 and the `DEV` variable. It is completely above the upper CI. The are between the upper CI and `DEV` and the lower CI and `DEV` are differently large, with the latter being definitely larger. In variant 1, due to the confinement, the area-distance, the are between the variable and the signal would be approximately equivalent to the area between `DEV` and the upper CI. That is then put into relation to the maximum area, which is the one between `DEV` and the lower CI. This results in a distance $\ll1$, even though it could not be worse. Variant 2 however considers, for all realizations of $X$, which CI should be used, and correctly determines the distance as $\approx1$ (note: it might be slightly less or more, due to numerical error).
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  p3_avg_area_scores_p1
+} else {
+  knitr::kable(
+    x = p3_avg_area_scores_p1,
+    booktabs = TRUE,
+    caption = "Correlation of the scores as computed per the average distance to the averaged variable.",
+    label = "p3-avg-area-scores-p1"
+  )
+}
+```
+
+```{r}
+cor(x = ground_truth$consensus_score, y = p3_avg_area_scores_p1[, "REQ"])
+cor(x = ground_truth$consensus_score, y = p3_avg_area_scores_p1[, "DEV"])
+```
+
+I think it is fair to say that the first pattern and its confidence intervals do not work well with this detection approach. While we do get a moderate correlation for `REQ`, it is positive, when it should have been negative.
+
+As expected, `DEV` is quite unusable, as the correlations are low, albeit negative.
+
+Let's check the next pattern: In type II (a), we have adapted the thresholds $t_1,t_2$ according to the ground truth. We can see, that the CIs of this align already much better with the projects, esp. for the `DEV` variable.
+
+```{r echo=FALSE}
+p3_avg_area_scores_p2a <- loadResultsOrCompute(file = "../results/p3_avg_area_scores_p2a.rds", computeExpr =  {
+  temp_x <- seq(0, 1, length.out = 1e4)
+  req_p2a_temp <- stats::approxfun(x = temp_x, y = req_p2a(temp_x), yleft = 0, yright = 1)
+  dev_p2a_temp <- stats::approxfun(x = temp_x, y = dev_p2a(temp_x), yleft = 0, yright = 1)
+  
+  doWithParallelCluster(numCores = length(all_signals), expr = {
+    library(foreach)
+    # There is no 'dev_ci_lower', because it would just be f(x)=0
+    
+    foreach::foreach(
+      pId = names(all_signals),
+      .inorder = TRUE,
+      .combine = rbind,
+      .packages = c("cobs")
+    ) %dopar% {
+      req_p <- all_signals[[pId]]$REQ$get0Function()
+      dev_p <- all_signals[[pId]]$DEV$get0Function()
+
+      `rownames<-`(data.frame(
+        REQ = L_areadist_p3_avg(
+          x1 = 0, x2 = 1, f = req_p, gbar = req_p2a_temp,
+          CI_upper = req_ci_upper_p2a, CI_lower = req_ci_lower_p2a, use2ndVariant = TRUE)["dist"],
+
+        DEV = L_areadist_p3_avg(
+          x1 = 0, x2 = 1, f = dev_p, gbar = dev_p2a_temp,
+          CI_upper = dev_ci_upper_p2a, CI_lower = function(x) 0, use2ndVariant = TRUE)["dist"]
+      ), pId)
+    }
+  })
+})
+```
+
+```{r p3-avg-area-scores-p2a, echo=FALSE, fig.height=8, fig.cap="All projects plotted against the two variables req\\% and dev\\% of pattern type II (a).", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(2,1))
+
+curve(req_p2a, 0, 1, col="red", lwd=2)
+curve(req_ci_upper_p2a, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
+curve(req_ci_lower_p2a, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
+polygon(
+  x = c(seq(from = 0, to = 1, length.out = 50), t1_wavg),
+  y = c(req_ci_upper_p2a(seq(from = 0, to = 1, length.out = 50)), req_ci_lower_p2a(t1_wavg)),
+  col = "#ff00000d",
+  border = NA)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$DEV$get0Function()
+  curve(tempf, 0, 1, col=myCol[i], lty=2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("req%", "req% CI", paste0("Pr. ", 1:9)),
+       bg="transparent", cex = 3/4,
+       col = c("blue", "blue", myCol[1:9]), lty = c(1, 2, rep(2, 9)), lwd = c(3, 2, rep(1.5, 9)))
+
+
+
+curve(dev_p2a, 0, 1, col="blue", lwd=2)
+tempf <- function(x) rep(0, length(x))
+curve(tempf, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
+curve(dev_ci_upper_p2a, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
+polygon(
+  x = c(seq(from = 0, to = 1, length.out = 50), 1),
+  y = c(dev_ci_upper_p2a(seq(from = 0, to = 1, length.out = 50)), 0),
+  col = "#0000ff0d",
+  border = NA)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$DEV$get0Function()
+  curve(tempf, 0, 1, col=myCol[i], lty=2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("dev%", "dev% CI", paste0("Pr. ", 1:9)),
+       bg="transparent", cex = 3/4,
+       col = c("blue", "blue", myCol[1:9]), lty = c(1, 2, rep(2, 9)), lwd = c(3, 2, rep(1.5, 9)))
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  p3_avg_area_scores_p2a
+} else {
+  knitr::kable(
+    x = p3_avg_area_scores_p2a,
+    booktabs = TRUE,
+    caption = "Correlation of the scores as computed per the average distance to the averaged variable.",
+    label = "p3-avg-area-scores-p2a"
+  )
+}
+```
+
+```{r}
+cor(x = ground_truth$consensus_score, y = p3_avg_area_scores_p2a[, "REQ"])
+cor(x = ground_truth$consensus_score, y = p3_avg_area_scores_p2a[, "DEV"])
+```
+
+Now we can observe quite an improvement for both variables. The correlation for `REQ` has increased by more than $1$, so it is moderate now and has the right sign. As for `DEV`, the correlation is almost four times as strong.
 
 ### Linear combination of the two methods
 
@@ -1339,7 +1608,7 @@ $$
   \\[1ex]
   \bm{\tau}=&\;\Big\{\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{req}),\;\mathit{L}^{\text{avgconf}}(x_1,x_2,\operatorname{dev}),\;\mathit{L}^{\text{areadist}}(x_1,x_2,\operatorname{desc})\Big\}\;\text{,}
   \\[1ex]
-  \operatorname{detect}^{\text{ci+area}}(\bm{\tau})=&\;-0.254 + 3.636\times\bm{\tau}_1 + 1.206\times\bm{\tau}_2 - 0.555\times\bm{\tau}_3\;\text{.}
+  \operatorname{detect}^{\text{ci+area}}(\bm{\tau})=&\;-0.029 + 3.011\times\bm{\tau}_1 + 0.839\times\bm{\tau}_2 - 0.478\times\bm{\tau}_3\;\text{.}
 \end{aligned}
 $$
 
