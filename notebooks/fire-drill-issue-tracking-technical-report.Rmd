@@ -165,7 +165,7 @@ for (pId in names(all_signals)) {
 ```{r project-it-vars, echo=FALSE, fig.cap="All variables over each project's time span.", fig.align="top", fig.pos="ht!"}
 plot_all_req_dev <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
   geom_line() +
-  scale_color_manual(values = c("gold", "blue", "red")) +
+  scale_color_manual(values = c("forestgreen", "blue", "red")) +
   facet_wrap(p ~.) +
   theme_light() +
   labs(color = "Variable") + xlab("Relative Time") + ylab("Cumulative Time spent") +
@@ -328,10 +328,10 @@ polygon(
   border = NA)
 
 curve(dev_ci_upper, 0, 1, col = "blue", lty = 2, add = TRUE)
-curve(desc, 0, 1, add = TRUE, col = "#00cc00", lty = 1, lwd = 3)
+curve(desc, 0, 1, add = TRUE, col = "forestgreen", lty = 1, lwd = 3)
 curve(dev, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
 legend(.02, 1.01, legend = c("dev upper CI", "dev%", "desc%"),
-       col = c("blue", "blue", "#00cc00"), lty = c(3, 1, 1), lwd = c(1, 3, 3))
+       col = c("blue", "blue", "forestgreen"), lty = c(3, 1, 1), lwd = c(1, 3, 3))
 
 abline(v = 0, col = "#888888")
 abline(v = 1, col = "#888888")
@@ -566,10 +566,10 @@ polygon(
   border = NA)
 
 curve(dev_ci_upper_p1a, 0, 1, col = "blue", lty = 2, add = TRUE)
-curve(desc_p1a, 0, 1, add = TRUE, col = "#00cc00", lty = 1, lwd = 3)
+curve(desc_p1a, 0, 1, add = TRUE, col = "forestgreen", lty = 1, lwd = 3)
 curve(dev_p1a, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
 legend(.02, 1.01, legend = c("Pt. I(a) dev upper CI", "Pt. I(a) dev%", "Pt. I(a) desc%"),
-       col = c("blue", "blue", "#00cc00"), lty = c(3, 1, 1), lwd = c(1, 3, 3))
+       col = c("blue", "blue", "forestgreen"), lty = c(3, 1, 1), lwd = c(1, 3, 3))
 
 abline(v = 0, col = "#888888")
 abline(v = 1, col = "#888888")
@@ -611,8 +611,8 @@ The computed weighted average-variables for `REQ` and `DEV` are shown in figure 
 ```{r avg-req-dev, echo=FALSE, fig.cap="The weighted average for the two variables req\\% and dev\\%.", fig.align="center", fig.pos="ht!"}
 curve(req_p3, 0, 1, col = "red", xlab = "Relative time", ylab = "Cumulative time spent")
 curve(dev_p3, 0, 1, col = "blue", add = TRUE)
-curve(desc_p3, 0, 1, col = "gold", add = TRUE)
-legend(0, 1, legend = c("cum. emp. req%", "cum. emp. dev%", "cum. emp. desc%"), col = c("blue", "red", "gold"), lty = 1, lwd = 2)
+curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
+legend(0, 1, legend = c("cum. emp. req%", "cum. emp. dev%", "cum. emp. desc%"), col = c("blue", "red", "forestgreen"), lty = 1, lwd = 2)
 ```
 
 ### Determining an empirical and inhomogeneous confidence interval
@@ -744,15 +744,15 @@ grid()
 polygon(
   x = polygon_x,
   y = c(desc_ci_upper_p3avg(head(polygon_x, 500)), desc_ci_lower_p3avg(tail(polygon_x, 500))),
-  col = "#ffd70044",
+  col = "#228B2244",
   border = NA)
 
-curve(desc_p3, 0, 1, col = "gold", add = TRUE)
-curve(desc_ci_upper_p3avg, 0, 1, col = "#ffd70033", add = TRUE, lty = 2)
-curve(desc_ci_lower_p3avg, 0, 1, col = "#ffd70033", add = TRUE, lty = 3)
+curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
+curve(desc_ci_upper_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 2)
+curve(desc_ci_lower_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 3)
 
 legend(0.01, .98, legend = c("Pt. 3 (avg) desc% upper CI", "Pt. III (avg) desc% lower CI", "Pt. III (avg) desc%"),
-       col = "gold", lty = c(3, 2, 1), lwd = c(1, 1, 2))
+       col = "forestgreen", lty = c(3, 2, 1), lwd = c(1, 1, 2))
 ```
 
 
@@ -900,12 +900,12 @@ z_desc[z_desc == .1] <- 0
 
 image(x = x, y = y, z = z_desc, main = "Variable: DESC",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
-      col = colorRampPalette(colors = c("#ffffff", "#FFD700"))(100), zlim = c(0, max(z_desc)))
+      col = colorRampPalette(colors = c("#ffffff", "forestgreen"))(100), ylim = c(0, desc_ci_upper_p3avg(1) * 1.1), zlim = c(0, max(z_desc)))
 grid()
-curve(desc_p3, 0, 1, col = "#eebb00", add = TRUE)
+curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
 
-curve(desc_ci_upper_p3avg, 0, 1, col = "#FFD70033", add = TRUE, lty = 2)
-curve(desc_ci_lower_p3avg, 0, 1, col = "#FFD70033", add = TRUE, lty = 3)
+curve(desc_ci_upper_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 2)
+curve(desc_ci_lower_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 3)
 ```
 
 
