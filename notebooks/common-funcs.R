@@ -1419,8 +1419,14 @@ poly_autofit <- function(yData, xData = 1:length(yData), maxDegree = 5, method =
   tempModel <- NULL
   
   while (TRUE && degree <= maxDegree) {
-    tempModel <- stats::lm(
-      formula = yData ~ stats::poly(xData, degree = degree))
+    tempModel <- tryCatch(expr = {
+      stats::lm(
+        formula = yData ~ stats::poly(xData, degree = degree))
+    }, error = function(cond) FALSE)
+    
+    if (is.logical(tempModel) && tempModel == FALSE) {
+      break
+    }
     
     newVal <- methodFunc(tempModel) * minimizeMult
     if (newVal < startVal) {
