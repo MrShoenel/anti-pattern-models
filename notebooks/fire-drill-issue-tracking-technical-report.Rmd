@@ -92,7 +92,7 @@ library(readxl)
 load_project_issue_data <- function(pId) {
   data <- read_excel(
     "../data/FD_issue-based_detection.xlsx", sheet = pId)
-  data$desc[is.na(data$desc)] <- 0
+  data[is.na(data)] <- 0
   
   req_cs <- cumsum(data$req) / sum(data$req)
   dev_cs <- cumsum(data$dev) / sum(data$dev)
@@ -110,6 +110,7 @@ load_project_issue_data <- function(pId) {
     name = "DESC", support = c(0,1), isWp = TRUE)
   
   list(
+    data = data,
     REQ = signal_rec,
     DEV = signal_dev,
     DESC = signal_desc
@@ -289,6 +290,8 @@ First we will define/fit a polynomial that describes the variable for design etc
 dev_poly <- cobs::cobs(
   x = seq(from = 0, to = 1, by = .1),
   y = c(0, .0175, .035, .055, dev_t_1, .014, .165, .2, .28, .475, 1),
+  print.warn = FALSE,
+  print.mesg = FALSE,
   pointwise = matrix(data = c(
     c(0, t_1, dev_t_1),
     c(0, t_2, dev_t_2),
@@ -941,7 +944,215 @@ legend(0.01, desc_ci_upper_p3avg(1) * 1.1 - .02, legend = c("Weight = 0", "Weigh
        col = "#00000033", lty = c(3, 2), lwd = 2)
 ```
 
+## Pattern IV
 
+We had previously discussed the possibility of partial (early) detection. Some of the scores and losses use integration and custom intervals, and while these might be applicable in some cases without further changes, we need to be careful when dealing with variables that are normalized at project end. This is currently the case for the variables of pattern I.
+
+Pattern IV explores the possibility of not using the pattern directly, but its __derivative__ for all of the variables and the confidence intervals. Here we exploit the fact that a cumulative variable has monotonic behavior, depending on how it was designed even _strictly monotonic_ behavior. That means the slope at any point in time is $>0$ (or at least $\geq0$) - resp. $<0$ (or at least $\leq0$). The confidence intervals model the minimum and maximum extents we would expect, and their derivatives give us lower and upper bounds for the expected rate of change. Regardless of the actual value of the variable, we can thus transform our expectation of its value into an expectation of how it changes over time.
+
+For creating the first derivatives, we can use either, analytical expressions (if available) or numeric methods, such finite difference approaches. In the following, we use both, as we also actually have analytical expressions for some of the curves. The first pattern, represented by its derivatives, is shown in figure \ref{fig:p4-req-dev}.
+
+```{r}
+func_d1 <- function(f, x, supp = c(0, 1)) {
+  sapply(X = x, FUN = function(x_) {
+    t <- 1e-5
+    m <- if (x_ < (supp[1] + t)) "forward" else if (x_ > (supp[2] - t)) "backward" else "central"
+    pracma::fderiv(f = f, x = x_, method = m)
+  })
+}
+
+req_d1_p4 <- function(x) {
+  func_d1(f = req, x = x)
+}
+req_ci_lower_d1_p4 <- function(x) rep(1, length(x))
+req_ci_upper_d1_p4 <- function(x) 3.89791628313 * exp(-(3.811733 * x))
+
+dev_d1_p4 <- function(x) {
+  func_d1(f = dev, x = x)
+}
+dev_ci_lower_d1_p4 <- function(x) rep(0, length(x))
+dev_ci_upper_d1_p4 <- function(x) 0.07815904 + x * (0.8986929 * x + 1.2445534)
+
+# For DESC, there are no confidence intervals
+desc_d1_p4 <- function(x) 0.01172386 + x * (0.13480392 * x + 0.186683)
+```
+
+
+While we need the derivatives of any function that describes a variable or confidence interval over time, the derivatives of the confidence intervals now represent upper and lower bounds for the expected range of change. Furthermore, at any point the rate of change of the variable or either of the confidence intervals may exceed any of the other, and the curves can also cross. So, in order to define the upper and lower boundaries, we require the definition of a helper function that returns the minimum and/or maximum of either of these three functions for every $x$:
+
+$$
+\begin{aligned}
+  \operatorname{CI}_{\nabla \text{upper}}(\nabla f,\nabla f_{\text{lower}},\nabla f_{\text{upper}},x)=&\;\sup{\big(\nabla f(x),\nabla f_{\text{lower}}(x),\nabla f_{\text{upper}}(x)\big)}\;\text{.}
+\end{aligned}
+$$
+
+Likewise, we define $\operatorname{CI}_{\nabla\text{lower}}(\dots)$ using the infimum.
+
+
+```{r p4-req-dev, echo=FALSE, fig.height=8, fig.cap="Derivatives of all variables and confidence intervals as of pattern I.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(2,1))
+
+d1_vals_req <- function(x) {
+  sapply(X = x, FUN = function(x_) c(req_d1_p4(x_), req_ci_lower_d1_p4(x_), req_ci_upper_d1_p4(x_)))
+}
+d1_vals_dev <- function(x) {
+  sapply(X = x, FUN = function(x_) c(dev_d1_p4(x_), dev_ci_lower_d1_p4(x_), dev_ci_upper_d1_p4(x_)))
+}
+
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, max(d1_vals_req(0))), col = "#00000000",
+     main = "Derivative of variable: REQ",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+
+polygon(
+  x = polygon_x,
+  y = c(sapply(X = polygon_x[1:500], FUN = function(x) max(d1_vals_req(x=x))),
+        sapply(X = polygon_x[501:1000], FUN = function(x) min(d1_vals_req(x=x)))),
+  col = "#ff000033",
+  border = NA)
+curve(req_ci_lower_d1_p4, 0, 1, col = "red", lty = 2, add = TRUE)
+curve(req_ci_upper_d1_p4, 0, 1, col = "red", lty = 3, add = TRUE)
+curve(req_d1_p4, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+legend(.74, max(d1_vals_req(0)) - 0.01, legend = c("upper CI", "lower CI", "req%"),
+       col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2))
+
+
+
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, max(d1_vals_dev(1))), col = "#00000000",
+     main = "Derivatives of variables: REQ and DEV",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+
+polygon(
+  x = polygon_x,
+  y = c(sapply(X = polygon_x[1:500], FUN = function(x) max(d1_vals_dev(x=x))),
+        sapply(X = polygon_x[501:1000], FUN = function(x) min(d1_vals_dev(x=x)))),
+  col = "#0000ff33",
+  border = NA)
+
+curve(dev_ci_lower_d1_p4, 0, 1, col = "blue", lty = 2, add = TRUE)
+curve(dev_ci_upper_d1_p4, 0, 1, col = "blue", lty = 3, add = TRUE)
+curve(dev_d1_p4, 0, 1, col = "blue", lty = 1, lwd = 2, add = TRUE)
+curve(desc_d1_p4, 0, 1, col = "forestgreen", lty = 1, lwd = 2, add = TRUE)
+legend(.02, max(d1_vals_dev(1)) - 0.01, legend = c("upper CI", "lower CI", "dev%", "desc%"),
+       col = c(rep("blue", 3), "forestgreen"), lty = c(3, 2, 1, 1), lwd = c(1, 1, 2, 2))
+```
+
+The next challenge lies in representing the data which, in this case, is cumulative time spent on issues. If we approximate functions in a _zero-hold_-fashion as we did so far, then the gradients of these have extreme steps, and are likely unusable. In the following we attempt a few techniques to approximate a cumulative variable using LOESS-smoothing, constrained B-splines non-parametric regression quantiles, and fitting of orthogonal polynomials. The latter two result in smooth gradients if the number of knots or the degree of the polynomials are kept low. In the following subsections we use the signals of the 3rd project as an example.
+
+### Eliminate plateaus
+
+In this test, we iterate over all values of the cumulative variable and only keep x/y pairs, when y increases. In figure \ref{fig:p4-no-plateaus} we compare the original cumulative variable against the one without plateaus, i.e., every $x_t>x_{t-1}$ (note that the unequal spread of $x$ in the first non-plateau plot is deliberately ignored in the figure).
+
+```{r p4-no-plateaus, echo=FALSE, fig.height=3, fig.cap="Transforming a signal into a non-plateau signal, using unequal widths.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(1,3))
+x <- c(0)
+y <- c(0)
+for (i in 1:nrow(p3_signals$data)) {
+  if (p3_signals$data$`cum req`[i] > tail(y, 1)) {
+    x <- c(x, i)
+    y <- c(y, p3_signals$data$`cum req`[i])
+  }
+}
+barplot(p3_signals$data$`cum req`)
+barplot(height = y)
+barplot(height = y, width = diff(x))
+```
+
+Figures \ref{fig:p4-no-plateaus-smooth} and \ref{fig:p4-no-plateaus-smooth-d1} show the non-plateau signal, its LOESS-smoothed version, and the derivative of the smoothed version.
+
+```{r p4-no-plateaus-smooth, echo=FALSE, fig.height=3, fig.cap="The non-plateau signal on the left, and its LOESS-smoothed version (span=0.4) on the right.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(1,2))
+plot(x, y, type="l")
+
+temp <- loess.smooth(x = x, y = y, span = .5, family = "g", evaluation = 1e4)
+plot(temp$x,temp$y,type="l")
+
+#tempf <- stats::approxfun(x = seq(0, max(x), length.out = length(temp$x)), y = temp$y)
+tempf <- stats::approxfun(
+  x = (temp$x - min(temp$x)) / (max(temp$x - min(temp$x))),
+  y = temp$y / (max(temp$x - min(temp$x))))
+temps <- Signal$new(func = tempf, name = "a", support = c(0, 1), isWp = TRUE)
+```
+
+
+```{r p4-no-plateaus-smooth-d1, echo=FALSE, fig.height=3, fig.cap="The LOESS-smoothed signal and its derivative.", fig.align="center", fig.pos="ht!"}
+temps$plot(show1stDeriv = TRUE, showSignal = FALSE)# + ylim(c(-2,2))
+```
+
+From Figure \ref{fig:p4-no-plateaus-smooth-d1} we can observe that the gradient is probably acceptable for means of comparison, but the real problem lies in its values: The co-domain appears to go up close to $100$, which is a huge slope that is not found in the derived pattern. There the maximum observed slopes are $\approx5$. Spans $<0.4$ exacerbate the problem with the gradient, and higher values result in too strong smoothing. Attempting the same using just the cumulative data including the plateaus results in extreme-value gradients, too.
+
+
+### Using averaged bins
+
+In this approach we eliminate plateaus by aggregating all $x$ that have the same $y$, and moving $x$ by the amount of values that have the same $y$. Looking at the gradient in figure \ref{fig:p4-averaged-bins-d1}, it is still too extreme.
+
+```{r p4-averaged-bins-d1, fig.height=2.5, fig.cap="The average-bin signal and its gradient.", fig.align="center", fig.pos="ht!"}
+temp <- table(p3_signals$data$`cum req`)
+prev_x <- 0
+x <- c()
+y <- c()
+for (i in 1:length(temp)) {
+  x <- c(x, prev_x + temp[[i]] / max(temp))
+  prev_x <- tail(x, 1)
+  y <- c(y, as.numeric(names(temp[i])))
+}
+
+plot(x, y, type="l")
+tempf <- stats::approxfun(x = x, y = y)
+```
+
+
+```{r echo=FALSE, fig.height=3.5, fig.align="center", fig.pos="ht!"}
+temps <- Signal$new(func = tempf, name = "dummy", support = range(x), isWp = TRUE)
+temps$plot(show1stDeriv = TRUE)
+```
+
+### Constrained B-splines non-parametric regression quantiles
+
+.. or COBS, estimates (fits) a smooth function using B-splines through some "knots". In figure \ref{fig:p4-cobs-splines} we are attempting fitting with $[3,10]$ knots. The number of knots should probably not exceed $4$ or $5$ for the gradient to be useful, as otherwise it gets too many modes.
+
+```{r p4-cobs-splines, fig.height=7, fig.cap="Fitted splines with different number of knots and their derivative.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(4,4))
+
+X <- 1:nrow(p3_signals$data)
+
+for (i in 1:8) {
+  temp <- cobs::cobs(
+    x = X,
+    y = p3_signals$data$`cum req`,
+    nknots = i+2,
+    print.mesg = FALSE,
+    print.warn = FALSE
+  )
+  
+  tempf <- function(x) stats::predict(object = temp, z = x)[, "fit"]
+  curve(tempf, min(X), max(X), main = paste0("knots=", i+2))
+  tempf1 <- function(x) pracma::fderiv(f = tempf, x = x)
+  curve(tempf1, min(X), max(X), main = paste0("deriv,knots=", i+2))
+}
+```
+
+### Orthogonal polynomials
+
+Using a varying degree, we fit polynomials to the data in order to obtain a truly smooth curve. This technique always results in smooth approximations both for the signal and its gradient. In figure \ref{fig:p4-polynomials-d1} we observe how the derivative captures more and more nuances of the signal, starting from a degree of approx. $4$. For our tests with this pattern later, I therefore do recommend using polynomials of degree $3$, because the true purpose of all this is to estimate the non-linear trend for the variable and its rate of change.
+
+
+```{r p4-polynomials-d1, fig.height=7, fig.cap="Fitted polynomials and their first derivative using varying degrees of freedom.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(4,4))
+Y <- p3_signals$data$`cum req`
+use_degs <- c(2, 3, 4, 5, 8, 12, 19, length(stats::coef(poly_autofit_max(x=X, y=Y))) - 1)
+
+for (ud in use_degs) {
+  temp <- stats::lm(Y ~ poly(x = X, degree = ud))
+  tempf <- function(x) stats::predict(temp, newdata = data.frame(X=x))
+  curve(tempf, min(X), max(X), main = paste0("degree=", ud))
+  tempf1 <- function(x) pracma::fderiv(f = tempf, x = x)
+  curve(tempf1, min(X), max(X), main = paste0("deriv,degree=", ud))
+}
+```
+
+\clearpage
 
 # Assessing the Goodness of Fit
 
@@ -1266,7 +1477,10 @@ myCol = sample(c("pink1", "violet", "mediumpurple1", "slateblue1", "purple", "pu
           "grey70", "grey50", "grey30"))
 
 
-curve(req, 0, 1, col="red", lwd=2)
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+curve(req, 0, 1, col="red", lwd=2, add = TRUE)
 curve(req_ci_upper, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
 curve(req_ci_lower, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
 polygon(
@@ -1277,7 +1491,7 @@ polygon(
 
 for (i in 1:length(all_signals)) {
   pId <- names(all_signals)[i]
-  tempf <- all_signals[[pId]]$DEV$get0Function()
+  tempf <- all_signals[[pId]]$REQ$get0Function()
   curve(tempf, 0, 1, col=myCol[i], lty=2, add=TRUE)
 }
 
@@ -1287,7 +1501,10 @@ legend(0.01, .98, legend = c("req%", "req% CI", paste0("Pr. ", 1:9)),
 
 
 
-curve(dev, 0, 1, col="blue", lwd=2)
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+curve(dev, 0, 1, col="blue", lwd=2, add = TRUE)
 tempf <- function(x) rep(0, length(x))
 curve(tempf, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
 curve(dev_ci_upper, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
@@ -1380,7 +1597,11 @@ p2a_avg_area_scores <- loadResultsOrCompute(file = "../results/p2a_avg_area_scor
 ```{r p2a-avg-area-scores, echo=FALSE, fig.height=8, fig.cap="All projects plotted against the two variables req\\% and dev\\% of pattern type II (a).", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(2,1))
 
-curve(req_p2a, 0, 1, col="red", lwd=2)
+
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+curve(req_p2a, 0, 1, col="red", lwd=2, add = TRUE)
 curve(req_ci_upper_p2a, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
 curve(req_ci_lower_p2a, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
 polygon(
@@ -1391,7 +1612,7 @@ polygon(
 
 for (i in 1:length(all_signals)) {
   pId <- names(all_signals)[i]
-  tempf <- all_signals[[pId]]$DEV$get0Function()
+  tempf <- all_signals[[pId]]$REQ$get0Function()
   curve(tempf, 0, 1, col=myCol[i], lty=2, add=TRUE)
 }
 
@@ -1401,7 +1622,10 @@ legend(0.01, .98, legend = c("req%", "req% CI", paste0("Pr. ", 1:9)),
 
 
 
-curve(dev_p2a, 0, 1, col="blue", lwd=2)
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+curve(dev_p2a, 0, 1, col="blue", lwd=2, add = TRUE)
 tempf <- function(x) rep(0, length(x))
 curve(tempf, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
 curve(dev_ci_upper_p2a, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
@@ -1637,6 +1861,343 @@ stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
 ```
 
 With this linear combination of only three scores (out of six), we were able to significantly boost the detection to $\approx0.96$, which implies that combining both methods is of worth for a detection using (inhomogeneous) confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting. Using four or more scores goes beyond $0.97$.
+
+
+## Pattern IV
+
+This pattern emerged only recently, but we have some options of scoring the projects against it. Again, we have (derived) confidence intervals for the variables `REQ` and `DEV`. Then we have derivatives for all variables. Scoring based on CIs are hence applicable, but only for the first two variables. Other than that, any method based on comparing two variables is applicable. In figure \ref{fig:p4-deriv-signals} we show all projects against the fourth pattern.
+
+```{r p4-deriv-signals, echo=FALSE, fig.height=8, fig.cap="All projects' derivative variables plotted against the derivatives of the two variables req\\% and dev\\% of pattern type I. The polynomial degree used here was 3.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(2,1))
+polyDegree <- 3
+
+
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, max(d1_vals_req(0))), col = "#00000000",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+curve(req_d1_p4, 0, 1, col="red", lwd=2, add = TRUE)
+curve(req_ci_lower_d1_p4, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
+curve(req_ci_upper_d1_p4, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
+
+polygon(
+  x = polygon_x,
+  y = c(sapply(X = polygon_x[1:500], FUN = function(x) max(d1_vals_req(x=x))),
+        sapply(X = polygon_x[501:1000], FUN = function(x) min(d1_vals_req(x=x)))),
+  col = "#ff000033",
+  border = NA)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  
+  X <- 1:nrow(all_signals[[pId]]$data)
+  X <- (X - min(X)) / (max(X) - min(X))
+  Y_req <- cumsum(all_signals[[pId]]$data$req) / sum(all_signals[[pId]]$data$req)
+  
+  poly_req <- stats::lm(Y_req ~ stats::poly(x = X, degree = polyDegree))
+  req_tempf <- function(x) stats::predict(poly_req, newdata = data.frame(X = x))
+  req_tempf_d1 <- function(x) func_d1(f = req_tempf, x = x)
+  
+  curve(req_tempf_d1, 0, 1, col=myCol[i], lty=2, add=TRUE)
+}
+
+legend(0.75, max(d1_vals_req(0)) - 0.02, legend = c("req%", "req% CI", paste0("Pr. ", 1:9)),
+       bg="transparent", cex = 3/4,
+       col = c("blue", "blue", myCol[1:9]), lty = c(1, 2, rep(2, 9)), lwd = c(3, 2, rep(1.5, 9)))
+
+
+
+plot(x=0, y=0, xlim = c(0,1), ylim = c(0, max(d1_vals_dev(1))), col = "#00000000",
+     xlab = "Relative time", ylab = "Rate of change")
+grid()
+curve(dev_d1_p4, 0, 1, col="blue", lwd=2, add = TRUE)
+curve(dev_ci_lower_d1_p4, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
+curve(dev_ci_upper_d1_p4, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
+
+polygon(
+  x = polygon_x,
+  y = c(sapply(X = polygon_x[1:500], FUN = function(x) max(d1_vals_dev(x=x))),
+        sapply(X = polygon_x[501:1000], FUN = function(x) min(d1_vals_dev(x=x)))),
+  col = "#0000FF33",
+  border = NA)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  
+  X <- 1:nrow(all_signals[[pId]]$data)
+  X <- (X - min(X)) / (max(X) - min(X))
+  Y_dev <- cumsum(all_signals[[pId]]$data$dev) / sum(all_signals[[pId]]$data$dev)
+  
+  poly_dev <- stats::lm(Y_dev ~ stats::poly(x = X, degree = polyDegree))
+  dev_tempf <- function(x) stats::predict(poly_dev, newdata = data.frame(X = x))
+  dev_tempf_d1 <- function(x) func_d1(f = dev_tempf, x = x)
+  
+  curve(dev_tempf_d1, 0, 1, col=myCol[i], lty=2, add=TRUE)
+}
+
+legend(0.01, max(d1_vals_dev(1)) - 0.02, legend = c("dev%", "dev% CI", paste0("Pr. ", 1:9)),
+       bg="transparent", cex = 3/4,
+       col = c("blue", "blue", myCol[1:9]), lty = c(1, 2, rep(2, 9)), lwd = c(3, 2, rep(1.5, 9)))
+```
+
+
+### Scoring based on the distance to reference
+
+This method is applicable because we only do have the confidence intervals' boundaries, and a homogeneous surface. The derivative of the respective variable is the expectation for the rate of change, and the confidence intervals demarcate a minimum and maximum expectation. This applies only to the variables `REQ` and `DEV`.
+
+
+```{r}
+p4_compute_areadist <- function(polyDegree = NA_real_, intFrom = 0, intTo = 1) {
+  d1_vals <- function(f, f_low, f_upp, x, useMax = TRUE) {
+    sapply(X = x, FUN = function(x_) {
+      temp <- c(f(x_), f_low(x_), f_upp(x_))
+      if (useMax) max(temp) else min(temp)
+    })
+  }
+  
+  doWithParallelCluster(numCores = length(all_signals), expr = {
+    library(foreach)
+    
+    foreach::foreach(
+      pId = names(all_signals),
+      .inorder = TRUE,
+      .combine = rbind,
+      .packages = c("cobs"),
+      .export = c("all_signals", "poly_autofit", "L_areadist_p3_avg",
+                  "func_d1", "req", "dev", "req_d1_p4", "dev_d1_p4",
+                  "req_poly", "dev_poly", "req_ci_upper_d1_p4", "dev_ci_upper_d1_p4",
+                  "req_ci_lower_d1_p4", "dev_ci_lower_d1_p4")
+    ) %dopar% {
+      X <- 1:nrow(all_signals[[pId]]$data)
+      X <- (X - min(X)) / (max(X) - min(X))
+      Y_req <- cumsum(all_signals[[pId]]$data$req) / sum(all_signals[[pId]]$data$req)
+      Y_dev <- cumsum(all_signals[[pId]]$data$dev) / sum(all_signals[[pId]]$data$dev)
+      
+      poly_req <- NA
+      poly_dev <- NA
+      req_tempf <- NA
+      dev_tempf <- NA
+      if (is.na(polyDegree)) {
+        poly_req <- poly_autofit(xData = X, yData = Y_req, maxDegree = floor(length(X) / 2))
+        req_tempf <- function(x) stats::predict(poly_req, newdata = data.frame(xData = x))
+        poly_dev <- poly_autofit(xData = X, yData = Y_req, maxDegree = floor(length(X) / 2))
+        dev_tempf <- function(x) stats::predict(poly_dev, newdata = data.frame(xData = x))
+      } else {
+        poly_req <- tryCatch(expr = {
+          stats::lm(Y_req ~ stats::poly(x = X, degree = polyDegree))
+        }, error = function(cond) NA)
+        req_tempf <- function(x) stats::predict(poly_req, newdata = data.frame(X = x))
+        
+        poly_dev <- tryCatch(expr = {
+          stats::lm(Y_dev ~ stats::poly(x = X, degree = polyDegree))
+        }, error = function(cond) NA)
+        dev_tempf <- function(x) stats::predict(poly_dev, newdata = data.frame(X = x))
+      }
+      
+      if (!is.na(poly_req) && !is.na(poly_dev)) {
+        req_d1 <- function(x) func_d1(f = req_tempf, x = x)
+        dev_d1 <- function(x) func_d1(f = dev_tempf, x = x)
+        
+        req_upper_tempf <- function(x) d1_vals(
+          f = req_d1_p4, f_low = req_ci_lower_d1_p4, f_upp = req_ci_upper_d1_p4, x = x, useMax = TRUE)
+        req_lower_tempf <- function(x) d1_vals(
+          f = req_d1_p4, f_low = req_ci_lower_d1_p4, f_upp = req_ci_upper_d1_p4, x = x, useMax = FALSE)
+        
+        dev_upper_tempf <- function(x) d1_vals(
+          f = dev_d1_p4, f_low = dev_ci_lower_d1_p4, f_upp = dev_ci_upper_d1_p4, x = x, useMax = TRUE)
+        dev_lower_tempf <- function(x) d1_vals(
+          f = dev_d1_p4, f_low = dev_ci_lower_d1_p4, f_upp = dev_ci_upper_d1_p4, x = x, useMax = FALSE)
+        
+        `rownames<-`(data.frame(
+          REQ = L_areadist_p3_avg(
+            x1 = intFrom, x2 = intTo, f = req_d1, gbar = req_d1_p4, use2ndVariant = TRUE,
+            CI_upper = req_upper_tempf, CI_lower = req_lower_tempf)["dist"],
+          REQ_deg = length(stats::coef(poly_req)) - 1,
+          
+          DEV = L_areadist_p3_avg(
+            x1 = intFrom, x2 = intTo, f = dev_d1, gbar = dev_d1_p4, use2ndVariant = TRUE,
+            CI_upper = dev_upper_tempf, CI_lower = dev_lower_tempf)["dist"],
+          REQ_dev = length(stats::coef(poly_dev)) - 1,
+          
+          begin = intFrom,
+          end = intTo
+        ), pId)
+      }
+    }
+  })
+}
+```
+
+```{r echo=FALSE}
+p4_area_scores <- loadResultsOrCompute(file = "../results/p4_area_scores.rds", computeExpr =  {
+  temp <- NULL
+  for (pd in c(2, 3, 4, 5, 6, 8, 10, NA_real_)) {
+    temp <- rbind(temp, p4_compute_areadist(polyDegree = pd))
+    print(paste0("Finished computing for degree=", pd))
+  }
+  temp
+})
+```
+
+```{r echo=FALSE}
+p4_area_scores_corr <- NULL
+
+for (pd in c(2, 3, 4, 5, 6, 8, 10, NA_real_)) {
+  temp <- if (is.na(pd)) {
+    p4_area_scores[p4_area_scores$REQ_deg > 10, ]
+  } else {
+    p4_area_scores[p4_area_scores$REQ_deg == pd, ]
+  }
+  temp <- temp[order(rownames(temp)), ]
+  
+  p4_area_scores_corr <- rbind(p4_area_scores_corr, data.frame(
+    deg = if (is.na(pd)) paste0(range(temp$REQ_deg, temp$DEV_deg), collapse = "-") else pd,
+    corr_REQ = cor(x = ground_truth$consensus_score, y = temp[, "REQ"]),
+    corr_DEV = cor(x = ground_truth$consensus_score, y = temp[, "DEV"])
+  ))
+}
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  p4_area_scores_corr
+} else {
+  knitr::kable(
+    x = p4_area_scores_corr,
+    booktabs = TRUE,
+    caption = "",
+    label = "p4-area-scores-corr"
+  )
+}
+```
+
+In table \ref{tab:p4-area-scores-corr} we can clearly see how the degree of the polynomial influences the correlation with the ground truth. Note that the degrees $2$ and $>10$ are very likely to under- resp. over-fit the data, and those should not be used in practice.
+
+
+```{r echo=FALSE}
+p4_area_scores_partial <- loadResultsOrCompute(file = "../results/p4_area_scores_partial.rds", computeExpr =  {
+  temp <- NULL
+  for (pd in c(2, 3, 5, 8, NA_real_)) {
+    for (end in c(1/3, 1/2, 2/3)) {
+      temp <- rbind(temp, p4_compute_areadist(polyDegree = pd, intTo = end))
+    }
+    print(paste0("Finished computing for degree=", pd))
+  }
+  temp
+})
+```
+
+```{r echo=FALSE}
+p4_area_scores_partial_corr <- NULL
+
+for (pd in c(2, 3, 5, 8, NA_real_)) {
+  for (end in c(1/3, 1/2, 2/3)) {
+    temp <- if (is.na(pd)) {
+      p4_area_scores_partial[p4_area_scores_partial$REQ_deg > 10 & p4_area_scores_partial$end == end, ]
+    } else {
+      p4_area_scores_partial[p4_area_scores_partial$REQ_deg == pd & p4_area_scores_partial$end == end, ]
+    }
+    temp <- temp[order(rownames(temp)), ]
+    
+    p4_area_scores_partial_corr <- rbind(p4_area_scores_partial_corr, data.frame(
+      deg = if (is.na(pd)) paste0(range(temp$REQ_deg, temp$DEV_deg), collapse = "-") else pd,
+      end = round(min(temp$end), 2),
+      corr_REQ = cor(x = ground_truth$consensus_score, y = temp[, "REQ"]),
+      corr_DEV = cor(x = ground_truth$consensus_score, y = temp[, "DEV"])
+    ))
+  }
+}
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  p4_area_scores_partial_corr
+} else {
+  knitr::kable(
+    x = p4_area_scores_partial_corr,
+    booktabs = TRUE,
+    caption = "",
+    label = "p4-area-scores-partial-corr"
+  )
+}
+```
+
+
+### Correlation between curves
+
+Here we will compare each project's variable with the corresponding variable from the fourth pattern. We will take samples from either, pattern and variable, at the same $x$, and then compute the sample correlation. This is a very simple but efficient test. Also, it is subject to user-defined intervals, i.e., we do not have to sample from project to project end. Note that this would probably not work for the first pattern, as it normalizes the variables at project end. Pattern IV however uses the rate of change, which is not affected by that.
+
+```{r}
+N <- 1e2
+polyDegree <- 5
+X_samp <- seq(from = 0, to = 1, length.out = N)
+
+p4_samples <- list(
+  REQ = req_d1_p4(X_samp),
+  DEV = dev_d1_p4(X_samp),
+  DESC = desc_d1_p4(X_samp))
+
+p4_corr <- NULL
+for (pId in names(all_signals)) {
+  
+  X <- 1:nrow(all_signals[[pId]]$data)
+  X <- (X - min(X)) / (max(X) - min(X))
+  Y_req <- cumsum(all_signals[[pId]]$data$req) / sum(all_signals[[pId]]$data$req)
+  Y_dev <- cumsum(all_signals[[pId]]$data$dev) / sum(all_signals[[pId]]$data$dev)
+  Y_desc <- cumsum(all_signals[[pId]]$data$desc) / max(cumsum(all_signals[[pId]]$data$dev))
+      
+  poly_req <- stats::lm(Y_req ~ stats::poly(x = X, degree = polyDegree))
+  req_tempf <- function(x) stats::predict(poly_req, newdata = data.frame(X = x))
+  req_tempf_d1 <- function(x) func_d1(f = req_tempf, x = x)
+  
+  poly_dev <- stats::lm(Y_dev ~ stats::poly(x = X, degree = polyDegree))
+  dev_tempf <- function(x) stats::predict(poly_dev, newdata = data.frame(X = x))
+  dev_tempf_d1 <- function(x) func_d1(f = dev_tempf, x = x)
+  
+  poly_desc <- stats::lm(Y_desc ~ stats::poly(x = X, degree = polyDegree))
+  desc_tempf <- function(x) stats::predict(poly_desc, newdata = data.frame(X = x))
+  desc_tempf_d1 <- function(x) func_d1(f = desc_tempf, x = x)
+        
+        
+  p4_corr <- rbind(p4_corr, `rownames<-`(data.frame(
+    REQ = stats::cor(p4_samples$REQ, req_tempf_d1(X_samp)),
+    DEV = stats::cor(p4_samples$DEV, dev_tempf_d1(X_samp)),
+    DESC = stats::cor(p4_samples$DESC, desc_tempf_d1(X_samp))
+  ), pId))
+}
+```
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  p4_corr
+} else {
+  knitr::kable(
+    x = p4_corr,
+    booktabs = TRUE,
+    caption = "Correlation of the derivatives with the derived project signals.",
+    label = "p4-corr"
+  )
+}
+```
+
+```{r}
+c(
+  REQ = cor(ground_truth$consensus_score, p4_corr$REQ),
+  DEV = cor(ground_truth$consensus_score, p4_corr$DEV),
+  DESC = cor(ground_truth$consensus_score, p4_corr$DESC, use = "pa")
+)
+```
+
+The correlations in table \ref{tab:p4-corr} are varying, but their correlation with the ground truth is mediocre, and in the case of `REQ` and `DESC` even negative. That means that computing the correlation of the derived data with the derived project signals is not a suitable detector. Our previous attempt using the distance in areas was much better.
+
+
+
+
+
+
+
+
+
 
 
 
