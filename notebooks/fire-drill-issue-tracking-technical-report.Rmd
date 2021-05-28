@@ -1040,7 +1040,37 @@ legend(.02, max(d1_vals_dev(1)) - 0.01, legend = c("upper CI", "lower CI", "dev%
 
 The next challenge lies in representing the data which, in this case, is cumulative time spent on issues. If we approximate functions in a _zero-hold_-fashion as we did so far, then the gradients of these have extreme steps, and are likely unusable. In the following we attempt a few techniques to approximate a cumulative variable using LOESS-smoothing, constrained B-splines non-parametric regression quantiles, and fitting of orthogonal polynomials. The latter two result in smooth gradients if the number of knots or the degree of the polynomials are kept low. In the following subsections we use the signals of the 3rd project as an example.
 
+
+### Using averaged bins
+
+In this approach we eliminate plateaus by aggregating all $x$ that have the same $y$, and moving $x$ by the amount of values that have the same $y$. Looking at the gradient in figure \ref{fig:p4-averaged-bins-d1}, it is still too extreme.
+
+```{r}
+temp <- table(p3_signals$data$`cum req`)
+prev_x <- 0
+x <- c()
+y <- c()
+for (i in 1:length(temp)) {
+  x <- c(x, prev_x + temp[[i]] / max(temp))
+  prev_x <- tail(x, 1)
+  y <- c(y, as.numeric(names(temp[i])))
+}
+```
+
+
+```{r p4-averaged-bins-d1, echo=FALSE, fig.height=3, fig.cap="The average-bin signal and its gradient.", fig.align="center", fig.pos="ht!"}
+
+par(mfrow=c(1,2))
+plot(x, y, type="l")
+tempf <- stats::approxfun(x = x, y = y)
+tempf1 <- function(x) func_d1(f = tempf, x = x)
+curve(tempf1, min(x), max(x))
+```
+
+
 ### Eliminate plateaus
+
+The cumulative variables have large plateaus, and the following is a test to eliminate them. However, this additional manipulation step should be skipped, if possible.
 
 In this test, we iterate over all values of the cumulative variable and only keep x/y pairs, when y increases. In figure \ref{fig:p4-no-plateaus} we compare the original cumulative variable against the one without plateaus, i.e., every $x_t>x_{t-1}$ (note that the unequal spread of $x$ in the first non-plateau plot is deliberately ignored in the figure).
 
@@ -1059,97 +1089,107 @@ barplot(height = y)
 barplot(height = y, width = diff(x))
 ```
 
-Figures \ref{fig:p4-no-plateaus-smooth} and \ref{fig:p4-no-plateaus-smooth-d1} show the non-plateau signal, its LOESS-smoothed version, and the derivative of the smoothed version.
 
-```{r p4-no-plateaus-smooth, echo=FALSE, fig.height=3, fig.cap="The non-plateau signal on the left, and its LOESS-smoothed version (span=0.4) on the right.", fig.align="center", fig.pos="ht!"}
+### LOESS smoothing
+
+First we define a helper function for smoothing signals using LOESS. It will also help us to scale and translate the resulting function into a specific support.
+
+
+```{r}
+smooth_signal_loess <- function(x, y, support = c(0, 1), span = .35, family = c("s", "g"), neval = 1e4) {
+  temp <- if (span <= 0) {
+    list(x = x, y = y)
+  } else {
+    loess.smooth(x = x, y = y, span = span, family = match.arg(family), evaluation = neval)
+  }
+  
+  stats::approxfun(
+    # translate and scale to [0,1], then scale and translate to desired support.
+    x = ((temp$x - min(temp$x)) / (max(temp$x) - min(temp$x))) * (support[2] - support[1]) + support[1],
+    # scale y together with x, this is important
+    y = temp$y / (max(temp$x) - min(temp$x)) * (support[2] - support[1]),
+    yleft = utils::head(temp$y, 1),
+    yright = utils::tail(temp$y, 1))
+}
+```
+
+
+```{r p4-no-plateaus-smooth, echo=FALSE, fig.height=7, fig.cap="Increasing LOESS-smoothing of the non-plateau signal and its resulting gradient (span=0 means no smoothing).", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(1,2))
-plot(x, y, type="l")
 
-temp <- loess.smooth(x = x, y = y, span = .5, family = "g", evaluation = 1e4)
-plot(temp$x,temp$y,type="l")
-
-#tempf <- stats::approxfun(x = seq(0, max(x), length.out = length(temp$x)), y = temp$y)
-tempf <- stats::approxfun(
-  x = (temp$x - min(temp$x)) / (max(temp$x - min(temp$x))),
-  y = temp$y / (max(temp$x - min(temp$x))))
-temps <- Signal$new(func = tempf, name = "a", support = c(0, 1), isWp = TRUE)
-```
-
-
-```{r p4-no-plateaus-smooth-d1, echo=FALSE, fig.height=3, fig.cap="The LOESS-smoothed signal and its derivative.", fig.align="center", fig.pos="ht!"}
-temps$plot(show1stDeriv = TRUE, showSignal = FALSE)# + ylim(c(-2,2))
-```
-
-From Figure \ref{fig:p4-no-plateaus-smooth-d1} we can observe that the gradient is probably acceptable for means of comparison, but the real problem lies in its values: The co-domain appears to go up close to $100$, which is a huge slope that is not found in the derived pattern. There the maximum observed slopes are $\approx5$. Spans $<0.4$ exacerbate the problem with the gradient, and higher values result in too strong smoothing. Attempting the same using just the cumulative data including the plateaus results in extreme-value gradients, too.
-
-
-### Using averaged bins
-
-In this approach we eliminate plateaus by aggregating all $x$ that have the same $y$, and moving $x$ by the amount of values that have the same $y$. Looking at the gradient in figure \ref{fig:p4-averaged-bins-d1}, it is still too extreme.
-
-```{r p4-averaged-bins-d1, fig.height=2.5, fig.cap="The average-bin signal and its gradient.", fig.align="center", fig.pos="ht!"}
-temp <- table(p3_signals$data$`cum req`)
-prev_x <- 0
-x <- c()
-y <- c()
-for (i in 1:length(temp)) {
-  x <- c(x, prev_x + temp[[i]] / max(temp))
-  prev_x <- tail(x, 1)
-  y <- c(y, as.numeric(names(temp[i])))
+templ <- list()
+for (idx in 1:9) {
+  span <- c(0, seq(from = 0.2, by = 0.05, length.out = 8))[idx]
+  templ[[idx]] <- Signal$new(func = smooth_signal_loess(
+    x = 1:nrow(p3_signals$data),
+    y = cumsum(p3_signals$data$req),# / sum(p3_signals$data$req),
+    span = span), name = "P3 Req", support = c(0,1), isWp = TRUE)$plot(show1stDeriv = span > 0) + ylim(0, 1.4) + labs(subtitle = paste0("span=", span))
 }
 
-plot(x, y, type="l")
-tempf <- stats::approxfun(x = x, y = y)
+ggpubr::ggarrange(
+  plotlist = templ,
+  ncol = 3, nrow = 3)
 ```
 
 
-```{r echo=FALSE, fig.height=3.5, fig.align="center", fig.pos="ht!"}
-temps <- Signal$new(func = tempf, name = "dummy", support = range(x), isWp = TRUE)
-temps$plot(show1stDeriv = TRUE)
-```
+In figure \ref{fig:p4-no-plateaus-smooth} we smooth raw project data, i.e., we do __not__ use the non-plateau data or data from averaged bins, but rather the cumulative variable as-is, even __without normalization__, to demonstrate the advantages of this fourth pattern. In the top-left plot we focus on showing the raw signal. The extent of its gradient is well beyond the other (cf. figure \ref{fig:p4-averaged-bins-d1}), smoothed versions. With increasing smoothing-span, both the signal and even more so its gradient become smooth. For our concern, which is the identification of a trend regarding the rate of change, I would say that a span in the range $[0.2,0.45]$ is probably most useful, so the default was selected to be $0.35$, as it smoothes out many of the local peaks, while still preserving the important characteristics of the gradient (rate of change). However, everything $\geq0.2$ appears to be applicable. Note that spans below that often result in errors (typically around $0.15$ and below), so I do not recommend going below $0.2$.
+
+However, the smoothing-span should be chosen according to the intended application. For example, we can compute a score based on the area between the gradient and its expected value. Here, a less smooth gradient should be preferred as it conserves more details. If the application however were, e.g., to compute a correlation, and the curve used for comparison is smooth, then the span should be chosen accordingly higher ($\geq0.4$) to get usable results.
+
 
 ### Constrained B-splines non-parametric regression quantiles
 
-.. or COBS, estimates (fits) a smooth function using B-splines through some "knots". In figure \ref{fig:p4-cobs-splines} we are attempting fitting with $[3,10]$ knots. The number of knots should probably not exceed $4$ or $5$ for the gradient to be useful, as otherwise it gets too many modes.
+.. or COBS, estimates (fits) a smooth function using B-splines through some "knots". In figure \ref{fig:p4-cobs-splines} we are attempting fitting with $[3,11]$ knots. The number of knots should probably not exceed $4$ or $5$ for the gradient to be useful, as otherwise it gets too many modes. However, we can clearly see that there is no good compromise. Too few knots result in too smooth a signal and gradient, and everything with $5$ knots or more is too rough an approximation, too.
 
 ```{r p4-cobs-splines, fig.height=7, fig.cap="Fitted splines with different number of knots and their derivative.", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(4,4))
 
 X <- 1:nrow(p3_signals$data)
+Y <- p3_signals$data$`cum req` / (max(X) - min(X))
+X <- X / (max(X) - min(X))
+templ <- list()
 
-for (i in 1:8) {
-  temp <- cobs::cobs(
-    x = X,
-    y = p3_signals$data$`cum req`,
-    nknots = i+2,
-    print.mesg = FALSE,
-    print.warn = FALSE
-  )
-  
-  tempf <- function(x) stats::predict(object = temp, z = x)[, "fit"]
-  curve(tempf, min(X), max(X), main = paste0("knots=", i+2))
-  tempf1 <- function(x) pracma::fderiv(f = tempf, x = x)
-  curve(tempf1, min(X), max(X), main = paste0("deriv,knots=", i+2))
+for (i in 1:9) {
+  templ[[i]] <- (function() {
+    temp <- cobs::cobs(x = X, y = Y, nknots = i + 2, print.mesg = FALSE, print.warn = FALSE)
+    Signal$new(
+      func = function(x) stats::predict(object = temp, z = x)[, "fit"],
+      name = "P3 Req", support = range(X), isWp = TRUE)$plot(
+        show1stDeriv = TRUE) + labs(subtitle = paste0("nknots=", i + 2))
+  })()
 }
+
+ggpubr::ggarrange(
+  plotlist = templ,
+  ncol = 3, nrow = 3)
 ```
 
 ### Orthogonal polynomials
 
-Using a varying degree, we fit polynomials to the data in order to obtain a truly smooth curve. This technique always results in smooth approximations both for the signal and its gradient. In figure \ref{fig:p4-polynomials-d1} we observe how the derivative captures more and more nuances of the signal, starting from a degree of approx. $4$. For our tests with this pattern later, I therefore do recommend using polynomials of degree $3$, because the true purpose of all this is to estimate the non-linear trend for the variable and its rate of change.
+Using a varying degree, we fit polynomials to the data in order to obtain a truly smooth curve. This technique always results in smooth approximations both for the signal and its gradient (unlike COBS). In figure \ref{fig:p4-polynomials-d1} we observe how the derivative captures more and more nuances of the signal, starting from a degree of approx. $4$. For our tests with this pattern later, polynomials might be an alternative to LOESS-smoothed polynomials. I do recommend using these here polynomials of degree $\geq3$, because the true purpose of all this is to estimate the non-linear trend for the variable and its rate of change.
 
 
 ```{r p4-polynomials-d1, fig.height=7, fig.cap="Fitted polynomials and their first derivative using varying degrees of freedom.", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(4,4))
-Y <- p3_signals$data$`cum req`
-use_degs <- c(2, 3, 4, 5, 8, 12, 19, length(stats::coef(poly_autofit_max(x=X, y=Y))) - 1)
 
-for (ud in use_degs) {
-  temp <- stats::lm(Y ~ poly(x = X, degree = ud))
-  tempf <- function(x) stats::predict(temp, newdata = data.frame(X=x))
-  curve(tempf, min(X), max(X), main = paste0("degree=", ud))
-  tempf1 <- function(x) pracma::fderiv(f = tempf, x = x)
-  curve(tempf1, min(X), max(X), main = paste0("deriv,degree=", ud))
+use_degs <- c(2, 3, 4, 5, 7, 10, 14, 19, length(stats::coef(poly_autofit_max(x = X, y = Y))) - 1)
+
+templ <- list()
+for (idx in 1:length(use_degs)) {
+  
+  templ[[idx]] <- (function() {
+    ud <- use_degs[idx]
+    temp <- stats::lm(Y ~ poly(x = X, degree = ud))
+    Signal$new(
+      func = function(x) stats::predict(temp, newdata = data.frame(X=x)),
+      name = "P3 Req", support = range(X), isWp = TRUE)$plot(
+        show1stDeriv = TRUE) + labs(subtitle = paste0("degree=", ud))
+  })()
 }
+
+ggpubr::ggarrange(
+  plotlist = templ,
+  ncol = 3, nrow = 3)
 ```
 
 \clearpage
