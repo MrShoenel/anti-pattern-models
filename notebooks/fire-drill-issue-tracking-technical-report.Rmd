@@ -837,7 +837,7 @@ CI_desc_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DESC,
 x <- seq(0, 1, length.out = 200)
 y <- seq(0, 1, length.out = 200)
 
-compute_z_p3avg <- function(varname) {
+compute_z_p3avg <- function(varname, x, y, interp = NA_real_) {
   # We cannot call outer because our functions are not properly vectorized.
   #z <- outer(X = x, Y = y, FUN = CI_req_p3avg)
   f <- if (varname == "REQ") {
@@ -854,29 +854,38 @@ compute_z_p3avg <- function(varname) {
       z[i, j] <- f(x = x[i], y = y[j])
     }
   }
-  z
+  
+  res <- list(x = x, y = y, z = z)
+  
+  if (!is.na(interp)) {
+    res <- fields::interp.surface.grid(obj = res, grid.list = list(
+      x = seq(from = min(x), to = max(x), length.out = interp),
+      y = seq(from = min(y), to = max(y), length.out = interp)))
+  }
+  
+  res
 }
 
 z_req <- loadResultsOrCompute(file = "../results/ci_p3avg_z_req.rds", computeExpr = {
-  compute_z_p3avg(varname = "REQ")
+  compute_z_p3avg(varname = "REQ", x = x, y = y)
 })
 z_dev <- loadResultsOrCompute(file = "../results/ci_p3avg_z_dev.rds", computeExpr = {
-  compute_z_p3avg(varname = "DEV")
+  compute_z_p3avg(varname = "DEV", x = x, y = y)
 })
 z_desc <- loadResultsOrCompute(file = "../results/ci_p3avg_z_desc.rds", computeExpr = {
-  compute_z_p3avg(varname = "DESC")
+  compute_z_p3avg(varname = "DESC", x = x, y = y)
 })
 ```
 
-Finally, we show the empirical confidence intervals in figures \ref{fig:p3-emp-cis} and \ref{fig:p3-emp-desc-cis}. Note that the minimum non-zero confidence is `r round(min(z_req[z_req>0]),6)`, while the maximum is $1$. Therefore, while we gradate the colors from $0$ to $1$, we slightly scale and transform the grid's non-zero values using the expression $0.9\times z+0.1$, to improve the visibility.
+Finally, we show the empirical confidence intervals in figures \ref{fig:p3-emp-cis} and \ref{fig:p3-emp-desc-cis}. Note that the minimum non-zero confidence is `r round(min(z_req$z[z_req$z>0]),6)`, while the maximum is $1$. Therefore, while we gradate the colors from $0$ to $1$, we slightly scale and transform the grid's non-zero values using the expression $0.9\times z+0.1$, to improve the visibility.
 
 ```{r p3-emp-cis, echo=FALSE, fig.height=8, fig.cap="The empirical confidence intervals for the two variables req\\% and dev\\%. Higher saturation of the color correlates with higher confidence. Projects with zero weight contribute to the CIs' boundaries, but not to the hyperplane.", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(2,1))
 
-z_req <- z_req * 0.9 + 0.1
-z_req[z_req == .1] <- 0
+temp <- z_req$z * 0.9 + 0.1
+temp[temp == .1] <- 0
 
-image(x = x, y = y, z = z_req, main = "Variable: REQ",
+image(x = z_req$x, y = z_req$y, z = temp, main = "Variable: REQ",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
       col = colorRampPalette(colors = c("#ffffff", "#ff0000"))(100), zlim = c(0,1))
 grid()
@@ -897,10 +906,10 @@ legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
 
 
 
-z_dev <- z_dev * 0.9 + 0.1
-z_dev[z_dev == .1] <- 0
+temp <- z_dev$z * 0.9 + 0.1
+temp[temp == .1] <- 0
 
-image(x = x, y = y, z = z_dev, main = "Variable: DEV",
+image(x = z_dev$x, y = z_dev$y, z = temp, main = "Variable: DEV",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
       col = colorRampPalette(colors = c("#ffffff", "#0000ff"))(100), zlim = c(0,1))
 grid()
@@ -922,12 +931,12 @@ legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
 
 ```{r p3-emp-desc-cis, echo=FALSE, fig.height=4, fig.cap="The empirical confidence intervals for the variable desc\\%. Higher saturation of the color correlates with higher confidence.", fig.align="center", fig.pos="ht!"}
 
-z_desc <- z_desc * 0.9 + 0.1
-z_desc[z_desc == .1] <- 0
+temp <- z_desc$z * 0.9 + 0.1
+temp[temp == .1] <- 0
 
-image(x = x, y = y, z = z_desc, main = "Variable: DESC",
+image(x = z_desc$x, y = z_desc$y, z = temp, main = "Variable: DESC",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
-      col = colorRampPalette(colors = c("#ffffff", "forestgreen"))(100), ylim = c(0, desc_ci_upper_p3avg(1) * 1.1), zlim = c(0, max(z_desc)))
+      col = colorRampPalette(colors = c("#ffffff", "forestgreen"))(100), ylim = c(0, desc_ci_upper_p3avg(1) * 1.1), zlim = c(0, max(temp)))
 grid()
 curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
 
