@@ -803,9 +803,10 @@ With this definition, we can compute a loss that is then based on a path that go
 ```{r}
 h_p3avg <- function(funclist, x, y, upper = TRUE) {
   unlist(lapply(X = funclist, FUN = function(f) {
-    val <- f(x)
-    if (val == 0) val <- sqrt(.Machine$double.eps)
-    if ((upper && val >= y) || (!upper && val <= y)) val else 0
+    sapply(X = f(x), function(val) {
+      if (val == 0) val <- sqrt(.Machine$double.eps)
+      if ((upper && val >= y) || (!upper && val <= y)) val else 0
+    })
   }))
 }
 
@@ -813,18 +814,25 @@ h_upper_p3avg <- function(funclist, x, y) h_p3avg(funclist = funclist, x = x, y 
 h_lower_p3avg <- function(funclist, x, y) h_p3avg(funclist = funclist, x = x, y = y, upper = FALSE)
 
 CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar, omega) {
-  if (y > f_ci_upper(x) || y < f_ci_lower(x)) {
-    return(0)
-  }
+  stopifnot(length(x) == length(y))
   
-  gbarval <- gbar(x)
-  hval <- if (gbarval < y) {
-    h_upper_p3avg(funclist = funclist, x = x, y = y)
-  } else {
-    h_lower_p3avg(funclist = funclist, x = x, y = y)
-  }
-  
-  omega %*% hval / sum(omega)
+  sapply(X = seq_len(length.out = length(x)), FUN = function(idx) {
+    xi <- x[idx]
+    yi <- y[idx]
+    
+    if (yi > f_ci_upper(xi) || yi < f_ci_lower(xi)) {
+      return(0)
+    }
+    
+    gbarval <- gbar(xi)
+    hval <- if (gbarval < yi) {
+      h_upper_p3avg(funclist = funclist, x = xi, y = yi)
+    } else {
+      h_lower_p3avg(funclist = funclist, x = xi, y = yi)
+    }
+    
+    omega %*% hval / sum(omega)
+  })
 }
 
 CI_req_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_REQ, f_ci_upper = req_ci_upper_p3avg, f_ci_lower = req_ci_lower_p3avg, gbar = req_p3, omega = omega)
