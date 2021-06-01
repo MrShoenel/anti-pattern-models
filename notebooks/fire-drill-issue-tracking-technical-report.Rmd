@@ -969,22 +969,9 @@ Pattern IV explores the possibility of not using some pattern directly, but its 
 
 Pattern type IV thus is a __Meta-Process model__, and can be applied to any of the previously introduced patterns (which are process models). Generically speaking, it supports the transformation of variables and confidence interval boundaries (but not inhomogeneous confidence interval surfaces). By using any other pattern (process model), pattern type IV gets __instantiated__. For the remainder of this notebook, we will be instantiating the pattern type IV using pattern I. While this helps our demonstration purposes, pattern I is partially far off the real-world data, which means that we must expect mediocre results. In practice, one should use this meta pattern only with well-designed and/or data-enhanced or data-only patterns.
 
-If we were to derive for an _inhomogeneous_ confidence interval, the result would be a vector field that, for each pair of coordinates $x,y$, points into the direction of the largest change, which here means the direction into which the confidence would increase the most, on a cartesian coordinate system. This is exemplary shown in figure \ref{fig:p4-vectorfield}. However, at this point, it is not clear if and how this could be operationalized for a loss or a score, and needs more thinking.
-
-
-```{r p4-vectorfield, echo=FALSE, fig.height=6, fig.cap="The inhomogeneous confidence interval of the dev\\% variable and its vector field, pointing towards the largest increase in confidence for each pair of x/y coordinates.", fig.align="center", fig.pos="ht!"}
-
-pracma::vectorfield(fun = Vectorize(FUN = function(x,y) {
-    v <- CI_dev_p3avg(x, y)
-    if (v == 0) -Inf else -log(2*v)
-}), xlim = c(0, 1), ylim = c(0,1), n = 20, col = "#0000dd99", scale = .0175)
-curve(dev_p3, 0, 1, col = "blue", lwd = 2, add = TRUE)
-curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 2)
-curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 3)
-```
-
 
 For creating the first derivatives, we can use either, analytical expressions (if available) or numeric methods, such finite difference approaches. In the following, we use both, as we also actually have analytical expressions for some of the curves. The first pattern, represented by its derivatives, is shown in figure \ref{fig:p4-req-dev}.
+
 
 ```{r}
 func_d1 <- function(f, x, supp = c(0, 1)) {
@@ -1228,7 +1215,7 @@ ggpubr::ggarrange(
 
 \clearpage
 
-# Assessing the Goodness of Fit
+# Assessing the Goodness of Fit\label{sec:assess-gof}
 
 In the technical report for detecting the Fire Drill in source code, we had previously introduced a plethora of methods to assess the goodness of fit. However, here we introduce additional methods that can exploit __confidence intervals__, both of homogeneous and inhomogeneous nature.
 
@@ -1428,6 +1415,436 @@ CI_dev_p3avg(x = use_x, all_signals$Project4$DEV$get0Function()(use_x))
 ```
 
 At `x=0.8`, the average variable is at $\approx0.71$, the average confidence for the slice is $\approx0.19$, and the confidence of the evaluated variable (project 4, `DEV`) is at $\approx0.22$. This means that the ratio is in the interval $(0,\infty)$. A "perfect" ratio of $1.0$ would express that the tested variable is, on average, equal to the average confidence.
+
+
+# Early detection
+
+Many of the methods presented in the previous section \ref{sec:assess-gof} can also be used for early detection, by limiting (and re-scaling) the scores to the available interval. That means, that we would make a partial assessment of how well the process observed so far aligns with the process model in question. It only requires knowledge about at what point in time we are, i.e., $t_{\text{now}}$. Scores would then be computed over the interval $[0,t_{\text{now}}]$.
+
+The early detection can be split into two regions of interest:
+
+1.    What happened since project begin until now? Scores may also be computed over an arbitrary interval $[t_{\text{begin}},t_{\text{end}}]$. More generally, the limits can be chosen arbitrarily for most scores, as long as $t_{\text{begin}}<t_{\text{end}}$ and $t_{\text{end}}\leq t_{\text{now}}$.
+2.    What will be the probable future, starting from now until a chosen point in the future, $t_{\text{future}}$? Here, $t_{\text{end}}<t_{\text{future}}$ and the interval may be chosen arbitrarily.
+
+Early detection is widely applicable and can be, e.g., determined for each single variable separately. It may also be computed for derived variables, to make probabilistic statements about the expected _rate of change_.
+
+
+## Forecasting within Vector Fields
+
+If we were to derive for an _inhomogeneous_ confidence interval, the result would be a vector field that, for each pair of coordinates $x,y$, points into the direction of the largest change, which here means the direction into which the confidence would increase the most, on a cartesian coordinate system. This is exemplary shown in figure \ref{fig:example-vectorfield}. We suggest an operationalization in these ways:
+
+*   Using methods usually applied in time series forecasting, we have the means to determine the trends and probable path of a variable. Also, some of these methods will give as a confidence interval, which, over the vector field, is an area that may (partially) overlap.
+*   We can determine the total and average confidence of the vector field that is affected by the overlap. This supports assumptions about whether we are currently in or headed into regions with lower or higher confidence (where the confidence represents the degree to which a process model is present).
+*   We can determine the direction and strength of steepest increase of the confidence. The direction can be compared to the direction of the forecast. This may be exploited for making decisions that lead to heading away or into the confidence surface, depending on which choice is desirable. It also gives insights into the current projected trend.
+
+
+```{r example-vectorfield, echo=FALSE, fig.height=6, fig.cap="The inhomogeneous confidence interval of the dev\\% variable and its vector field, pointing towards the largest increase in confidence for each pair of x/y coordinates. Here we use a non-smooth surface.", fig.align="center", fig.pos="ht!"}
+
+pracma::vectorfield(fun = Vectorize(FUN = function(x,y) {
+    v <- CI_dev_p3avg(x, y)
+    if (v == 0) -Inf else -log(2 * v)
+}), xlim = c(0.4, 0.8), ylim = c(0.2,.8), n = 20, col = "#0000dd99", scale = .015)
+curve(dev_p3, 0, 1, col = "blue", lwd = 2, add = TRUE)
+curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 2)
+curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 3)
+```
+
+
+In figure \ref{fig:example-vectorfield} we show an example of a vector field that is non-smooth. In the following examples however, we use smoothed version of x/y-slices [@green1993nonparametric].
+
+
+```{r}
+CI_dev_smooth_slice_x <- function(y, nsamp = 100, deriv = 0) {
+  stopifnot(length(y) == 1)
+  
+  data_x <- seq(from = 0, to = 1, length.out = nsamp)
+  data_y <- sapply(X = data_x, FUN = function(xslice) {
+    CI_dev_p3avg(x = xslice, y = y)
+  })
+  pred_smooth <- suppressWarnings(expr = {
+    stats::smooth.spline(x = data_x, y = data_y)
+  })
+  
+  function(x) {
+    vals <- stats::predict(object = pred_smooth, deriv = deriv, x = x)$y
+    if (deriv == 0) {
+      vals[vals < 0] <- 0
+      vals[vals > 1] <- 1
+    }
+    vals
+  }
+}
+```
+
+```{r}
+CI_dev_smooth_slice_y <- function(x, nsamp = 100, deriv = 0) {
+  stopifnot(length(x) == 1)
+  
+  data_x <- seq(from = 0, to = 1, length.out = nsamp)
+  data_y <- sapply(X = data_x, FUN = function(yslice) {
+    CI_dev_p3avg(x = x, y = yslice)
+  })
+  pred_smooth <- suppressWarnings(expr = {
+    stats::smooth.spline(x = data_x, y = data_y)
+  })
+  
+  function(y) {
+    vals <- stats::predict(object = pred_smooth, deriv = deriv, x = y)$y
+    if (deriv == 0) {
+      vals[vals < 0] <- 0
+      vals[vals > 1] <- 1
+    }
+    vals
+  }
+}
+```
+
+Ideally, the x-slice of $y$ at $x$ returns the same value as the y-slice of $x$ at $y$. This is however only approximately true for the smoothed slices, so we return the mean of these two values and the actual value, to obtain a final smoothed $z$ value that is closest to the ground truth, i.e.,
+
+$$
+\begin{aligned}
+  \operatorname{Slice}^X(y),\;\operatorname{Slice}^Y(x)\dots&\;\text{horizontal/vertical}\;x\text{/}y\text{-slice,}
+  \\[1ex]
+  \operatorname{Slice}_{\text{smooth}}^X(y),\;\operatorname{Slice}_{\text{smooth}}^Y(x)\dots&\;\text{smoothed versions, such that}
+  \\[1ex]
+  \operatorname{Slice}^X(y)\approx\operatorname{Slice}_{\text{smooth}}^X(y)\;\land&\;\operatorname{Slice}^Y(x)\approx\operatorname{Slice}_{\text{smooth}}^Y(x)\;\text{,}
+  \\[1em]
+  \operatorname{CI}_{\text{smooth}}(x,y)=&\;\Big(\operatorname{CI}(x,y)\;+\;\operatorname{Slice}_{\text{smooth}}^X(y)\;+\;\operatorname{Slice}_{\text{smooth}}^Y(x)\Big)\div3\;\text{.}
+\end{aligned}
+$$
+
+```{r}
+CI_dev_smooth_p3avg <- Vectorize(function(x, y, nsamp = 100) {
+  stopifnot(length(x) == 1 && length(y) == 1)
+  
+  xsl <- CI_dev_smooth_slice_x(y = y, nsamp = nsamp)
+  ysl <- CI_dev_smooth_slice_y(x = x, nsamp = nsamp)
+  
+  mean(c(xsl(x = x), ysl(y = y), CI_dev_p3avg(x = x, y = y)))
+  
+},  vectorize.args = c("x", "y"))
+```
+
+
+The functions `CI_dev_smooth_slice_x()` and `CI_dev_smooth_slice_y()` can also return the derivative (gradient) of the slice, and we will use this when computing the direction and magnitude in each dimension. At every point $x,y$, we can obtain now two vectors pointing into the steepest increase for either dimension, i.e., $\overrightarrow{x},\overrightarrow{y}$.
+
+```{r}
+arrow_dir_smooth <- function(x, y) {
+  xsl <- CI_dev_smooth_slice_x(y = y, deriv = 1)
+  ysl <- CI_dev_smooth_slice_y(x = x, deriv = 1)
+  
+  c(x=x, y=y, x1 = xsl(x = x), y1 = ysl(y = y))
+}
+```
+
+```{r echo=FALSE}
+temp <- doWithParallelCluster(expr = {
+  g <- expand.grid(data.frame(
+    x = seq(0.4, 0.9, length.out=20),
+    y = seq(0.4, 0.8, length.out=20)
+  ))
+  
+  foreach::foreach(
+    idx = rownames(g),
+    .inorder = FALSE,
+    .combine = rbind
+  ) %dopar% {
+    p <- g[idx,]
+    
+    matrix(data = arrow_dir_smooth(x = p$x, y = p$y), nrow = 1)
+  }
+})
+```
+
+
+Finally, we compute a vector field based on a smoothed confidence surface, shown in figure \ref{fig:example-vectorfield-smooth}. Note that all arrows have the same length in this figure, such that it does not depend on the magnitude of the steepest increase they are pointing towards.
+
+
+```{r example-vectorfield-smooth, echo=FALSE, fig.height=6, fig.cap="Example vector field computed using a smoothed surface. We can clearly observe how the arrows point now properly towards the direction with steepest increase.", fig.align="center", fig.pos="ht!"}
+temp1 <- z_dev$z * 0.9 + 0.1
+temp1[temp1 == .1] <- 0
+temp1[temp1 > 0] <- -log(1 - temp1[temp1 > 0])
+
+image(x = z_dev$x, y = z_dev$y, z = temp1, main = "Variable: DEV",
+      xlab = "Relative time", ylab = "Relative cumulative time spent",
+      col = colorRampPalette(colors = c("#ffffff", "#0000ff"))(100),
+      zlim = c(0,1), xlim = c(0.4,0.9), ylim = c(0.4,0.6))
+grid()
+
+
+curve(dev_ci_upper_p3avg, 0, 1, add = TRUE, col = "blue", lty = 2)
+curve(dev_ci_lower_p3avg, 0, 1, add = TRUE, col = "blue", lty = 2)
+
+for (i in 1:length(all_signals)) {
+  pId <- names(all_signals)[i]
+  tempf <- all_signals[[pId]]$DEV$get0Function()
+  curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+for (i in 1:nrow(temp)) {
+  r <- temp[i, ]
+  to <- r[3:4]
+  if (r[2] < dev_ci_lower_p3avg(r[1]) || r[2] > dev_ci_upper_p3avg(r[1])) {
+    next
+  }
+  to <- to / max(abs(to)) * 0.01
+  arrows(x0 = r[1] + (if (to[1] < 0) abs(to[1]) else 0), y0 = r[2] + (if (to[2] < 0) abs(to[2]) else 0),
+         x1 = r[1] + (if (to[1] < 0) abs(to[1]) else 0) + to[1], y1 = r[2] + (if (to[2] < 0) abs(to[2]) else 0) + to[2], length = 0.05)
+}
+```
+
+We want to demonstrate the previously suggested methods using a section of the confidence surfaces in figures \ref{fig:example-vectorfield} and \ref{fig:example-vectorfield-smooth} and an example variable. We will be using the `DEV`-variable of project 5, and make a forecast from $0.65$ to $0.75$ in relative time. This also demonstrates another advantage of having modeled discrete variables in continuous time, as we are not required to make forecasts in discrete time either.
+
+### Average confidence in overlapped surface
+
+
+```{r}
+n_periods <- 10
+p5_signals <- all_signals$Project5
+pr5_dev <- p5_signals$DEV$get0Function()
+forecast_y <- sapply(X = seq(from = 0, to = 0.65, length.out = 65), FUN = pr5_dev)
+
+# Fit an EMA to the data and produce 80% and 95% confidence intervals:
+fch <- forecast::holt(y = forecast_y, h = 10)
+fch_x <- c(65, seq(from = 66, to = 65 + n_periods, by = 1)) / 100
+
+fch_mean <- stats::approxfun(x = fch_x, y = c(pr5_dev(0.65), as.vector(fch$mean)))
+fch_80_upper <- stats::approxfun(x = fch_x, y = c(pr5_dev(0.65), as.vector(fch$upper[,1])), yleft = 0, yright = 0)
+fch_80_lower <- stats::approxfun(x = fch_x, y = c(pr5_dev(0.65), as.vector(fch$lower[,1])), yleft = 0, yright = 0)
+fch_95_upper <- stats::approxfun(x = fch_x, y = c(pr5_dev(0.65), as.vector(fch$upper[,2])), yleft = 0, yright = 0)
+fch_95_lower <- stats::approxfun(x = fch_x, y = c(pr5_dev(0.65), as.vector(fch$lower[,2])), yleft = 0, yright = 0)
+```
+
+
+In figure \ref{fig:ed-avg-conf} we use the smoothed confidence surface again. We show a section of the variable `DEV` and its vector field, pointing towards the steepest increase of confidence at every $x,y$. Then, the course of project 5's `DEV` variable is shown until $0.65$, and forecast until $0.75$ (red line). The prediction confidence intervals are shown in lightgray (80%) and darkgray (95%).
+
+
+```{r ed-avg-conf, echo=FALSE, fig.cap="Overlap of empirical confidence surface and project 5 (variable: dev\\%). The 80\\% and 95\\% prediction confidence intervals are shown in light- and darkgray.", fig.align="center", fig.pos="ht!"}
+pracma::vectorfield(fun = Vectorize(FUN = function(x,y) {
+  # CI_dev_p3avg(x, y)
+  v <- if (y < dev_ci_lower_p3avg(x) || y > dev_ci_upper_p3avg(x)) 0 else CI_dev_smooth_p3avg(x, y)
+  if (v == 0) -Inf else -log(2 * v)
+}), xlim = c(0.55, 0.8), ylim = c(0.4, 0.9), n = 12, col = "#0000dd99", scale = .01)
+curve(dev_p3, 0, 1, col = "blue", lwd = 2, add = TRUE)
+curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 2)
+curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 3)
+
+curve(pr5_dev, 0, 0.65, col = "blue", lty = 2, lwd = 2, add = TRUE)
+curve(pr5_dev, 0.65, 0.75, col = "blue", lty = 1, lwd = 1, add = TRUE)
+curve(fch_mean, 0.65, 0.75, col = "red", lty = 1, lwd = 1, add = TRUE)
+curve(fch_80_upper, 0.65, 0.75, col="lightgrey", add = TRUE)
+curve(fch_80_lower, 0.65, 0.75, col="lightgrey", add = TRUE)
+curve(fch_95_upper, 0.65, 0.75, col="darkgrey", add = TRUE)
+curve(fch_95_lower, 0.65, 0.75, col="darkgrey", add = TRUE)
+
+polygon(
+  x = c(fch_x, rev(fch_x)),
+  y = c(fch_80_upper(fch_x), fch_95_upper(rev(fch_x))),
+  border = NA,
+  col = "#00000011"
+)
+
+polygon(
+  x = c(fch_x, rev(fch_x)),
+  y = c(fch_80_lower(fch_x), fch_95_lower(rev(fch_x))),
+  border = NA,
+  col = "#00000011"
+)
+
+polygon(
+  x = c(fch_x, rev(fch_x)),
+  y = c(fch_80_upper(fch_x), fch_80_lower(rev(fch_x))),
+  border = NA,
+  col = "#00000033"
+)
+
+legend(0.555, .89, legend = c("dev%", "dev% CI", "Pr. 5 dev%", "Pr. 5 actual", "Pr. 5 prediction"),
+       bg="white", col = c(rep("blue", 4), "red"), lty = c(1, 2, 2, 1, 1), lwd = c(3, 1.5, 2, 1.5, 1.5))
+```
+
+In order to calculate the average confidence in the area that overlaps with the vector field, we need a double integral. The upper 95% confidence interval is partially outside the vector field. Generally, we must not integrate areas that do not overlap. Therefore, we define a function $\operatorname{CI}_{\text{overlap}}(x,y)$ to help with that:
+
+$$
+\begin{aligned}
+  f_{\text{lower}}(x),f_{\text{upper}}(x)\dots&\;\text{functions for the lower/upper prediction confidence intervals,}
+  \\[1ex]
+  \operatorname{CI}_{\text{lower}}(x),\operatorname{CI}_{\text{upper}}(x)\dots&\;\text{lower/upper confidence boundaries for confidence surface,}
+  \\[1ex]
+  \operatorname{CI}_{\text{overlap}}(x,y)=&\;\begin{cases}
+    0,&\text{if}\;f_{\text{lower}}(x)<\operatorname{CI}_{\text{lower}}(x),
+    \\
+    0,&\text{if}\;f_{\text{upper}}(x)>\operatorname{CI}_{\text{upper}}(x),
+    \\
+    \operatorname{CI}(x,y),&\text{otherwise}
+  \end{cases}\;\text{,}
+  \\[1em]
+  \text{average confidence}\;=&\;\int_a^b\bigg[\int_{f_{\text{lower}}(x)}^{f_{\text{upper}}(x)}\,\operatorname{CI}_{\text{overlap}}(x,y)\times\big(f_{\text{upper}}(x)-f_{\text{lower}}(x)\big)^{-1}\,dy\bigg]\times(b-a)^{-1}\,dx\;\text{.}
+\end{aligned}
+$$
+
+The approximate value for 80% / 95% prediction confidence intervals for the concrete example is calculated as:
+
+```{r}
+average_confidence <- function(f_low, f_upp, CI_low, CI_upp, CI, lower, upper, maxEval = 15) {
+  cubature::cubintegrate(f = Vectorize(function(x) {
+    l <- f_low(x)
+    u <- f_upp(x)
+    cubature::cubintegrate(f = Vectorize(function(y) {
+      if (l < CI_low(x) || u > CI_upp(x)) 0 else CI(x = x, y = y)
+    }), lower = l, upper = u, maxEval = maxEval)$integral / (u - l)
+  }), lower = lower, upper = upper, maxEval = maxEval)$integral / (upper - lower)
+}
+```
+
+
+```{r}
+loadResultsOrCompute(file = "../results/ed_avgconf_80.rds", computeExpr = {
+  average_confidence(
+    f_low = fch_80_lower, f_upp = fch_80_upper,
+    CI_low = dev_ci_lower_p3avg, CI_upp = dev_ci_upper_p3avg,
+    CI = CI_dev_smooth_p3avg, # CI_dev_p3avg,
+    lower = 0.65, upper = 0.75)
+})
+```
+
+```{r}
+loadResultsOrCompute(file = "../results/ed_avgconf_95.rds", computeExpr = {
+  average_confidence(
+    f_low = fch_95_lower, f_upp = fch_95_upper,
+    CI_low = dev_ci_lower_p3avg, CI_upp = dev_ci_upper_p3avg,
+    CI = CI_dev_smooth_p3avg, # CI_dev_p3avg,
+    lower = 0.65, upper = 0.75)
+})
+```
+
+As expected, the average confidence in the overlap of the 95% prediction interval is a little lower.
+
+### Average direction of steepest confidence increase
+
+Similar to finding the average confidence in the overlapped surface, we may also determine the direction and strength of the steepest increase in confidence. For every point that is part of the overlapped area, we need to sum up the gradient in x- and y-direction. The resulting combined vector then gives the direction of the steepest increase.
+
+This is quite similar to how we computed the average confidence, and requires the following double integral:
+
+$$
+\begin{aligned}
+  x\text{/}y\;\text{total change}\;=&\;\int_a^b\bigg[\int_{f_{\text{lower}}(x)}^{f_{\text{upper}}(x)}\,\bigg\{\frac{\partial}{\partial\,x}\,\operatorname{CI}_{\text{overlap}}(x,y)\;,\;\frac{\partial}{\partial\,y}\,\operatorname{CI}_{\text{overlap}}(x,y)\bigg\}^\top\,dy\bigg]\,dx\;\text{,}
+  \\[1ex]
+  &\;\text{or using individual slices and an overlap-helper:}
+  \\[1em]
+  \operatorname{overlap}(x,y)=&\;\begin{cases}
+    0,&\text{if}\;f_{\text{lower}}(x)<\operatorname{CI}_{\text{lower}}(x),
+    \\
+    0,&\text{if}\;f_{\text{upper}}(x)>\operatorname{CI}_{\text{upper}}(x),
+    \\
+    1,&\text{otherwise,}
+  \end{cases}
+  \\[1ex]
+  x\;\text{total change}\;=&\;\int_a^b\bigg[\int_{f_{\text{lower}}(x)}^{f_{\text{upper}}(x)}\,\operatorname{overlap}(x,y)\times\frac{\partial}{\partial\,x}\,\operatorname{Slice}_{\text{smooth}}^X(y)\,dy\bigg]\,dx\;\text{, also similarly for}\;y\text{.}
+\end{aligned}
+$$
+
+```{r}
+total_change <- function(axis = c("x", "y"), f_low, f_upp, CI_low, CI_upp, lower, upper, maxEval = 15) {
+  use_x <- match.arg(axis) == "x"
+  
+  cubature::cubintegrate(f = Vectorize(function(x) {
+    l <- f_low(x)
+    u <- f_upp(x)
+    
+    cubature::cubintegrate(f = function(y) {
+      sapply(X = y, FUN = function(y_) {
+        if (l < CI_low(y_) || u > CI_upp(y_)) {
+          return(0)
+        }
+        val <- arrow_dir_smooth(x = x, y = y_)
+        if (use_x) val["x1"] else val["y1"]
+      })
+    }, lower = l, upper = u, maxEval = maxEval)$integral / (u - l)
+  }), lower = lower, upper = upper, maxEval = maxEval)$integral / (upper - lower)
+}
+```
+
+```{r}
+ed_tc_x <- loadResultsOrCompute(file = "../results/ed_total_change_x.rds", computeExpr = {
+  total_change(
+    f_low = fch_95_lower, f_upp = fch_95_upper,
+    CI_low = dev_ci_lower_p3avg, CI_upp = dev_ci_upper_p3avg,
+    lower = 0.65, upper = 0.75, axis = "x")
+})
+ed_tc_x
+```
+
+```{r}
+ed_tc_y <- loadResultsOrCompute(file = "../results/ed_total_change_y.rds", computeExpr = {
+  total_change(
+    f_low = fch_95_lower, f_upp = fch_95_upper,
+    CI_low = dev_ci_lower_p3avg, CI_upp = dev_ci_upper_p3avg,
+    lower = 0.65, upper = 0.75, axis = "y")
+})
+ed_tc_y
+```
+
+These results mean that the slope of the average change is $\approx$`r round(ed_tc_y / ed_tc_x, 2)` in the 95% confidence interval of the prediction that overlaps with the vector field of the `DEV`-variable's confidence surface. This is shown in figure \ref{fig:ed-avg-dir}.
+
+
+```{r ed-avg-dir, echo=FALSE, fig.cap="The average direction towards the steepest increase in confidence for the dev\\% variable in its confidence surface that is overlapped by the 95\\% confidence interval of the prediction. Note that the direction may change if computed over the 80\\% confidence interval.", fig.align="center", fig.pos="ht!"}
+pracma::vectorfield(fun = Vectorize(FUN = function(x,y) {
+  # CI_dev_p3avg(x, y)
+  v <- if (y < dev_ci_lower_p3avg(x) || y > dev_ci_upper_p3avg(x)) 0 else CI_dev_smooth_p3avg(x, y)
+  if (v == 0) -Inf else -log(2 * v)
+}), xlim = c(0.55, 0.8), ylim = c(0.4, 0.9), n = 12, col = "#0000dd99", scale = .01)
+curve(dev_p3, 0, 1, col = "blue", lwd = 2, add = TRUE)
+curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 2)
+curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 3)
+
+curve(pr5_dev, 0, 0.65, col = "blue", lty = 2, lwd = 2, add = TRUE)
+curve(pr5_dev, 0.65, 0.75, col = "blue", lty = 1, lwd = 1, add = TRUE)
+curve(fch_mean, 0.65, 0.75, col = "red", lty = 1, lwd = 1, add = TRUE)
+curve(fch_80_upper, 0.65, 0.75, col="lightgrey", add = TRUE)
+curve(fch_80_lower, 0.65, 0.75, col="lightgrey", add = TRUE)
+curve(fch_95_upper, 0.65, 0.75, col="darkgrey", add = TRUE)
+curve(fch_95_lower, 0.65, 0.75, col="darkgrey", add = TRUE)
+
+polygon(
+  x = c(fch_x, rev(fch_x)),
+  y = c(fch_80_upper(fch_x), fch_95_upper(rev(fch_x))),
+  border = NA,
+  col = "#00000011"
+)
+
+polygon(
+  x = c(fch_x, rev(fch_x)),
+  y = c(fch_80_lower(fch_x), fch_95_lower(rev(fch_x))),
+  border = NA,
+  col = "#00000011"
+)
+
+polygon(
+  x = c(fch_x, rev(fch_x)),
+  y = c(fch_80_upper(fch_x), fch_80_lower(rev(fch_x))),
+  border = NA,
+  col = "#00000033"
+)
+
+legend(0.555, .89, legend = c("dev%", "dev% CI", "Pr. 5 dev%", "Pr. 5 actual", "Pr. 5 prediction", "Avg. direction"),
+       bg="white", col = c(rep("blue", 4), "red", "purple"), lty = c(1, 2, 2, 1, 1, 1), lwd = c(3, 1.5, 2, 1.5, 1.5, 2))
+
+arrows(x0 = 0.65, x1 = 0.75, y0 = 0.65, y1 = 0.65 + 0.1 / ed_tc_x * ed_tc_y, lwd = 2, col = "purple")
+```
+
+Now we can use this information to calculate, e.g., an angle between the predicted variable and the average direction in the field. Depending on the case, one usually wants to either follow into the average direction of steepest increase or diverge from it. In our case of predicting the presence of the Fire Drill anti-pattern, we would want to move (stay) away from it.
+
+```{r}
+angle <- function(A, B, deg = TRUE) {
+  (A %*% B) / (sqrt(sum(A^2)) * sqrt(sum(B^2))) * (if (deg) 180 / pi else 1)
+}
+
+angle(B = c(.1, fch_mean(0.75) - fch_mean(0.65)), A = c(ed_tc_x, ed_tc_y))
+```
+
+The angle between the projected (predicted) `DEV`-variable of project 5 and the average direction of steepest increase in confidence is $\approx17.19^{\circ}$.
+
+
 
 
 
