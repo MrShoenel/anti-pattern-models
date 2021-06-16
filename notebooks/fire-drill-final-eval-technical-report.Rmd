@@ -95,7 +95,7 @@ $$
 $$
 
 
-However first, we will implement a continuous relative 1D version to test our approach. Let's generate some sample data that should be highly correlated. See how we deliberately have different means in order to dislocate both variables.
+However first, we will implement a continuous relative 1D version to test our approach. Let's generate some sample data that should be highly correlated, shown in figure \ref{fig:dens-example-data}. See how we deliberately have different means in order to dislocate both variables.
 
 
 ```{r}
@@ -106,11 +106,14 @@ b <- rnorm(500, mean = 10)
 
 dens_a <- density(a)
 dens_b <- density(b)
+dens_b$y <- -1 * dens_b$y
 
 f_a <- approxfun(x = dens_a$x, y = dens_a$y, yleft = 0, yright = 0)
 f_b <- approxfun(x = dens_b$x, y = dens_b$y, yleft = 0, yright = 0)
+```
 
-curve(f_a, min(c(dens_a$x, dens_b$x)), max(c(dens_a$x, dens_b$x)))
+```{r dens-example-data, echo=FALSE, fig.cap="The densities of both normally-distributed variables.", fig.align="center", fig.pos="ht!"}
+curve(f_a, min(c(dens_a$x, dens_b$x)), max(c(dens_a$x, dens_b$x)), ylim = range(c(dens_a$y, dens_b$y)))
 curve(f_b, min(c(dens_a$x, dens_b$x)), max(c(dens_a$x, dens_b$x)), add = TRUE)
 ```
 
@@ -119,6 +122,21 @@ As expected, the spatial difference in location does not influence the correlati
 ```{r}
 cor(dens_a$y, dens_b$y)
 ```
+
+Before we go further, we want to manually implement the coefficient and visualize the correlation vector. It is shown in figure \ref{fig:oned-corrvec}.
+
+```{r}
+corrvec_ab <- (dens_a$y - mean(dens_a$y)) * (dens_b$y - mean(dens_b$y)) /
+              (sqrt(sum((dens_a$y - mean(dens_a$y))^2)) * sqrt(sum((dens_b$y - mean(dens_b$y))^2)))
+
+sum(corrvec_ab)
+```
+
+
+```{r oned-corrvec, echo=FALSE, fig.cap="The one-dimensional correlation vector of the two discrete variables.", fig.align="center", fig.pos="ht!"}
+plot(corrvec_ab)
+```
+
 
 ### 1D continuous relative correlation
 
@@ -172,9 +190,9 @@ coef_rel_pearson_1d <- function(f, g, supp_f = c(0,1), supp_g = c(0,1)) {
 }
 ```
 
-Let's test using the previously generated data, density, and functions thereof:
+In figure \ref{fig:oned-corrfunc} we show the correlation of both continuous functions. Let's test using the previously generated data, density, and functions thereof:
 
-```{r}
+```{r oned-corrfunc, echo=FALSE, fig.cap="The one-dimensional correlation function of the two continuous variables.", fig.align="center", fig.pos="ht!"}
 temp <- coef_rel_pearson_1d(f = f_a, g = f_b, supp_f = range(dens_a$x), supp_g = range(dens_b$x))
 temp
 
@@ -189,16 +207,19 @@ c(mean(dens_a$y), mean(dens_b$y))
 c(temp$bar_f, temp$bar_g)
 ```
 
-Check, very similar. Next, we compute and plot the result of the numerator:
+Check, very similar. Next, we compute and plot the result of the numerator (cf. fig. \ref{fig:disc-num}):
 
 ```{r}
 sum((dens_a$y - mean(dens_a$y)) * (dens_b$y - mean(dens_b$y)))
+```
+
+```{r disc-num, echo=FALSE, fig.cap="The discrete values that make up the numerator, plotted over all indexes.", fig.align="center", fig.pos="ht!"}
 plot((dens_a$y - mean(dens_a$y)) * (dens_b$y - mean(dens_b$y)))
 ```
 
-The continuous version of the numerator is in the previously computed result. If we integrate it, we get the __mean__ of the function (since the area under the curve over the interval $[0,1]$ is always a mean), not the sum.
+The continuous version of the numerator is in the previously computed result. If we integrate it, we get the __mean__ of the function (since the area under the curve over the interval $[0,1]$ is always a mean), not the sum. The function for the continuous numerator is shown in figure \ref{fig:cont-num}.
 
-```{r}
+```{r cont-num, echo=FALSE, fig.cap="The relative function of the continuos numerator plotted over its support.", fig.align="center", fig.pos="ht!"}
 tempfff <- temp$fnum
 curve(tempfff, 0, 1)
 ```
@@ -209,19 +230,22 @@ In order to get the same result as we got from the previous summation, we need t
 cubature::cubintegrate(tempfff, 0, 1)$integral * length(a)
 ```
 
-Let's check some values as computed in the denominator for the two variables:
+Let's check some values as computed in the denominator for the two variables (cf. fig. \ref{fig:disc-denoms}):
 
 ```{r}
 c(
   sqrt(sum((dens_a$y - mean(dens_a$y))^2)),
   sqrt(sum((dens_b$y - mean(dens_b$y))^2)))
+```
 
+
+```{r disc-denoms, echo=FALSE, fig.cap="Plots of the continuous denominators for both data series.", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(2,1))
 plot((dens_a$y - mean(dens_a$y))^2)
 plot((dens_b$y - mean(dens_b$y))^2)
 ```
 
-The continuous version of the denominators is the following:
+The continuous version of the denominators is the following (cf. fig. \ref{fig:cont-denoms}):
 
 ```{r}
 tempf_a <- Vectorize(function(x) {
@@ -234,13 +258,16 @@ tempf_b <- Vectorize(function(x) {
   (f_b(transform_op(min(dens_b$x), max(dens_b$x), x = x)) - temp$bar_g)^2
 })
 
-par(mfrow=c(2,1))
-curve(tempf_a, 0, 1)
-curve(tempf_b, 0, 1)
-
 c(
   sqrt(cubature::cubintegrate(tempf_a, 0, 1)$integral * length(a)),
   sqrt(cubature::cubintegrate(tempf_b, 0, 1)$integral * length(b)))
+```
+
+
+```{r cont-denoms, echo=FALSE, fig.cap="Plots of the continuous denominators for both data series.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(2,1))
+curve(tempf_a, 0, 1)
+curve(tempf_b, 0, 1)
 ```
 
 ### 2D continuous relative correlation
@@ -327,7 +354,7 @@ tempcorr <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr.rds", computeEx
 tempcorr
 ```
 
-In order to show the correlation in three dimensions, we'll compute a grid:
+In order to show the correlation in three dimensions, we'll compute a grid, cf. fig. \ref{fig:twod-correlation-req-dev-persp}:
 
 ```{r}
 tempgrid <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr_grid.rds", computeExpr = {
@@ -335,7 +362,7 @@ tempgrid <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr_grid.rds", comp
 })
 ```
 
-```{r}
+```{r twod-correlation-req-dev-persp, echo=FALSE, fig.cap="Correlation between the variables req\\% and dev\\%, plotted perspectively. On the left, we look at the correlation from above, while from the right, it is seen from underneath.", fig.align="center", fig.pos="ht!"}
 suppressWarnings({
   par(mfrow=c(1,2))
   persp(tempgrid, zlim = c(-.03,.03), phi =  15, theta = -10, border = "#444444")
@@ -343,11 +370,11 @@ suppressWarnings({
 })
 ```
 
-From this example we see there is clearly both, positive and negative correlation. Here is the same as a colorful contour plot:
+From this example we see there is clearly both, positive and negative correlation. Here is the same as a colorful contour plot (fig. \ref{fig:twod-correlation-req-dev}) (correlation goes from blue/negative to red/postive, and no correlation is white):
 
-```{r}
-image(tempgrid, zlim = c(-.2,.2))
-contour(tempgrid, zlim = c(-.2,.2), add = TRUE)
+```{r twod-correlation-req-dev, echo=FALSE, fig.cap="Correlation between the variables req\\% and dev\\%, plotted spatially.", fig.align="center", fig.pos="ht!"}
+image(tempgrid, zlim = c(-.2,.2), col = colorRampPalette(colors = c("#0000ff", "#ffffff", "#ff0000"))(101)) # uneven number, so we have a true white for 0 correlation..
+contour(tempgrid, zlim = c(-.2,.2), add = TRUE, col = "#444444")
 ```
 
 
