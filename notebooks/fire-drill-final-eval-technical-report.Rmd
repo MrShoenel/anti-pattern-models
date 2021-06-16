@@ -1,0 +1,373 @@
+---
+title: "Technical Report: Final evaluation of Detecting the Fire Drill anti-pattern"
+author: "Sebastian Hönel"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
+output:
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
+  md_document:
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    variant: gfm
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+    df_print: kable
+  word_document: default
+header-includes:
+- \usepackage{bm}
+- \usepackage{mathtools}
+- \usepackage{xurl}
+---
+
+\newcommand*\mean[1]{\overline{#1}}
+\newcommand{\norm}[1]{\left\lvert\,#1\,\right\rvert}
+\newcommand{\infdiv}[2]{#1\;\|\;#2}
+\newcommand\argmax[1]{\underset{#1}{arg\,max}}
+\newcommand\argmin[1]{\underset{#1}{arg\,min}}
+
+
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+library(ggplot2)
+library(ggpubr)
+```
+
+# Introduction\label{tr:fire-drill-final-eval-technical-report}
+
+The purpose of this notebook to finally reconcile both of our approaches of detecting the Fire Drill anti-pattern, both using issue-tracking and source code data. The goal also to produce some consistent high-quality figures that will be used in the article.
+
+
+# Tools
+
+Here, we define some of the tools needed for this report.
+
+
+## $m$-dimensional relative continuous Pearson sample correlation coefficient
+
+First, here is the formula:
+
+$$
+\begin{aligned}
+  f,g\;\dots&\,m\text{-dimensional continuous variables},
+  \\[1ex]
+  \bm{\mathit{S}}_f,\bm{\mathit{S}}_g=&\;a_{i,j},b_{i,j}\in \mathbb{R}^{m\times2}\,\text{, supports for}\;f,g\;\text{along each dimension,}
+  \\[1ex]
+  \overline{f}=\mathrm{E}[f]=&\;\left[\int_{a_{1,1}}^{a_{1,2}}\dots\int_{a_{m,1}}^{a_{m,2}}\,f(x_1,\dots,x_m)\,dx_1\dots dx_m\right]
+  \\[0ex]
+  &\;\;\times\prod_{i=1}^{m}\,(a_{i,1}-a_{i,2})^{-1}\,\text{, (equivalently for}\;\overline{g}\;\text{using}\;\bm{\mathit{S}}_g\text{),}
+  \\[1em]
+  \operatorname{corr}(f,g)=&\frac{
+    \splitfrac{
+        \Big(f\big(\mathsf{T}(a_{1,1},a_{1,2},x_1),\,\dots,\,\mathsf{T}(a_{m,1},a_{m,2},x_m)\big)-\mathrm{E}[f]\Big)
+    }{
+        \times\Big(g\big(\mathsf{T}(b_{1,1},b_{1,2},x_1),\,\dots,\,\mathsf{T}(b_{m,1},b_{m,2},x_m)\big)-\mathrm{E}[g]\Big)
+    }
+  }{
+    \splitfrac{
+      \sqrt{\left[\int_0^1\dots\int_0^1\,(f(\mathsf{T}(a_{1,1},a_{1,2},x_1),\,\dots)-\mathrm{E}[f])^2\,dx_1\,\dots\,dx_m\right]}
+  }{
+      \times\sqrt{\left[\int_0^1\dots\int_0^1\,(g(\mathsf{T}(b_{1,1},b_{1,2},x_1),\,\dots)-\mathrm{E}[g])^2\,dx_1\,\dots\,dx_m\right]}
+    }
+  }\,\text{,}\label{eq:mdim-corr}
+  \\[1ex]
+  c_{fg}=&\;\int_0^1\dots\int_0^1\,corr(f,g)\,dx_1\,\dots\,dx_m\,\text{.}
+\end{aligned}
+$$
+
+
+However first, we will implement a continuous relative 1D version to test our approach. Let's generate some sample data that should be highly correlated. See how we deliberately have different means in order to dislocate both variables.
+
+
+```{r}
+set.seed(1)
+
+a <- rnorm(500, mean = 5)
+b <- rnorm(500, mean = 10)
+
+dens_a <- density(a)
+dens_b <- density(b)
+
+f_a <- approxfun(x = dens_a$x, y = dens_a$y, yleft = 0, yright = 0)
+f_b <- approxfun(x = dens_b$x, y = dens_b$y, yleft = 0, yright = 0)
+
+curve(f_a, min(c(dens_a$x, dens_b$x)), max(c(dens_a$x, dens_b$x)))
+curve(f_b, min(c(dens_a$x, dens_b$x)), max(c(dens_a$x, dens_b$x)), add = TRUE)
+```
+
+As expected, the spatial difference in location does not influence the correlation:
+
+```{r}
+cor(dens_a$y, dens_b$y)
+```
+
+### 1D continuous relative correlation
+
+Now we define a continuous relative version of the Pearson sample correlation coefficient:
+
+```{r}
+coef_rel_pearson_1d <- function(f, g, supp_f = c(0,1), supp_g = c(0,1)) {
+  # sum[ (x_i - bar_x) x (y_i - bar_y) ]
+  # ------------------------------------
+  # sqrt(sum[ (x_i - bar_x)^2 ]) x sqrt(...)
+  
+  transform_op <- function(a, b, x) a + x*b - x*a
+  
+  # Those work, too:
+  # bar_f <- cubature::cubintegrate(
+  #   f = f, lower = supp_f[1], upper = supp_f[2])$integral / (supp_f[2] - supp_f[1])
+  # bar_g <- cubature::cubintegrate(
+  #   f = g, lower = supp_g[1], upper = supp_g[2])$integral / (supp_g[2] - supp_g[1])
+  
+  bar_f <- cubature::cubintegrate(
+    f = function(x) f(transform_op(supp_f[1], supp_f[2], x)), lower = 0, upper = 1)$integral
+  bar_g <- cubature::cubintegrate(
+    f = function(x) g(transform_op(supp_g[1], supp_g[2], x)), lower = 0, upper = 1)$integral
+  
+  denom_f <- sqrt(cubature::cubintegrate(f = function(x) {
+    (f(transform_op(supp_f[1], supp_f[2], x)) - bar_f)^2
+  }, lower = 0, upper = 1)$integral)
+  denom_g <- sqrt(cubature::cubintegrate(f = function(x) {
+    (g(transform_op(supp_g[1], supp_g[2], x)) - bar_g)^2
+  }, lower = 0, upper = 1)$integral)
+  
+  fnum <- function(x) {
+    (f(transform_op(a = supp_f[1], b = supp_f[2], x = x)) - bar_f) *
+    (g(transform_op(a = supp_g[1], b = supp_g[2], x = x)) - bar_g)
+  }
+  
+  numerator <- cubature::cubintegrate(f = fnum, lower = 0, upper = 1)$integral
+  
+  list(
+    fnum = fnum,
+    bar_f = bar_f,
+    bar_g = bar_g,
+    denom_f = denom_f,
+    denom_g = denom_g,
+    numerator = numerator,
+    corr_func = function(x) {
+      fnum(x) / (denom_f * denom_g)
+    },
+    corr_fg = numerator / (denom_f * denom_g)
+  )
+}
+```
+
+Let's test using the previously generated data, density, and functions thereof:
+
+```{r}
+temp <- coef_rel_pearson_1d(f = f_a, g = f_b, supp_f = range(dens_a$x), supp_g = range(dens_b$x))
+temp
+
+tempfff <- temp$corr_func
+curve(tempfff, 0, 1)
+```
+
+We can see that the results are very similar, except for some decimals. Next, we compare some individual intermittent results, that should be very similar (discrete vs. continuous). Starting with the mean/expectation of either variable:
+
+```{r}
+c(mean(dens_a$y), mean(dens_b$y))
+c(temp$bar_f, temp$bar_g)
+```
+
+Check, very similar. Next, we compute and plot the result of the numerator:
+
+```{r}
+sum((dens_a$y - mean(dens_a$y)) * (dens_b$y - mean(dens_b$y)))
+plot((dens_a$y - mean(dens_a$y)) * (dens_b$y - mean(dens_b$y)))
+```
+
+The continuous version of the numerator is in the previously computed result. If we integrate it, we get the __mean__ of the function (since the area under the curve over the interval $[0,1]$ is always a mean), not the sum.
+
+```{r}
+tempfff <- temp$fnum
+curve(tempfff, 0, 1)
+```
+
+In order to get the same result as we got from the previous summation, we need to multiply by the number of elements in the discrete variable. The following result is very close to what we got from the summation:
+
+```{r}
+cubature::cubintegrate(tempfff, 0, 1)$integral * length(a)
+```
+
+Let's check some values as computed in the denominator for the two variables:
+
+```{r}
+c(
+  sqrt(sum((dens_a$y - mean(dens_a$y))^2)),
+  sqrt(sum((dens_b$y - mean(dens_b$y))^2)))
+
+par(mfrow=c(2,1))
+plot((dens_a$y - mean(dens_a$y))^2)
+plot((dens_b$y - mean(dens_b$y))^2)
+```
+
+The continuous version of the denominators is the following:
+
+```{r}
+tempf_a <- Vectorize(function(x) {
+  transform_op <- function(a, b, x) a + x*b - x*a
+  
+  (f_a(transform_op(min(dens_a$x), max(dens_a$x), x = x)) - temp$bar_f)^2
+})
+tempf_b <- Vectorize(function(x) {
+  transform_op <- function(a, b, x) a + x*b - x*a
+  (f_b(transform_op(min(dens_b$x), max(dens_b$x), x = x)) - temp$bar_g)^2
+})
+
+par(mfrow=c(2,1))
+curve(tempf_a, 0, 1)
+curve(tempf_b, 0, 1)
+
+c(
+  sqrt(cubature::cubintegrate(tempf_a, 0, 1)$integral * length(a)),
+  sqrt(cubature::cubintegrate(tempf_b, 0, 1)$integral * length(b)))
+```
+
+### 2D continuous relative correlation
+
+Finally, we'll implement the 2D version. Note that we even allow the support of $y$ (the 2nd dimension) to depend on $x$. Therefore, we pass in the support for the 2nd dimension as function. The following function works well, but the number of evaluations should be limited to get results in time (e.g., $50$). I tried 1000 evaluations and got very precise results, but it ran for 30 minutes. With 50 evaluations, results are similarly close. Remember that we calculate correlations, and there it is often sufficient to have precision up to 2-3 decimals.
+
+```{r}
+coef_rel_pearson_2d <- function(f, g, supp_f_d1 = c(0,1), supp_g_d1 = c(0,1), supp_f_d2 = function(x) c(0,1), supp_g_d2 = function(x) c(0,1), maxEval = 50) {
+  # sum[ (x_i - bar_x) x (y_i - bar_y) ]
+  # ------------------------------------
+  # sqrt(sum[ (x_i - bar_x)^2 ]) x sqrt(...)
+  
+  transform_op <- function(a, b, x) a + x*b - x*a
+  
+  double_int_mean <- function(func, supp_d1, supp_d2, maxEval = 50) {
+    cubature::cubintegrate(f = function(x) {
+      x1 <- transform_op(a = supp_d1[1], b = supp_d1[2], x = x)
+      d2_a <- supp_d2(x1)[1]
+      d2_b <- supp_d2(x1)[2]
+      
+      cubature::cubintegrate(f = function(y) {
+        y1 <- transform_op(a = d2_a, b = d2_b, x = y)
+        func(x1, y1)
+      }, lower = 0, upper = 1, maxEval = maxEval)$integral
+    }, lower = 0, upper = 1, maxEval = maxEval)$integral
+  }
+  
+  bar_f <- double_int_mean(func = f, supp_d1 = supp_f_d1, supp_d2 = supp_f_d2, maxEval = maxEval)
+  bar_g <- double_int_mean(func = g, supp_d1 = supp_g_d1, supp_d2 = supp_g_d2, maxEval = maxEval)
+  
+  
+  denom_f <- sqrt(double_int_mean(func = function(x, y) {
+    (f(x, y) - bar_f)^2
+  }, supp_d1 = supp_f_d1, supp_d2 = supp_f_d2))
+  denom_g <- sqrt(double_int_mean(func = function(x, y) {
+    (g(x, y) - bar_g)^2
+  }, supp_d1 = supp_g_d1, supp_d2 = supp_g_d2))
+  
+  fnum <- function(x, y) {
+    x1_f <- transform_op(a = supp_f_d1[1], b = supp_f_d1[2], x = x)
+    d2_f_a <- supp_f_d2(x1_f)[1]
+    d2_f_b <- supp_f_d2(x1_f)[2]
+    y1_f <- transform_op(a = d2_f_a, b = d2_f_b, x = y)
+    
+    x1_g <- transform_op(a = supp_g_d1[1], b = supp_g_d1[2], x = x)
+    d2_g_a <- supp_g_d2(x1_g)[1]
+    d2_g_b <- supp_g_d2(x1_g)[2]
+    y1_g <- transform_op(a = d2_g_a, b = d2_g_b, x = y)
+    
+    (f(x1_f, y1_f) - bar_f) * (g(x1_g, y1_g) - bar_g)
+  }
+  
+  numerator <- cubature::cubintegrate(f = function(x) {
+    cubature::cubintegrate(f = function(y) {
+      fnum(x, y)
+    }, lower = 0, upper = 1, maxEval = maxEval)$integral
+  }, lower = 0, upper = 1, maxEval = maxEval)$integral
+  
+  list(
+    fnum = fnum,
+    bar_f = bar_f,
+    bar_g = bar_g,
+    denom_f = denom_f,
+    denom_g = denom_g,
+    numerator = numerator,
+    corr_func = function(x, y) {
+      fnum(x, y) / (denom_f * denom_g)
+    },
+    corr_fg = numerator / (denom_f * denom_g)
+  )
+}
+```
+
+The correlation of these two two-dimensional variables is $\approx0.258$:
+
+```{r}
+CI_funcs <- readRDS(file = "../data/CI_p3avg_funcs.rds")
+CI_req_p3avg <- CI_funcs$CI_req_p3avg
+CI_dev_p3avg <- CI_funcs$CI_dev_p3avg
+
+tempcorr <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr.rds", computeExpr = {
+  coef_rel_pearson_2db(f = CI_req_p3avg, g = CI_dev_p3avg, maxEval = 250)
+})
+tempcorr
+```
+
+In order to show the correlation in three dimensions, we'll compute a grid:
+
+```{r}
+tempgrid <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr_grid.rds", computeExpr = {
+  outer(X = seq(0, 1, length.out = 75), Y = seq(0, 1, length.out = 75), FUN = tempcorr$fnum)
+})
+```
+
+```{r}
+suppressWarnings({
+  par(mfrow=c(1,2))
+  persp(tempgrid, zlim = c(-.03,.03), phi =  15, theta = -10, border = "#444444")
+  persp(tempgrid, zlim = c(-.03,.03), phi = -15, theta = -10, border = "#444444")
+})
+```
+
+From this example we see there is clearly both, positive and negative correlation. Here is the same as a colorful contour plot:
+
+```{r}
+image(tempgrid, zlim = c(-.2,.2))
+contour(tempgrid, zlim = c(-.2,.2), add = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
