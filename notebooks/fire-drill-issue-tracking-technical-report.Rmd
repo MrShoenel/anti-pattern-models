@@ -838,6 +838,12 @@ CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar, omega) {
 CI_req_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_REQ, f_ci_upper = req_ci_upper_p3avg, f_ci_lower = req_ci_lower_p3avg, gbar = req_p3, omega = omega)
 CI_dev_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DEV, f_ci_upper = dev_ci_upper_p3avg, f_ci_lower = dev_ci_lower_p3avg, gbar = dev_p3, omega = omega)
 CI_desc_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DESC, f_ci_upper = desc_ci_upper_p3avg, f_ci_lower = desc_ci_lower_p3avg, gbar = desc_p3, omega = omega)
+
+saveRDS(object = list(
+  CI_req_p3avg = CI_req_p3avg,
+  CI_dev_p3avg = CI_dev_p3avg,
+  CI_desc_p3avg = CI_desc_p3avg
+), file = "../data/CI_p3avg_funcs.rds")
 ```
 
 
