@@ -612,7 +612,7 @@ desc_p3 <- p3_weighted_var(name = "DESC", omega = omega)
 
 The computed weighted average-variables for `REQ` and `DEV` are shown in figure \ref{fig:avg-req-dev}.
 
-```{r avg-req-dev, echo=FALSE, fig.cap="The weighted average for the two variables req\\% and dev\\%.", fig.align="center", fig.pos="ht!"}
+```{r avg-req-dev, echo=FALSE, fig.cap="The weighted average for the three variables req\\%, dev\\% and desc\\%.", fig.align="center", fig.pos="ht!"}
 curve(req_p3, 0, 1, col = "red", xlab = "Relative time", ylab = "Cumulative time spent")
 curve(dev_p3, 0, 1, col = "blue", add = TRUE)
 curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
@@ -765,14 +765,10 @@ But first, we define a function $f:R^2\mapsto R$ to compute a CI with gradation.
 $$
 \begin{aligned}
   h_{\text{upper}}(f,x,y)=&\;\begin{cases}
-    \begin{cases}
-      f(x),&\text{if}\;f(x)\neq0,
-      \\
-      \epsilon,&\text{otherwise,}
-    \end{cases},&\text{if}\;f(x)\geq y,
-    \\
-    0,&\text{otherwise}
-  \end{cases}\;\text{, where}\;\epsilon\;\text{is small non-zero constant,}
+        1,&\text{if}\;f(x)\geq y,
+        \\
+        0,&\text{otherwise,}
+    \end{cases}
   \\
   \operatorname{CI}^+(x,y)=&\;\bm{\omega}^\top\cdot h_{\text{upper}}(\bm{f},x,y)\times\Big[\sum\bm{\omega}\Big]^{-1}\text{.}
 \end{aligned}
@@ -795,23 +791,52 @@ $$
       h_{\text{lower}}(\bm{f},x,y),&\text{otherwise}
     \end{cases}\Bigg]\times\Big[\sum\bm{\omega}\Big]^{-1},&\text{otherwise}
   \end{cases}\;\text{.}
+  \\
+  =&\;\begin{cases}
+    0,&\text{if}\;y>\operatorname{CI}_{\text{upper}}(x)\,\text{,}
+    \\
+    0,&\text{if}\;y<\operatorname{CI}_{\text{lower}}(x)\,\text{,}
+    \\
+    \bm{\omega}^\top\cdot\begin{cases}
+      \operatorname{CI}^+(x,y),&\text{if}\;\bar{g}(x)<y,
+      \\
+      \operatorname{CI}^-(x,y),&\text{otherwise.}
+    \end{cases}
+  \end{cases}
 \end{aligned}
 $$
 
 With this definition, we can compute a loss that is then based on a path that goes through this hyperplane. That path is a project's variable.
 
 ```{r}
-h_p3avg <- function(funclist, x, y, upper = TRUE) {
+# h_p3avg <- function(funclist, x, y, upper = TRUE) {
+#   unlist(lapply(X = funclist, FUN = function(f) {
+#     sapply(X = f(x), function(val) {
+#       if (val == 0) val <- sqrt(.Machine$double.eps)
+#       if ((upper && val >= y) || (!upper && val <= y)) val else 0
+#     })
+#   }))
+# }
+
+# We re-define this function to just indicate.
+h_p3avg <- function(funclist, x, y, upper = TRUE, f_ci) {
   unlist(lapply(X = funclist, FUN = function(f) {
     sapply(X = f(x), function(val) {
-      if (val == 0) val <- sqrt(.Machine$double.eps)
-      if ((upper && val >= y) || (!upper && val <= y)) val else 0
+      if (upper && val >= y) {
+        1
+        #f_ci(x) - val <-- this could be an alternative using the boundaries
+      } else if (!upper && val <= y) {
+        1
+        #val - f_ci(x)
+      } else {
+        0
+      }
     })
   }))
 }
 
-h_upper_p3avg <- function(funclist, x, y) h_p3avg(funclist = funclist, x = x, y = y, upper = TRUE)
-h_lower_p3avg <- function(funclist, x, y) h_p3avg(funclist = funclist, x = x, y = y, upper = FALSE)
+h_upper_p3avg <- function(funclist, x, y, f_ci) h_p3avg(funclist = funclist, x = x, y = y, upper = TRUE, f_ci = f_ci)
+h_lower_p3avg <- function(funclist, x, y, f_ci) h_p3avg(funclist = funclist, x = x, y = y, upper = FALSE, f_ci = f_ci)
 
 CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar, omega) {
   stopifnot(length(x) == length(y))
@@ -826,9 +851,9 @@ CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar, omega) {
     
     gbarval <- gbar(xi)
     hval <- if (gbarval < yi) {
-      h_upper_p3avg(funclist = funclist, x = xi, y = yi)
+      h_upper_p3avg(funclist = funclist, x = xi, y = yi, f_ci = f_ci_upper)
     } else {
-      h_lower_p3avg(funclist = funclist, x = xi, y = yi)
+      h_lower_p3avg(funclist = funclist, x = xi, y = yi, f_ci = f_ci_lower)
     }
     
     omega %*% hval / sum(omega)
@@ -896,10 +921,7 @@ Finally, we show the empirical confidence intervals in figures \ref{fig:p3-emp-c
 ```{r p3-emp-cis, echo=FALSE, fig.height=8, fig.cap="The empirical confidence intervals for the two variables req\\% and dev\\%. Higher saturation of the color correlates with higher confidence. Projects with zero weight contribute to the CIs' boundaries, but not to the hyperplane.", fig.align="center", fig.pos="ht!"}
 par(mfrow=c(2,1))
 
-temp <- z_req$z * 0.9 + 0.1
-temp[temp == .1] <- 0
-
-image(x = z_req$x, y = z_req$y, z = temp, main = "Variable: REQ",
+image(x = z_req$x, y = z_req$y, z = z_req$z, main = "Variable: REQ",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
       col = colorRampPalette(colors = c("#ffffff", "#ff0000"))(100), zlim = c(0,1))
 grid()
@@ -920,10 +942,7 @@ legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
 
 
 
-temp <- z_dev$z * 0.9 + 0.1
-temp[temp == .1] <- 0
-
-image(x = z_dev$x, y = z_dev$y, z = temp, main = "Variable: DEV",
+image(x = z_dev$x, y = z_dev$y, z = z_dev$z, main = "Variable: DEV",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
       col = colorRampPalette(colors = c("#ffffff", "#0000ff"))(100), zlim = c(0,1))
 grid()
@@ -945,12 +964,10 @@ legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
 
 ```{r p3-emp-desc-cis, echo=FALSE, fig.height=4, fig.cap="The empirical confidence intervals for the variable desc\\%. Higher saturation of the color correlates with higher confidence.", fig.align="center", fig.pos="ht!"}
 
-temp <- z_desc$z * 0.9 + 0.1
-temp[temp == .1] <- 0
 
-image(x = z_desc$x, y = z_desc$y, z = temp, main = "Variable: DESC",
+image(x = z_desc$x, y = z_desc$y, z = z_desc$z, main = "Variable: DESC",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
-      col = colorRampPalette(colors = c("#ffffff", "forestgreen"))(100), ylim = c(0, desc_ci_upper_p3avg(1) * 1.1), zlim = c(0, max(temp)))
+      col = colorRampPalette(colors = c("#ffffff", "forestgreen"))(100), ylim = c(0, desc_ci_upper_p3avg(1) * 1.1), zlim = c(0, 1))
 grid()
 curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
 
@@ -1567,14 +1584,11 @@ Finally, we compute a vector field based on a smoothed confidence surface, shown
 
 
 ```{r example-vectorfield-smooth, echo=FALSE, fig.height=6, fig.cap="Example vector field computed using a smoothed surface. We can clearly observe how the arrows point now properly towards the direction with steepest increase.", fig.align="center", fig.pos="ht!"}
-temp1 <- z_dev$z * 0.9 + 0.1
-temp1[temp1 == .1] <- 0
-temp1[temp1 > 0] <- -log(1 - temp1[temp1 > 0])
 
-image(x = z_dev$x, y = z_dev$y, z = temp1, main = "Variable: DEV",
+image(x = z_dev$x, y = z_dev$y, z = z_dev$z, main = "Variable: DEV",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
       col = colorRampPalette(colors = c("#ffffff", "#0000ff"))(100),
-      zlim = c(0,1), xlim = c(0.4,0.9), ylim = c(0.4,0.6))
+      zlim = c(0, 1), xlim = c(0.4,0.9), ylim = c(0.4,0.6))
 grid()
 
 
