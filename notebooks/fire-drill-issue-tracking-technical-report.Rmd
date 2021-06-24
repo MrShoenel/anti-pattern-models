@@ -984,6 +984,8 @@ legend(0.01, desc_ci_upper_p3avg(1) * 1.1 - .02, legend = c("Weight = 0", "Weigh
        col = "#00000033", lty = c(3, 2), lwd = 2)
 ```
 
+
+
 ## Pattern IV
 
 We had previously discussed the possibility of partial (early) detection. Some of the scores and losses use integration and custom intervals, and while these might be applicable in some cases without further changes, we need to be careful when dealing with variables that are normalized at project end. This is currently the case for the variables of pattern I.
@@ -1855,16 +1857,10 @@ arrows(x0 = 0.65, x1 = 0.75, y0 = 0.65, y1 = 0.65 + 0.1 / ed_tc_x * ed_tc_y, lwd
 Now we can use this information to calculate, e.g., an angle between the predicted variable and the average direction in the field. Depending on the case, one usually wants to either follow into the average direction of steepest increase or diverge from it. In our case of predicting the presence of the Fire Drill anti-pattern, we would want to move (stay) away from it.
 
 ```{r}
-angle <- function(A, B, deg = TRUE) {
-  (A %*% B) / (sqrt(sum(A^2)) * sqrt(sum(B^2))) * (if (deg) 180 / pi else 1)
-}
-
-angle(B = c(.1, fch_mean(0.75) - fch_mean(0.65)), A = c(ed_tc_x, ed_tc_y))
+matlib::angle(c(.1, fch_mean(0.75) - fch_mean(0.65)),  c(ed_tc_x, ed_tc_y))
 ```
 
-The angle between the projected (predicted) `DEV`-variable of project 5 and the average direction of steepest increase in confidence is $\approx17.19^{\circ}$.
-
-
+The angle between the projected (predicted) `DEV`-variable of project 5 and the average direction of steepest increase in confidence is $\approx$`r round(matlib::angle(c(.1, fch_mean(0.75) - fch_mean(0.65)),  c(ed_tc_x, ed_tc_y)), 2)``$^{\circ}$.
 
 
 
