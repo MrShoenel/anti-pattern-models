@@ -46,7 +46,7 @@ For finding the best models, the process is separated into two steps: First, do 
 
 Also note that each of the following models was already optimized w.r.t. to some aspects of the training, like using an already oversampled dataset. Also, we are using a very high split, as the resulting model will also be using all data. Using many folds and repeats, we make sure that overfitting is not a problem.
 
-All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.md)^ version. All code can be found in this repository, too.
+All complementary data and results can be found at Zenodo [@honel_picha_2021]. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.md)^ version. All code can be found in this repository, too.
 
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
 library(caret)
