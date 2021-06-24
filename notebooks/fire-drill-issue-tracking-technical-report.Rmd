@@ -2206,7 +2206,7 @@ Now we can use this information to calculate, e.g., an angle between the predict
 matlib::angle(c(.1, fch_mean(0.75) - fch_mean(0.65)),  c(ed_tc_x, ed_tc_y))
 ```
 
-The angle between the projected (predicted) `DEV`-variable of project 5 and the average direction of steepest increase in confidence is $\approx$`r round(matlib::angle(c(.1, fch_mean(0.75) - fch_mean(0.65)),  c(ed_tc_x, ed_tc_y)), 2)``$^{\circ}$.
+The angle between the projected (predicted) `DEV`-variable of project 5 and the average direction of steepest increase in confidence is $\approx84.4^{\circ}$.
 
 
 
@@ -2452,7 +2452,7 @@ par(mfrow=c(2,1))
 
 
 plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
-     xlab = "Relative time", ylab = "Rate of change")
+     xlab = "Relative time", ylab = "Relative cum. time spent")
 grid()
 curve(req_p2a, 0, 1, col="red", lwd=2, add = TRUE)
 curve(req_ci_upper_p2a, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
@@ -2476,7 +2476,7 @@ legend(0.01, .98, legend = c("req%", "req% CI", paste0("Pr. ", 1:9)),
 
 
 plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
-     xlab = "Relative time", ylab = "Rate of change")
+     xlab = "Relative time", ylab = "Relative cum. time spent")
 grid()
 curve(dev_p2a, 0, 1, col="blue", lwd=2, add = TRUE)
 tempf <- function(x) rep(0, length(x))
@@ -2520,7 +2520,7 @@ cor(x = ground_truth$consensus_score, y = p2a_avg_area_scores[, "DEV"])
 Now we can observe quite an improvement for both variables. The correlation for `REQ` has increased by more than $1$, so it is moderate now and has the right sign. As for `DEV`, the correlation is almost four times as strong.
 
 
-## Pattern III (average)
+## Pattern III (average)\label{ssec:score-p3avg}
 
 The third kind of pattern is based on data only, all the variables, confidence intervals and the strength thereof are based on the nine projects and the weight, which is the same as their consensus score.
 
@@ -2530,6 +2530,21 @@ _TODO_.
 ### Scoring based on the confidence intervals
 
 We have calculated gradated confidence intervals, which means two things. First, we cannot apply a binary detection rule any longer, as the boundaries of the intervals include each project, only the weight is different. Second, when calculating a score, we will obtain a continuous measure, of which we can calculate a correlation to the consensus score of the ground truth, or, e.g., fit a linear model for scaling these scores.
+
+```{r}
+p3_avg_ci_scores_compute <- function(pId, x1 = 0, x2 = 1) {
+  req <- all_signals[[pId]]$REQ$get0Function()
+  dev <- all_signals[[pId]]$DEV$get0Function()
+  desc <- all_signals[[pId]]$DESC$get0Function()
+  
+  `rownames<-`(data.frame(
+    REQ = L_avgconf_p3_avg(x1 = x1, x2 = x2, f = req, CI = CI_req_p3avg),
+    DEV = L_avgconf_p3_avg(x1 = x1, x2 = x2, f = dev, CI = CI_dev_p3avg),
+    DESC = L_avgconf_p3_avg(x1 = x1, x2 = x2, f = desc, CI = CI_desc_p3avg),
+    Project = pId
+  ), pId)
+}
+```
 
 
 ```{r}
@@ -2542,15 +2557,7 @@ p3_avg_ci_scores <- loadResultsOrCompute(file = "../results/p3_avg_ci_scores.rds
       .inorder = TRUE,
       .combine = rbind
     ) %dopar% {
-      req <- all_signals[[pId]]$REQ$get0Function()
-      dev <- all_signals[[pId]]$DEV$get0Function()
-      desc <- all_signals[[pId]]$DESC$get0Function()
-      
-      `rownames<-`(data.frame(
-        REQ = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = req, CI = CI_req_p3avg),
-        DEV = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = dev, CI = CI_dev_p3avg),
-        DESC = L_avgconf_p3_avg(x1 = 0, x2 = 1, f = desc, CI = CI_desc_p3avg)
-      ), pId)
+      p3_avg_ci_scores_compute(pId = pId, x1 = 0, x2 = 1)
     }
   })
 })
@@ -2599,6 +2606,31 @@ Looks like we are getting some strong positive correlation for the variable `DES
 Here we compute the distance of each project's variables to the previously averaged variables. This approach does not rely on inhomogeneous confidence intervals, and only considers the intervals' boundaries to integrate some distance. Ideally, the distance is $0$, and in the worst case it is $1$. If this ought to be used as score, we probably would want to compute it as $\mathit{S}^{\text{areadist}}=1-\mathit{L}^{\text{areadist}}$.
 
 ```{r}
+p3_avg_area_scores_compute <- function(pId, x1 = 0, x2 = 1) {
+  req <- all_signals[[pId]]$REQ$get0Function()
+  dev <- all_signals[[pId]]$DEV$get0Function()
+  desc <- all_signals[[pId]]$DESC$get0Function()
+  
+  `rownames<-`(data.frame(
+    REQ = L_areadist_p3_avg(
+      x1 = x1, x2 = x2, f = req, gbar = req_p3, use2ndVariant = TRUE,
+      CI_upper = req_ci_upper_p3avg, CI_lower = req_ci_lower_p3avg)["dist"],
+    
+    DEV = L_areadist_p3_avg(
+      x1 = x1, x2 = x2, f = dev, gbar = dev_p3, use2ndVariant = TRUE,
+      CI_upper = dev_ci_upper_p3avg, CI_lower = dev_ci_lower_p3avg)["dist"],
+    
+    DESC = L_areadist_p3_avg(
+      x1 = x1, x2 = x2, f = desc, gbar = desc_p3, use2ndVariant = TRUE,
+      CI_upper = desc_ci_upper_p3avg, CI_lower = desc_ci_lower_p3avg)["dist"],
+    
+    Project = pId
+  ), pId)
+}
+```
+
+
+```{r}
 p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores.rds", computeExpr =  {
   doWithParallelCluster(numCores = length(all_signals), expr = {
     library(foreach)
@@ -2608,23 +2640,7 @@ p3_avg_area_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_scores
       .inorder = TRUE,
       .combine = rbind
     ) %dopar% {
-      req <- all_signals[[pId]]$REQ$get0Function()
-      dev <- all_signals[[pId]]$DEV$get0Function()
-      desc <- all_signals[[pId]]$DESC$get0Function()
-      
-      `rownames<-`(data.frame(
-        REQ = L_areadist_p3_avg(
-          x1 = 0, x2 = 1, f = req, gbar = req_p3, use2ndVariant = TRUE,
-          CI_upper = req_ci_upper_p3avg, CI_lower = req_ci_lower_p3avg)["dist"],
-        
-        DEV = L_areadist_p3_avg(
-          x1 = 0, x2 = 1, f = dev, gbar = dev_p3, use2ndVariant = TRUE,
-          CI_upper = dev_ci_upper_p3avg, CI_lower = dev_ci_lower_p3avg)["dist"],
-        
-        DESC = L_areadist_p3_avg(
-          x1 = 0, x2 = 1, f = desc, gbar = desc_p3, use2ndVariant = TRUE,
-          CI_upper = desc_ci_upper_p3avg, CI_lower = desc_ci_lower_p3avg)["dist"]
-      ), pId)
+      p3_avg_area_scores_compute(pId = pId)
     }
   })
 })
@@ -2714,6 +2730,163 @@ stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
 ```
 
 With this linear combination of only three scores (out of six), we were able to significantly boost the detection to $\approx0.96$, which implies that combining both methods is of worth for a detection using (inhomogeneous) confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting. Using four or more scores goes beyond $0.97$.
+
+
+### Arbitrary-interval scores computing
+
+Up to now, we presented two methods to compute losses/scores over the closed interval $[0,1]$. We then have fitted a linear model to weigh, scale and translate the scores. We could evaluate how well this linear model performs if we select arbitrary intervals and compute the scores, but the expected is that smaller and earlier intervals would perform poorly. We will compute some the scores for some arbitrary intervals and then evaluate this. Then, we will attempt to learn a non-linear mapping that should correct for these residuals.
+
+```{r}
+p3_avg_area_scores_arb_int <- loadResultsOrCompute(file = "../results/p3_avg_area_scores_arb_int.rds", computeExpr =  {
+  doWithParallelCluster(numCores = min(parallel::detectCores(), 120), expr = {
+    library(foreach)
+    
+    tempm <- matrix(ncol = 3, byrow = TRUE, data = sapply(X = seq_len(400 * length(all_signals)), FUN = function(x) {
+      set.seed(bitwXor(1337, x))
+      
+      t <- rep(NA_real_, 2)
+      if (x <= 400) {
+        t <- c(0, runif(n = 1, min = 0.01))
+      } else if (x <= 3200) {
+        while (TRUE) {
+          t <- sort(runif(n = 2))
+          if ((t[2] - t[1]) > 0.01) {
+            break
+          }
+        }
+      } else {
+        t <- c(runif(n = 1, max = 0.99), 1)
+      }
+      
+      pId <- x %% length(all_signals)
+      if (pId == 0) {
+        pId <- length(all_signals)
+      }
+      
+      c(t, pId)
+    }))
+    tempm[, 3] <- sample(tempm[, 3]) # randomize projects
+    
+    temp <- foreach::foreach(
+      permIdx = 1:nrow(tempm),
+      .inorder = TRUE,
+      .combine = rbind
+    ) %dopar% {
+      p <- tempm[permIdx, ]
+      pId <- paste0("Project", p[3])
+      
+      temp_ci <- p3_avg_ci_scores_compute(pId = pId, x1 = p[1], x2 = p[2])
+      colnames(temp_ci) <- paste0(colnames(temp_ci), "_ci")
+      temp_ci$begin <- p[1]
+      temp_ci$end <- p[2]
+      
+      temp_area <- p3_avg_area_scores_compute(pId = pId, x1 = p[1], x2 = p[2])
+      colnames(temp_area) <- paste0(colnames(temp_area), "_area")
+      `rownames<-`(cbind(temp_ci, temp_area), NULL)
+    }
+    
+    temp$gt <- sapply(X = temp$Project_ci, FUN = function(p) {
+      ground_truth[ground_truth$project == paste0("project_", substr(p, nchar(p), nchar(p))), ]$consensus
+    })
+    temp
+  })
+})
+```
+
+
+Now that we have produced some labeled training data, we can attempt to learn a mapping between the intervals and scores, and the ground truth. We use a Random forest, and as outer resampling method a ten times repeated ten-fold cross validation. We apply z-standardization to the data.
+
+
+```{r}
+p3_avg_arb_int_pred <- loadResultsOrCompute(file = "../results/p3_avg_arb_int_pred.rds", computeExpr =  {
+  library(caret)
+  set.seed(1337)
+  
+  temp <- p3_avg_area_scores_arb_int[complete.cases(p3_avg_area_scores_arb_int), ]
+  temp <- temp[, c("gt", "begin", "end", "REQ_ci", "DEV_ci", "DESC_ci", "REQ_area", "DEV_area", "DESC_area")]
+  
+  inTraining <- caret::createDataPartition(temp$gt, p = 0.8, list = FALSE)
+  training <- temp[ inTraining, ]
+  testing  <- temp[-inTraining, ]
+  
+  fitControl <- caret::trainControl(
+    method = "repeatedcv", number = 10, repeats = 10)
+  
+  doWithParallelCluster(expr = {
+    list(
+      fit = caret::train(gt ~ ., data = training, method = "ranger",
+                         trControl = fitControl, preProcess = c("center", "scale")),
+      train = training,
+      test = testing)
+  })
+})
+```
+
+```{r echo=FALSE}
+p3_avg_arb_int_pred$fit
+
+c(
+  corr = stats::cor(
+    p3_avg_arb_int_pred$test$gt,
+    stats::predict(object = p3_avg_arb_int_pred$fit, newdata = p3_avg_arb_int_pred$test)),
+  MAE = Metrics::mae(
+    p3_avg_arb_int_pred$test$gt,
+    stats::predict(object = p3_avg_arb_int_pred$fit, newdata = p3_avg_arb_int_pred$test)),
+  RMSE = Metrics::rmse(
+    p3_avg_arb_int_pred$test$gt,
+    stats::predict(object = p3_avg_arb_int_pred$fit, newdata = p3_avg_arb_int_pred$test))
+)
+```
+
+With a correlation of $\approx0.99$, an MAE of $\approx0.12$ and RMSE of $\approx0.35$ I suppose we already have a predictor that is quite usable. Remember that we trained on the ground truth in the range $[0,10]$, so these mean deviations are probably already acceptable for some use cases. Also, I only produced 400 random ranges/scores per project, so in total we have 3600 records in the data, and the split was made at $0.8$ (during each fold of the  cross-validation, the default split of $0.75$ was used). With about one quarter of the amount of that data, we get similarly good results. Also, this model is likely overfitting, because when I leave out `begin` and `end` of each interval, the results are similarly good. However, the whole purpose of this model fitting here is to merely demonstrate that one could fit this kind of model and then make accurate predictions over arbitrary time intervals.
+
+So, if we take the MAE, then these results mean that for any arbitrarily chosen interval, the deviation from the computed scores $\mathit{L}^{\text{avgconf}}$ and $\mathit{L}^{\text{areadist2}}$ is less than $\pm\approx0.29$, and that on a scale of $[0,10]$. Since this is $<0.5$, it means that we should get an even better result when rounding (at least for the MAE), and indeed:
+
+
+```{r}
+Metrics::mae(p3_avg_arb_int_pred$test$gt,
+             round(stats::predict(object = p3_avg_arb_int_pred$fit, newdata = p3_avg_arb_int_pred$test)))
+```
+
+While it is not shown here, we can convert the rounded prediction to a factor and then show a confusion matrix. The diagonal in this case is well filled, i.e., only few mismatches exist. All of the mismatches are also in the next neighboring cell, which means that not a single prediction is more off than a single level.
+
+If we run the same routine as a classification task, then we typically achieve $\approx99$% accuracy, and very high Kappa of $>0.98$ ($1$ is perfect). However, we cannot train for levels of ground truth currently not present in our data, which means that this kind of model will not generalize well to new data. However, all this was just a demonstration for the case of arbitrary-interval scores computing.
+
+
+```{r}
+p3_avg_arb_int_pred_cls <- loadResultsOrCompute(file = "../results/p3_avg_arb_int_pred_cls.rds", computeExpr =  {
+  library(caret)
+  set.seed(1337)
+  
+  temp <- p3_avg_area_scores_arb_int[complete.cases(p3_avg_area_scores_arb_int), ]
+  temp <- temp[, c("gt", "begin", "end", "REQ_ci", "DEV_ci", "DESC_ci", "REQ_area", "DEV_area", "DESC_area")]
+  temp$gt <- factor(ordered = TRUE, x = as.character(temp$gt), levels = sort(unique(as.character(temp$gt))))
+  
+  inTraining <- caret::createDataPartition(temp$gt, p = .8, list = FALSE)
+  training <- temp[ inTraining, ]
+  testing  <- temp[-inTraining, ]
+  
+  fitControl <- caret::trainControl(
+    method = "repeatedcv", number = 10, repeats = 10)
+  
+  doWithParallelCluster(numCores = 10, expr = {
+    list(
+      fit = caret::train(gt ~ ., data = training, method = "ranger",
+                         trControl = fitControl, preProcess = c("center", "scale")),
+      train = training,
+      test = testing)
+  })
+})
+```
+
+```{r echo=FALSE}
+caret::confusionMatrix(
+  factor(x = as.character(p3_avg_arb_int_pred_cls$test$gt), levels = levels(p3_avg_arb_int_pred_cls$train$gt)),
+  stats::predict(object = p3_avg_arb_int_pred_cls$fit, newdata = p3_avg_arb_int_pred_cls$test)
+)
+```
+
+
 
 
 ## Pattern IV
@@ -2931,14 +3104,16 @@ for (span in sort(unique(p4_area_scores_partial$span))) {
     temp <- p4_area_scores_partial[p4_area_scores_partial$span == span & p4_area_scores_partial$end == end, ]
     temp <- temp[order(rownames(temp)), ]
     
-    p4_area_scores_partial_corr <- rbind(p4_area_scores_partial_corr, data.frame(
-      span = min(temp$span),
-      end = round(min(temp$end), 2),
-      corr_REQ = cor(x = ground_truth$consensus_score, y = temp[, "REQ"]),
-      corr_DEV = cor(x = ground_truth$consensus_score, y = temp[, "DEV"]),
-      corr_REQ_pval = cor.test(x = ground_truth$consensus_score, y = temp[, "REQ"])$p.value,
-      corr_DEV_pval = cor.test(x = ground_truth$consensus_score, y = temp[, "DEV"])$p.value
-    ))
+    p4_area_scores_partial_corr <- suppressWarnings(expr = {
+      rbind(p4_area_scores_partial_corr, data.frame(
+        span = min(temp$span),
+        end = round(min(temp$end), 2),
+        corr_REQ = cor(x = ground_truth$consensus_score, y = temp[, "REQ"]),
+        corr_DEV = cor(x = ground_truth$consensus_score, y = temp[, "DEV"]),
+        corr_REQ_pval = cor.test(x = ground_truth$consensus_score, y = temp[, "REQ"])$p.value,
+        corr_DEV_pval = cor.test(x = ground_truth$consensus_score, y = temp[, "DEV"])$p.value
+      ))
+    })
   }
 }
 ```
@@ -2994,11 +3169,13 @@ for (pId in names(all_signals)) {
   }, error = function(cond) function(x) rep(0, length(x)))
   desc_tempf_d1 <- function(x) func_d1(f = loess_desc, x = x)
         
-  p4_corr <- rbind(p4_corr, `rownames<-`(data.frame(
-    REQ = stats::cor(p4_samples$REQ, req_tempf_d1(X_samp)),
-    DEV = stats::cor(p4_samples$DEV, dev_tempf_d1(X_samp)),
-    DESC = stats::cor(p4_samples$DESC, desc_tempf_d1(X_samp))
-  ), pId))
+  p4_corr <- suppressWarnings(expr = {
+    rbind(p4_corr, `rownames<-`(data.frame(
+      REQ = stats::cor(p4_samples$REQ, req_tempf_d1(X_samp)),
+      DEV = stats::cor(p4_samples$DEV, dev_tempf_d1(X_samp)),
+      DESC = stats::cor(p4_samples$DESC, desc_tempf_d1(X_samp))
+    ), pId))
+  })
 }
 ```
 
