@@ -1,20 +1,47 @@
-  - [Introduction](#introduction)
-  - [Stateless model](#stateless-model)
-      - [Load and prepare the data](#load-and-prepare-the-data)
-      - [Define how the training works](#define-how-the-training-works)
-      - [Tuning of several models](#tuning-of-several-models)
-          - [Several models: correlation and
+---
+author: Sebastian Hönel
+bibliography: ../inst/REFERENCES.bib
+date: June 24, 2021
+output:
+  html_document:
+    df_print: kable
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+  md_document:
+    df_print: kable
+    toc: true
+    toc_depth: 6
+    variant: gfm
+  pdf_document:
+    df_print: kable
+    number_sections: true
+    toc: true
+    toc_depth: 6
+  word_document: default
+title: "Technical Report: Commit Classification models based on Keywords
+  and Source Code Density"
+urlcolor: blue
+---
+
+-   [Introduction](#introduction)
+-   [Stateless model](#stateless-model)
+    -   [Load and prepare the data](#load-and-prepare-the-data)
+    -   [Define how the training works](#define-how-the-training-works)
+    -   [Tuning of several models](#tuning-of-several-models)
+        -   [Several models: correlation and
             performance](#several-models-correlation-and-performance)
-          - [Several models: train
+        -   [Several models: train
             candidates](#several-models-train-candidates)
-  - [Manual stacking of models](#manual-stacking-of-models)
-      - [Manual neural network](#manual-neural-network)
-      - [Manual stack (ms) using caret](#manual-stack-ms-using-caret)
-      - [Creating an ensemble (es) using
+-   [Manual stacking of models](#manual-stacking-of-models)
+    -   [Manual neural network](#manual-neural-network)
+    -   [Manual stack (ms) using caret](#manual-stack-ms-using-caret)
+    -   [Creating an ensemble (es) using
         caretEnsemble](#creating-an-ensemble-es-using-caretensemble)
-          - [Create a linear ensemble](#create-a-linear-ensemble)
-  - [Some tests using Angular](#some-tests-using-angular)
-  - [References](#references)
+        -   [Create a linear ensemble](#create-a-linear-ensemble)
+-   [Some tests using Angular](#some-tests-using-angular)
+-   [References](#references)
 
 # Introduction
 
@@ -47,10 +74,10 @@ dataset. Also, we are using a very high split, as the resulting model
 will also be using all data. Using many folds and repeats, we make sure
 that overfitting is not a problem.
 
-All complementary data and results can be found at Zenodo. This notebook
-was written in a way that it can be run without any additional efforts
-to reproduce the outputs (using the pre-computed results). This notebook
-has a canonical
+All complementary data and results can be found at Zenodo (Hönel et al.
+2021). This notebook was written in a way that it can be run without any
+additional efforts to reproduce the outputs (using the pre-computed
+results). This notebook has a canonical
 URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd)</sup>
 and can be read online as a rendered
 markdown<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.md)</sup>
@@ -74,8 +101,7 @@ data_sl <- if (interactive()) {
 # remove SHAs:
 data_sl <- data_sl[, !(names(data_sl) %in% c("SHA1", "ParentCommitSHA1s"))]
 # factorize the labels:
-data_sl$label <- factor(
-  x = data_sl$label, levels = sort(unique(data_sl$label)))
+data_sl$label <- factor(x = data_sl$label, levels = sort(unique(data_sl$label)))
 ```
 
 The zero-variance predictors should be removed (if any).
@@ -83,8 +109,8 @@ The zero-variance predictors should be removed (if any).
 ``` r
 nzv_sl <- caret::nearZeroVar(x = data_sl, saveMetrics = TRUE, names = TRUE)
 
-print(paste0("Zero-variance predictors to be removed are: ",
-             paste(names(data_sl)[nzv_sl$zeroVar], collapse = ", ")))
+print(paste0("Zero-variance predictors to be removed are: ", paste(names(data_sl)[nzv_sl$zeroVar], 
+  collapse = ", ")))
 ```
 
     ## [1] "Zero-variance predictors to be removed are: IsInitialCommit, IsMergeCommit, NumberOfParentCommits"
@@ -122,17 +148,15 @@ can try to combine the best models into a meta-model.
 ``` r
 set.seed(1337)
 # Let's preserve 100 instances from the original data as validation data:
-p <- caret::createDataPartition(
-  y = data_sl$label, p = 0.95, list = FALSE)
+p <- caret::createDataPartition(y = data_sl$label, p = 0.95, list = FALSE)
 
 train_sl <- data_sl[p, ]
-valid_sl <- data_sl[-p,]
+valid_sl <- data_sl[-p, ]
 
 
-# As described above, we can use an oversampled dataset for this model.
-# However, most recent changes indicate this may or may not be beneficial.
-train_sl <- balanceDatasetSmote(
-  data = train_sl, stateColumn = "label")
+# As described above, we can use an oversampled dataset for this model.  However,
+# most recent changes indicate this may or may not be beneficial.
+train_sl <- balanceDatasetSmote(data = train_sl, stateColumn = "label")
 ```
 
 ``` r
@@ -172,27 +196,17 @@ library(xgboost)
 results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
   doWithParallelCluster(expr = {
     resList <- list()
-    methods <- c("gbm", "LogitBoost", "C5.0", "rf",
-                 "ranger",
-                 "naive_bayes", "mlp", "nnet",
-                 "svmPoly",
-                 "svmRadial",
-                 "xgbTree",
-                 "xgbDART",
-                 "xgbLinear",
-                 "null"
-                 )
-    
+    methods <- c("gbm", "LogitBoost", "C5.0", "rf", "ranger", "naive_bayes", 
+      "mlp", "nnet", "svmPoly", "svmRadial", "xgbTree", "xgbDART", "xgbLinear", 
+      "null")
+
     for (method in methods) {
       resList[[method]] <- base::tryCatch({
-        caret::train(
-          label ~ ., data = train_sl,
-          trControl = tc_sl,
-          preProcess = c("center", "scale"),
-          method = method, verbose = FALSE)
+        caret::train(label ~ ., data = train_sl, trControl = tc_sl, preProcess = c("center", 
+          "scale"), method = method, verbose = FALSE)
       }, error = function(cond) cond)
     }
-    
+
     resList
   })
 })
@@ -206,43 +220,43 @@ unrelated predictions, so that they can be combined.
 
 <div class="kable-table">
 
-|              |      gbm | LogitBoost |     C5.0 |       rf |   ranger | naive\_bayes |      mlp |
-| :----------- | -------: | ---------: | -------: | -------: | -------: | -----------: | -------: |
-| gbm          |   1.0000 |   \-0.1080 | \-0.0689 | \-0.0565 |   0.1566 |       0.0235 |   0.0652 |
-| LogitBoost   | \-0.1080 |     1.0000 | \-0.0281 | \-0.0979 | \-0.0054 |     \-0.0587 |   0.1126 |
-| C5.0         | \-0.0689 |   \-0.0281 |   1.0000 | \-0.0565 | \-0.2741 |     \-0.2880 |   0.4716 |
-| rf           | \-0.0565 |   \-0.0979 | \-0.0565 |   1.0000 | \-0.1473 |       0.3730 | \-0.0736 |
-| ranger       |   0.1566 |   \-0.0054 | \-0.2741 | \-0.1473 |   1.0000 |     \-0.0075 | \-0.4465 |
-| naive\_bayes |   0.0235 |   \-0.0587 | \-0.2880 |   0.3730 | \-0.0075 |       1.0000 |   0.0956 |
-| mlp          |   0.0652 |     0.1126 |   0.4716 | \-0.0736 | \-0.4465 |       0.0956 |   1.0000 |
-| nnet         |   0.2570 |     0.2848 |   0.0728 |   0.0485 |   0.1069 |     \-0.1905 |   0.1516 |
-| svmPoly      | \-0.1260 |   \-0.2447 | \-0.1573 | \-0.2841 |   0.2096 |       0.2341 |   0.0764 |
-| svmRadial    |   0.3147 |   \-0.1108 |   0.1220 |   0.4284 | \-0.2944 |       0.3539 | \-0.0435 |
-| xgbTree      | \-0.0134 |     0.2494 | \-0.2393 |   0.2115 | \-0.1651 |       0.0449 |   0.0007 |
-| xgbDART      | \-0.2682 |   \-0.0111 |   0.1322 | \-0.3900 |   0.1307 |       0.2583 |   0.0966 |
-| xgbLinear    |   0.0560 |   \-0.2253 |   0.0391 |   0.2076 | \-0.2322 |     \-0.1731 | \-0.0618 |
-| null         |       NA |         NA |       NA |       NA |       NA |           NA |       NA |
+|             |     gbm | LogitBoost |    C5.0 |      rf |  ranger | naive_bayes |     mlp |
+|:------------|--------:|-----------:|--------:|--------:|--------:|------------:|--------:|
+| gbm         |  1.0000 |    -0.1080 | -0.0689 | -0.0565 |  0.1566 |      0.0235 |  0.0652 |
+| LogitBoost  | -0.1080 |     1.0000 | -0.0281 | -0.0979 | -0.0054 |     -0.0587 |  0.1126 |
+| C5.0        | -0.0689 |    -0.0281 |  1.0000 | -0.0565 | -0.2741 |     -0.2880 |  0.4716 |
+| rf          | -0.0565 |    -0.0979 | -0.0565 |  1.0000 | -0.1473 |      0.3730 | -0.0736 |
+| ranger      |  0.1566 |    -0.0054 | -0.2741 | -0.1473 |  1.0000 |     -0.0075 | -0.4465 |
+| naive_bayes |  0.0235 |    -0.0587 | -0.2880 |  0.3730 | -0.0075 |      1.0000 |  0.0956 |
+| mlp         |  0.0652 |     0.1126 |  0.4716 | -0.0736 | -0.4465 |      0.0956 |  1.0000 |
+| nnet        |  0.2570 |     0.2848 |  0.0728 |  0.0485 |  0.1069 |     -0.1905 |  0.1516 |
+| svmPoly     | -0.1260 |    -0.2447 | -0.1573 | -0.2841 |  0.2096 |      0.2341 |  0.0764 |
+| svmRadial   |  0.3147 |    -0.1108 |  0.1220 |  0.4284 | -0.2944 |      0.3539 | -0.0435 |
+| xgbTree     | -0.0134 |     0.2494 | -0.2393 |  0.2115 | -0.1651 |      0.0449 |  0.0007 |
+| xgbDART     | -0.2682 |    -0.0111 |  0.1322 | -0.3900 |  0.1307 |      0.2583 |  0.0966 |
+| xgbLinear   |  0.0560 |    -0.2253 |  0.0391 |  0.2076 | -0.2322 |     -0.1731 | -0.0618 |
+| null        |      NA |         NA |      NA |      NA |      NA |          NA |      NA |
 
 </div>
 
 <div class="kable-table">
 
-|              |     nnet |  svmPoly | svmRadial |  xgbTree |  xgbDART | xgbLinear | null |
-| :----------- | -------: | -------: | --------: | -------: | -------: | --------: | ---: |
-| gbm          |   0.2570 | \-0.1260 |    0.3147 | \-0.0134 | \-0.2682 |    0.0560 |   NA |
-| LogitBoost   |   0.2848 | \-0.2447 |  \-0.1108 |   0.2494 | \-0.0111 |  \-0.2253 |   NA |
-| C5.0         |   0.0728 | \-0.1573 |    0.1220 | \-0.2393 |   0.1322 |    0.0391 |   NA |
-| rf           |   0.0485 | \-0.2841 |    0.4284 |   0.2115 | \-0.3900 |    0.2076 |   NA |
-| ranger       |   0.1069 |   0.2096 |  \-0.2944 | \-0.1651 |   0.1307 |  \-0.2322 |   NA |
-| naive\_bayes | \-0.1905 |   0.2341 |    0.3539 |   0.0449 |   0.2583 |  \-0.1731 |   NA |
-| mlp          |   0.1516 |   0.0764 |  \-0.0435 |   0.0007 |   0.0966 |  \-0.0618 |   NA |
-| nnet         |   1.0000 | \-0.4363 |    0.0694 |   0.0475 | \-0.2216 |  \-0.0691 |   NA |
-| svmPoly      | \-0.4363 |   1.0000 |  \-0.2885 | \-0.1363 |   0.5035 |    0.0248 |   NA |
-| svmRadial    |   0.0694 | \-0.2885 |    1.0000 |   0.2385 | \-0.1412 |    0.1629 |   NA |
-| xgbTree      |   0.0475 | \-0.1363 |    0.2385 |   1.0000 | \-0.1642 |  \-0.0954 |   NA |
-| xgbDART      | \-0.2216 |   0.5035 |  \-0.1412 | \-0.1642 |   1.0000 |  \-0.3693 |   NA |
-| xgbLinear    | \-0.0691 |   0.0248 |    0.1629 | \-0.0954 | \-0.3693 |    1.0000 |   NA |
-| null         |       NA |       NA |        NA |       NA |       NA |        NA |    1 |
+|             |    nnet | svmPoly | svmRadial | xgbTree | xgbDART | xgbLinear | null |
+|:------------|--------:|--------:|----------:|--------:|--------:|----------:|-----:|
+| gbm         |  0.2570 | -0.1260 |    0.3147 | -0.0134 | -0.2682 |    0.0560 |   NA |
+| LogitBoost  |  0.2848 | -0.2447 |   -0.1108 |  0.2494 | -0.0111 |   -0.2253 |   NA |
+| C5.0        |  0.0728 | -0.1573 |    0.1220 | -0.2393 |  0.1322 |    0.0391 |   NA |
+| rf          |  0.0485 | -0.2841 |    0.4284 |  0.2115 | -0.3900 |    0.2076 |   NA |
+| ranger      |  0.1069 |  0.2096 |   -0.2944 | -0.1651 |  0.1307 |   -0.2322 |   NA |
+| naive_bayes | -0.1905 |  0.2341 |    0.3539 |  0.0449 |  0.2583 |   -0.1731 |   NA |
+| mlp         |  0.1516 |  0.0764 |   -0.0435 |  0.0007 |  0.0966 |   -0.0618 |   NA |
+| nnet        |  1.0000 | -0.4363 |    0.0694 |  0.0475 | -0.2216 |   -0.0691 |   NA |
+| svmPoly     | -0.4363 |  1.0000 |   -0.2885 | -0.1363 |  0.5035 |    0.0248 |   NA |
+| svmRadial   |  0.0694 | -0.2885 |    1.0000 |  0.2385 | -0.1412 |    0.1629 |   NA |
+| xgbTree     |  0.0475 | -0.1363 |    0.2385 |  1.0000 | -0.1642 |   -0.0954 |   NA |
+| xgbDART     | -0.2216 |  0.5035 |   -0.1412 | -0.1642 |  1.0000 |   -0.3693 |   NA |
+| xgbLinear   | -0.0691 |  0.0248 |    0.1629 | -0.0954 | -0.3693 |    1.0000 |   NA |
+| null        |      NA |      NA |        NA |      NA |      NA |        NA |    1 |
 
 </div>
 
@@ -261,12 +275,11 @@ models_sl <- loadResultsOrCompute(file = "../results/models_sl.rds", computeExpr
 
   for (modelName in names(results_sl)) {
     m <- results_sl[[modelName]]
-    
-    res[[modelName]] <- caretFitOneModeltoAllData(
-      method = modelName, tuneGrid = m$bestTune,
+
+    res[[modelName]] <- caretFitOneModeltoAllData(method = modelName, tuneGrid = m$bestTune, 
       data = train_sl)
   }
-  
+
   res
 })
 ```
@@ -280,22 +293,22 @@ generateModelOverview(results_sl, models_sl, validationData = valid_sl)
 
 <div class="kable-table">
 
-| model        | train\_acc | train\_Kappa | predNA | valid\_acc\_witNA | valid\_Kappa\_withNA | valid\_acc | valid\_Kappa |
-| :----------- | ---------: | -----------: | :----- | ----------------: | -------------------: | ---------: | -----------: |
-| gbm          |  0.8030769 |    0.7046154 | FALSE  |         0.8059701 |            0.6971488 |  0.8059701 |    0.6971488 |
-| LogitBoost   |  0.8219242 |    0.7282709 | TRUE   |         0.7611940 |            0.6199929 |  0.8666667 |    0.7906977 |
-| C5.0         |  0.8035897 |    0.7053846 | FALSE  |         0.7761194 |            0.6479860 |  0.7761194 |    0.6479860 |
-| rf           |  0.8023077 |    0.7034615 | FALSE  |         0.7462687 |            0.6057459 |  0.7462687 |    0.6057459 |
-| ranger       |  0.8184615 |    0.7276923 | FALSE  |         0.8208955 |            0.7217030 |  0.8208955 |    0.7217030 |
-| naive\_bayes |  0.5038462 |    0.2557692 | FALSE  |         0.5671642 |            0.3075552 |  0.5671642 |    0.3075552 |
-| mlp          |  0.7646154 |    0.6469231 | FALSE  |         0.7462687 |            0.6062910 |  0.7462687 |    0.6062910 |
-| nnet         |  0.7584615 |    0.6376923 | FALSE  |         0.7164179 |            0.5541156 |  0.7164179 |    0.5541156 |
-| svmPoly      |  0.7619231 |    0.6428846 | FALSE  |         0.7462687 |            0.6097979 |  0.7462687 |    0.6097979 |
-| svmRadial    |  0.7496154 |    0.6244231 | FALSE  |         0.6716418 |            0.4897889 |  0.6716418 |    0.4897889 |
-| xgbTree      |  0.8201282 |    0.7301923 | FALSE  |         0.7164179 |            0.5545836 |  0.7164179 |    0.5545836 |
-| xgbDART      |  0.8160256 |    0.7240385 | FALSE  |         0.7164179 |            0.5506530 |  0.7164179 |    0.5506530 |
-| xgbLinear    |  0.8169231 |    0.7253846 | FALSE  |         0.7014925 |            0.5273369 |  0.7014925 |    0.5273369 |
-| null         |  0.3333333 |    0.0000000 | FALSE  |         0.2089552 |            0.0000000 |  0.2089552 |    0.0000000 |
+| model       | train_acc | train_Kappa | predNA | valid_acc_witNA | valid_Kappa_withNA | valid_acc | valid_Kappa |
+|:------------|----------:|------------:|:-------|----------------:|-------------------:|----------:|------------:|
+| gbm         | 0.8030769 |   0.7046154 | FALSE  |       0.8059701 |          0.6971488 | 0.8059701 |   0.6971488 |
+| LogitBoost  | 0.8219242 |   0.7282709 | TRUE   |       0.7611940 |          0.6199929 | 0.8666667 |   0.7906977 |
+| C5.0        | 0.8035897 |   0.7053846 | FALSE  |       0.7761194 |          0.6479860 | 0.7761194 |   0.6479860 |
+| rf          | 0.8023077 |   0.7034615 | FALSE  |       0.7462687 |          0.6057459 | 0.7462687 |   0.6057459 |
+| ranger      | 0.8184615 |   0.7276923 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
+| naive_bayes | 0.5038462 |   0.2557692 | FALSE  |       0.5671642 |          0.3075552 | 0.5671642 |   0.3075552 |
+| mlp         | 0.7646154 |   0.6469231 | FALSE  |       0.7462687 |          0.6062910 | 0.7462687 |   0.6062910 |
+| nnet        | 0.7584615 |   0.6376923 | FALSE  |       0.7164179 |          0.5541156 | 0.7164179 |   0.5541156 |
+| svmPoly     | 0.7619231 |   0.6428846 | FALSE  |       0.7462687 |          0.6097979 | 0.7462687 |   0.6097979 |
+| svmRadial   | 0.7496154 |   0.6244231 | FALSE  |       0.6716418 |          0.4897889 | 0.6716418 |   0.4897889 |
+| xgbTree     | 0.8201282 |   0.7301923 | FALSE  |       0.7164179 |          0.5545836 | 0.7164179 |   0.5545836 |
+| xgbDART     | 0.8160256 |   0.7240385 | FALSE  |       0.7164179 |          0.5506530 | 0.7164179 |   0.5506530 |
+| xgbLinear   | 0.8169231 |   0.7253846 | FALSE  |       0.7014925 |          0.5273369 | 0.7014925 |   0.5273369 |
+| null        | 0.3333333 |   0.0000000 | FALSE  |       0.2089552 |          0.0000000 | 0.2089552 |   0.0000000 |
 
 </div>
 
@@ -312,30 +325,30 @@ model.
 data_stack_train_sl <- data.frame(matrix(ncol = 0, nrow = nrow(train_sl)))
 data_stack_valid_sl <- data.frame(matrix(ncol = 0, nrow = nrow(valid_sl)))
 
-# The name of the models to use from the previous section:
-#stack_manual_models <- names(results_sl)[
-#  !(names(results_sl) %in% c("naive_bayes", "mlp", "nnet", "svmPoly", "svmRadial", "xgbTree", "xgbLinear"))]
-#stack_manual_models <- c("LogitBoost", "gbm", "xgbDART", "mlp") # <- This appears to work best
-stack_manual_models <- c("LogitBoost", "gbm", "ranger") # <- This appears to work best
+# The name of the models to use from the previous section: stack_manual_models <-
+# names(results_sl)[ !(names(results_sl) %in% c('naive_bayes', 'mlp', 'nnet',
+# 'svmPoly', 'svmRadial', 'xgbTree', 'xgbLinear'))] stack_manual_models <-
+# c('LogitBoost', 'gbm', 'xgbDART', 'mlp') # <- This appears to work best
+stack_manual_models <- c("LogitBoost", "gbm", "ranger")  # <- This appears to work best
 
 
 for (modelName in stack_manual_models) {
   m <- models_sl[[modelName]]
-  
+
   preds <- tryCatch({
     predict(m, train_sl[, !(names(train_sl) %in% c("label"))], type = "prob")
   }, error = function(cond) cond)
-  
+
   preds_valid <- tryCatch({
     predict(m, valid_sl[, !(names(valid_sl) %in% c("label"))], type = "prob")
   }, error = function(cond) cond)
-  
-  if (any(class(preds) %in% c("simpleError", "error","condition"))) {
+
+  if (any(class(preds) %in% c("simpleError", "error", "condition"))) {
     print(paste0("Cannot predict class probabilities for: ", modelName))
   } else {
     colnames(preds) <- paste0(colnames(preds), "_", modelName)
     colnames(preds_valid) <- paste0(colnames(preds_valid), "_", modelName)
-    
+
     data_stack_train_sl <- cbind(data_stack_train_sl, preds)
     data_stack_valid_sl <- cbind(data_stack_valid_sl, preds_valid)
   }
@@ -358,13 +371,10 @@ library(neuralnet)
 library(e1071)
 
 nnet <- loadResultsOrCompute("../results/nnet.rds", computeExpr = {
-  set.seed(0xc0de)
-  neuralnet::neuralnet(
-    formula = label ~ ., data = data_stack_train_sl,
-    act.fct = function(x) 1.5 * x * sigmoid(x),
-    hidden = c(3), threshold = 5e-3,
-    stepmax = 2e5,
-    lifesign = if (interactive()) "full" else "minimal")
+  set.seed(49374)
+  neuralnet::neuralnet(formula = label ~ ., data = data_stack_train_sl, act.fct = function(x) 1.5 * 
+    x * sigmoid(x), hidden = c(3), threshold = 0.005, stepmax = 2e+05, lifesign = if (interactive()) 
+    "full" else "minimal")
 })
 ```
 
@@ -380,8 +390,7 @@ plot(nnet, rep = "best")
 nnet_pred <- predict(nnet, data_stack_valid_sl)
 colnames(nnet_pred) <- levels(valid_sl$label)
 
-nnet_pred_label <- factor(
-  x = levels(valid_sl$label)[apply(nnet_pred, 1, which.max)],
+nnet_pred_label <- factor(x = levels(valid_sl$label)[apply(nnet_pred, 1, which.max)], 
   levels = levels(valid_sl$label))
 
 caret::confusionMatrix(valid_sl$label, nnet_pred_label)
@@ -436,14 +445,14 @@ generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_s
 
 <div class="kable-table">
 
-| model      | train\_acc | train\_Kappa | predNA | valid\_acc\_witNA | valid\_Kappa\_withNA | valid\_acc | valid\_Kappa |
-| :--------- | ---------: | -----------: | :----- | ----------------: | -------------------: | ---------: | -----------: |
-| gbm        |  0.9928205 |    0.9892308 | FALSE  |         0.8208955 |            0.7217030 |  0.8208955 |    0.7217030 |
-| LogitBoost |  0.9930732 |    0.9896098 | FALSE  |         0.7910448 |            0.6767746 |  0.7910448 |    0.6767746 |
-| ranger     |  0.9929487 |    0.9894231 | FALSE  |         0.8208955 |            0.7217030 |  0.8208955 |    0.7217030 |
-| mlp        |  0.9932051 |    0.9898077 | FALSE  |         0.8358209 |            0.7448944 |  0.8358209 |    0.7448944 |
-| nnet       |  0.9930769 |    0.9896154 | FALSE  |         0.8358209 |            0.7448944 |  0.8358209 |    0.7448944 |
-| svmRadial  |  0.9939744 |    0.9909615 | FALSE  |         0.7611940 |            0.6288089 |  0.7611940 |    0.6288089 |
+| model      | train_acc | train_Kappa | predNA | valid_acc_witNA | valid_Kappa_withNA | valid_acc | valid_Kappa |
+|:-----------|----------:|------------:|:-------|----------------:|-------------------:|----------:|------------:|
+| gbm        | 0.9928205 |   0.9892308 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
+| LogitBoost | 0.9930732 |   0.9896098 | FALSE  |       0.7910448 |          0.6767746 | 0.7910448 |   0.6767746 |
+| ranger     | 0.9929487 |   0.9894231 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
+| mlp        | 0.9932051 |   0.9898077 | FALSE  |       0.8358209 |          0.7448944 | 0.8358209 |   0.7448944 |
+| nnet       | 0.9930769 |   0.9896154 | FALSE  |       0.8358209 |          0.7448944 | 0.8358209 |   0.7448944 |
+| svmRadial  | 0.9939744 |   0.9909615 | FALSE  |       0.7611940 |          0.6288089 | 0.7611940 |   0.6288089 |
 
 </div>
 
@@ -458,21 +467,21 @@ generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack
 
 <div class="kable-table">
 
-| model        | train\_acc | train\_Kappa | predNA | valid\_acc\_witNA | valid\_Kappa\_withNA | valid\_acc | valid\_Kappa |
-| :----------- | ---------: | -----------: | :----- | ----------------: | -------------------: | ---------: | -----------: |
-| gbm          |  0.9932051 |    0.9898077 | FALSE  |         0.8208955 |            0.7217030 |  0.8208955 |    0.7217030 |
-| LogitBoost   |  0.9930732 |    0.9896098 | FALSE  |         0.7910448 |            0.6767746 |  0.7910448 |    0.6767746 |
-| C5.0         |  0.9921795 |    0.9882692 | FALSE  |         0.8059701 |            0.6997587 |  0.8059701 |    0.6997587 |
-| ranger       |  0.9932051 |    0.9898077 | FALSE  |         0.8208955 |            0.7217030 |  0.8208955 |    0.7217030 |
-| rf           |  0.9932051 |    0.9898077 | FALSE  |         0.8208955 |            0.7217030 |  0.8208955 |    0.7217030 |
-| naive\_bayes |  0.9908974 |    0.9863462 | FALSE  |         0.8059701 |            0.6972541 |  0.8059701 |    0.6972541 |
-| mlp          |  0.9929487 |    0.9894231 | FALSE  |         0.7910448 |            0.6749827 |  0.7910448 |    0.6749827 |
-| nnet         |  0.9929487 |    0.9894231 | FALSE  |         0.8358209 |            0.7448944 |  0.8358209 |    0.7448944 |
-| svmPoly      |  0.9942308 |    0.9913462 | FALSE  |         0.8059701 |            0.6998622 |  0.8059701 |    0.6998622 |
-| svmRadial    |  0.9941026 |    0.9911538 | FALSE  |         0.7761194 |            0.6534483 |  0.7761194 |    0.6534483 |
-| xgbTree      |  0.9930769 |    0.9896154 | FALSE  |         0.8059701 |            0.6972541 |  0.8059701 |    0.6972541 |
-| xgbDART      |  0.9937179 |    0.9905769 | FALSE  |         0.8059701 |            0.6972541 |  0.8059701 |    0.6972541 |
-| xgbLinear    |  0.9929487 |    0.9894231 | FALSE  |         0.8208955 |            0.7217030 |  0.8208955 |    0.7217030 |
+| model       | train_acc | train_Kappa | predNA | valid_acc_witNA | valid_Kappa_withNA | valid_acc | valid_Kappa |
+|:------------|----------:|------------:|:-------|----------------:|-------------------:|----------:|------------:|
+| gbm         | 0.9932051 |   0.9898077 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
+| LogitBoost  | 0.9930732 |   0.9896098 | FALSE  |       0.7910448 |          0.6767746 | 0.7910448 |   0.6767746 |
+| C5.0        | 0.9921795 |   0.9882692 | FALSE  |       0.8059701 |          0.6997587 | 0.8059701 |   0.6997587 |
+| ranger      | 0.9932051 |   0.9898077 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
+| rf          | 0.9932051 |   0.9898077 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
+| naive_bayes | 0.9908974 |   0.9863462 | FALSE  |       0.8059701 |          0.6972541 | 0.8059701 |   0.6972541 |
+| mlp         | 0.9929487 |   0.9894231 | FALSE  |       0.7910448 |          0.6749827 | 0.7910448 |   0.6749827 |
+| nnet        | 0.9929487 |   0.9894231 | FALSE  |       0.8358209 |          0.7448944 | 0.8358209 |   0.7448944 |
+| svmPoly     | 0.9942308 |   0.9913462 | FALSE  |       0.8059701 |          0.6998622 | 0.8059701 |   0.6998622 |
+| svmRadial   | 0.9941026 |   0.9911538 | FALSE  |       0.7761194 |          0.6534483 | 0.7761194 |   0.6534483 |
+| xgbTree     | 0.9930769 |   0.9896154 | FALSE  |       0.8059701 |          0.6972541 | 0.8059701 |   0.6972541 |
+| xgbDART     | 0.9937179 |   0.9905769 | FALSE  |       0.8059701 |          0.6972541 | 0.8059701 |   0.6972541 |
+| xgbLinear   | 0.9929487 |   0.9894231 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
 
 </div>
 
@@ -496,7 +505,7 @@ create_final_model <- function() {
   meta_model <- models_ms$nnet
   # The single models from earlier training:
   single_models <- models_sl[stack_manual_models]
-  
+
   predict_class_membership <- function(data, modelList = single_models, labelCol = "label") {
     dataLabel <- if (labelCol %in% colnames(data)) {
       data[[labelCol]]
@@ -505,50 +514,47 @@ create_final_model <- function() {
     }
     data <- data[, !(names(data) %in% labelCol)]
     dataCM <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
-    
+
     for (modelName in names(modelList)) {
       m <- modelList[[modelName]]
       temp <- stats::predict(m, data, type = "prob")
       colnames(temp) <- paste0(colnames(temp), "_", modelName)
       dataCM <- cbind(dataCM, temp)
     }
-    
+
     return(cbind(dataCM, dataLabel))
   }
-  
+
   predict <- function(data, labelCol = "label", type = c("raw", "prob", "both")) {
-    type <- if (missing(type)) type[1] else type
+    type <- if (missing(type)) 
+      type[1] else type
     dataCM <- predict_class_membership(data = data, labelCol = labelCol)
     res <- data.frame(matrix(ncol = 0, nrow = nrow(data)))
-    
+
     doRaw <- type == "raw"
     doProb <- type == "prob"
-    
+
     asRaw <- stats::predict(meta_model, dataCM, type = "raw")
     asProb <- stats::predict(meta_model, dataCM, type = "prob")
     if (is.factor(data[[labelCol]])) {
       colnames(asProb) <- levels(data[[labelCol]])
     }
-    
+
     if (doRaw) {
       return(asRaw)
     } else if (doProb) {
       return(asProb)
     }
-    
+
     # Both:
     res <- cbind(res, asRaw)
     colnames(res) <- labelCol
     res <- cbind(res, asProb)
     return(res)
   }
-  
-  return(list(
-    meta_model = meta_model,
-    single_models = single_models,
-    predict_class_membership = predict_class_membership,
-    predict = predict
-  ))
+
+  return(list(meta_model = meta_model, single_models = single_models, predict_class_membership = predict_class_membership, 
+    predict = predict))
 }
 
 
@@ -601,7 +607,7 @@ head(final_model$predict(valid_sl, type = "both"))
 <div class="kable-table">
 
 | label |         a |         c |         p |
-| :---- | --------: | --------: | --------: |
+|:------|----------:|----------:|----------:|
 | c     | 0.0012107 | 0.9972771 | 0.0015122 |
 | c     | 0.0008457 | 0.9979259 | 0.0012284 |
 | c     | 0.0137335 | 0.9410197 | 0.0452468 |
@@ -656,9 +662,7 @@ at this time. The following tests below do not work.
 ``` r
 library(caretEnsemble)
 
-tc_sl_es <- caret::trainControl(
-  method = "cv", savePredictions = "final",
-  classProbs = TRUE)
+tc_sl_es <- caret::trainControl(method = "cv", savePredictions = "final", classProbs = TRUE)
 ```
 
 Now let’s create a list of models we would like to use.
@@ -669,15 +673,9 @@ Using the list of trained models from the previous section, we create an
 ensemble that is a linear combination of all models.
 
 ``` r
-#model_es_linear <- caretEnsemble::caretStack(
-#  all.models = es_list,
-#  method = "glm",
-#  #metric = "Accuracy",
-#  trControl = caret::trainControl(
-#    classProbs = TRUE)
-#)
-#
-#summary(model_es_linear)
+# model_es_linear <- caretEnsemble::caretStack( all.models = es_list, method =
+# 'glm', #metric = 'Accuracy', trControl = caret::trainControl( classProbs =
+# TRUE) ) summary(model_es_linear)
 ```
 
 # Some tests using Angular
@@ -687,7 +685,8 @@ Angular repository (begin 2020 - now). After loading, we will predict
 the maintenance activity and save the file.
 
 ``` r
-# GitTools.exe -r C:\temp\angular\ -o 'C:\temp\angular.csv' -s '2019-01-01 00:00'
+# GitTools.exe -r C:\temp\angular\ -o 'C:\temp\angular.csv' -s '2019-01-01
+# 00:00'
 dateFormat <- "%Y-%m-%d %H:%M:%S"
 angularFile <- "../data/angular.csv"
 angular <- read.csv(angularFile)
@@ -697,10 +696,8 @@ angular$prob_a <- temp$a
 angular$prob_c <- temp$c
 angular$prob_p <- temp$p
 
-angular$CommitterTimeObj <- strptime(
-  angular$CommitterTime, format = dateFormat)
-angular$AuthorTimeObj <- strptime(
-  angular$AuthorTime, format = dateFormat)
+angular$CommitterTimeObj <- strptime(angular$CommitterTime, format = dateFormat)
+angular$AuthorTimeObj <- strptime(angular$AuthorTime, format = dateFormat)
 
 write.csv(angular, file = angularFile, row.names = FALSE)
 
@@ -740,11 +737,9 @@ It appears that the activities after 2019-11-01 are much more balanced.
 Let’s look at a much smaller window:
 
 ``` r
-temp <- ggplot2::ggplot(
-  data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") &
-                   angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),],
-  ggplot2::aes(
-    AuthorTimeUnixEpochMilliSecs, color = label, fill = label))
+temp <- ggplot2::ggplot(data = angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & 
+  angular$AuthorTimeObj <= as.POSIXct("2020-02-23"), ], ggplot2::aes(AuthorTimeUnixEpochMilliSecs, 
+  color = label, fill = label))
 
 temp + ggplot2::geom_density(size = 1, alpha = 0.4)
 ```
@@ -779,11 +774,12 @@ Here are some attempts with a rolling mean over the class-probabilities:
 ``` r
 library(zoo)
 
-data<-AirPassengers
-plot(data,main='Simple Moving Average (SMA)',ylab='Passengers')
-lines(rollmean(data,5),col='blue')
-lines(rollmean(data,40),col='red')
-legend(1950,600,col=c('black','blue', 'red'),legend=c('Raw', 'SMA 5', 'SMA 40'),lty=1,cex=0.8)
+data <- AirPassengers
+plot(data, main = "Simple Moving Average (SMA)", ylab = "Passengers")
+lines(rollmean(data, 5), col = "blue")
+lines(rollmean(data, 40), col = "red")
+legend(1950, 600, col = c("black", "blue", "red"), legend = c("Raw", "SMA 5", "SMA 40"), 
+  lty = 1, cex = 0.8)
 ```
 
 ![](comm-class-models_files/figure-gfm/unnamed-chunk-29-1.png)<!-- -->
@@ -808,9 +804,9 @@ lines(rollmean(data$prob_c, 10), col='blue')
 
 # References
 
-<div id="refs" class="references hanging-indent">
+<div id="refs" class="references csl-bib-body hanging-indent">
 
-<div id="ref-chawla2002smote">
+<div id="ref-chawla2002smote" class="csl-entry">
 
 Chawla, Nitesh V, Kevin W Bowyer, Lawrence O Hall, and W Philip
 Kegelmeyer. 2002. “SMOTE: Synthetic Minority over-Sampling Technique.”
@@ -818,7 +814,7 @@ Kegelmeyer. 2002. “SMOTE: Synthetic Minority over-Sampling Technique.”
 
 </div>
 
-<div id="ref-honel2020gitdens">
+<div id="ref-honel2020gitdens" class="csl-entry">
 
 Hönel, Sebastian. 2020. “Git Density 2020.2: Analyze Git Repositories to
 Extract the Source Code Density and Other Commit Properties,” February.
@@ -826,12 +822,21 @@ Extract the Source Code Density and Other Commit Properties,” February.
 
 </div>
 
-<div id="ref-honel2020using">
+<div id="ref-honel2020using" class="csl-entry">
 
 Hönel, Sebastian, Morgan Ericsson, Welf Löwe, and Anna Wingkvist. 2020.
 “Using Source Code Density to Improve the Accuracy of Automatic Commit
 Classification into Maintenance Activities.” *Journal of Systems and
 Software*, 110673.
+
+</div>
+
+<div id="ref-honel_picha_2021" class="csl-entry">
+
+Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2021.
+“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects with
+Ground Truth, Issue-Tracking Data, Source Code Density, Models and
+Code.” Zenodo. <https://doi.org/10.5281/zenodo.4734053>.
 
 </div>
 
