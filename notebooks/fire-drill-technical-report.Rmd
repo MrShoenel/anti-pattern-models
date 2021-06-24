@@ -51,7 +51,7 @@ library(ggpubr)
 
 # Introduction\label{tr:fire-drill-technical-report}
 
-This is the complementary technical report for the paper/article tentatively entitled "Towards Data-Based Detection of Project Management Anti-Patterns". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
+This is the complementary technical report for the paper/article tentatively entitled "Multivariate Continuous Processes: Modeling, Instantiation, Goodness-of-fit, Forecasting". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
 
 All complementary data and results can be found at Zenodo. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md)^ version. All code can be found in this repository, too.
 
@@ -1298,7 +1298,13 @@ The true main-purpose of our work is to take a pattern and check it against any 
 
 How it works: Given some pattern that consists of one or arbitrary many signals, the pattern is added to a single instance of `srBTAW` as __Warping Pattern__. The project's signals are added as __Warping Candidates__ to the same instance.
 
-To compute a score, we need to define how to measure the distance between the WP and the WC (between each pair of signals and each interval). In the notebooks for sr-BTW we have previously defined some suitable losses with either __global__ or __local__ finite upper bounds. Currently, the Jensen--Shannon divergence (JSD), as well as the ratio-metrics (correlation, arc-lengths) have global upper bounds. For the JSD, it is $\ln{2}$. Losses with local finite upper bound are, for example, the area between curves, the residual sum of squares, the Euclidean distance etc., basically any metric that has a limit within the rectangle demarcated by one or more intervals. For some of the patterns, we have used a combination of such losses with local bounds. In general, it is not necessary to fit a pattern with the same kinds of losses that are later on used for scoring, but it is recommended to avoid confusing may results.
+To compute a score, we need to define how to measure the distance between the WP and the WC (between each pair of signals and each interval). In the notebooks for sr-BTW we have previously defined some suitable losses with either __global__ or __local__ finite upper bounds. Currently, the Jensen--Shannon divergence (JSD), as well as the ratio-metrics (correlation, arc-lengths) have global upper bounds. For the JSD, it is $\ln{(2)}$. Losses with local finite upper bound are, for example, the area between curves, the residual sum of squares, the Euclidean distance etc., basically any metric that has a limit within the rectangle demarcated by one or more intervals. For some of the patterns, we have used a combination of such losses with local bounds. In general, it is not necessary to fit a pattern with the same kinds of losses that are later on used for scoring, but it is recommended to avoid confusing may results.
+
+## The cost of alignment
+
+When aligning a project to a pattern using boundary time warping, a deviation between the sections' lengths is introduced. Ideally, if the project would align with the pattern perfectly, there would be perfect agreement. The less good a project aligns with a pattern, the more time warping is required. However, the entire alignment needs to be assessed in conjunction with the scores -- the amount of required time warping alone is not sufficient to assess to overall goodness of fit.
+
+During the optimization, we already used a regularizer for extreme intervals (`TimeWarpRegularization` with regularizer `exint2`).
 
 ## Scoring mechanisms
 

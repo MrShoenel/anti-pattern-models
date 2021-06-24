@@ -2882,8 +2882,7 @@ p3_avg_arb_int_pred_cls <- loadResultsOrCompute(file = "../results/p3_avg_arb_in
 ```{r echo=FALSE}
 caret::confusionMatrix(
   factor(x = as.character(p3_avg_arb_int_pred_cls$test$gt), levels = levels(p3_avg_arb_int_pred_cls$train$gt)),
-  stats::predict(object = p3_avg_arb_int_pred_cls$fit, newdata = p3_avg_arb_int_pred_cls$test)
-)
+  stats::predict(object = p3_avg_arb_int_pred_cls$fit, newdata = p3_avg_arb_int_pred_cls$test))
 ```
 
 
