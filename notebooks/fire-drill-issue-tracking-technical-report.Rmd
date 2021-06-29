@@ -374,7 +374,7 @@ b)    Additionally to a (after learning $t_1,t_2$), we will apply _amplitude war
 c)    Take the first pattern and apply both, _boundary time warping_ __and__ _boundary amplitude warping_, to produce a pattern that is (hopefully) closest to all projects in the ground truth. This is the very same approach we attempted for adapting the pattern of type I that we defined for the Fire Drill in source code.
 
 
-### Type II (a): Adapt type I using thresholds $t_1,t_2$
+### Type II (a): Adapt type I using thresholds $t_1,t_2$\label{ssec:optim-t1t2}
 
 The two variables `REQ` and `DEV` in the first pattern describe the cumulative time spent on two distinct activities. It was designed with focus on the confidence intervals, and a binary decision rule, such that the actual variables' course was not of interest.
 
@@ -1796,8 +1796,18 @@ The ground truth may be a constant function, i.e., $g(t_{\text{begin}},t_{\text{
 
 If the ground truth is not a constant function, but rather yields an exact or approximate total score for any arbitrarily chosen interval $[t_{\text{begin}},t_{\text{end}}]$, it is likely that we can skip using the time span as input variable. This kind of model is useful for when we do not know at what point in time we are at. If we had a good approximate idea, we could use a model that requires time as input and retrieve some average total score over an interval we are confident we are in. Otherwise, a model with non-constant ground truth is required.
 
-The data we have available only provides us with a constant ground truth, i.e., for each project and at any point in time, it is constant. In section \ref{ssec:score-p3avg} we exemplary attempt to learn the non-linear relationship between arbitrarily chosen time spans and computed scores, and the constant ground truth.
+The data we have available only provides us with a constant ground truth, i.e., for each project and at any point in time, it is constant. In section \ref{ssec:arbint-scores} we exemplary attempt to learn the non-linear relationship between arbitrarily chosen time spans and computed scores, and the constant ground truth.
 
+
+### Process alignment
+
+The procedure for computing scores over arbitrarily chosen intervals as just described requires approximate knowledge about when it was captured, since our ground truth is constant and the begin and end are input parameters to the trained model. The problem in a more generalized way is to align two (potentially multivariate) time series, where one of them is incomplete. Also, the alignment potentially has an open begin and/or end.
+
+For these kind of tasks, Dynamic time warping [@giorgino2009] works usually well. Depending on the nature of the process(es) and process model, we may even solve the problem using some optimization. For example, we modeled the issue-tracking data as cumulative processes. We could pose the essentially same optimization problem as earlier, where we attempted to find where the process model is $0$ (see section \ref{ssec:optim-t1t2}), except that here would look for where the process model minus the observed process at $t_{\text{begin}}$ equals zero (and the same for the end using $t_{\text{end}}$). However, this might not work for non-monotonic processes.
+
+One could also attempt a more general way of mathematical optimization that computes an alignment between the process model and the partially observed process such that some loss is minimized the better start and end match. This approach is essentially a manual way of __one-interval__ boundary time warping. For that, we have __`srBTAW`__, which allows us to use arbitrary intervals, losses, weight, etc. For example, an alignment may be computed using the correlation of the processes. DTW on the other hand uses the Euclidean distance as distance measure, and also requires discrete data, which greatly limits its flexibility.
+
+In section \ref{ssec:proc-align-compute} we take an example and compute all of these.
 
 
 ## Forecasting within Vector Fields
@@ -1924,14 +1934,14 @@ temp <- doWithParallelCluster(expr = {
     
     matrix(data = arrow_dir_smooth(x = p$x, y = p$y), nrow = 1)
   }
-})
+}, numCores = min(8, parallel::detectCores()))
 ```
 
 
 Finally, we compute a vector field based on a smoothed confidence surface, shown in figure \ref{fig:example-vectorfield-smooth}. Note that all arrows have the same length in this figure, such that it does not depend on the magnitude of the steepest increase they are pointing towards.
 
 
-```{r example-vectorfield-smooth, echo=FALSE, fig.height=6, fig.cap="Example vector field computed using a smoothed surface. We can clearly observe how the arrows point now properly towards the direction with steepest increase.", fig.align="center", fig.pos="ht!"}
+```{r example-vectorfield-smooth, echo=FALSE, fig.height=5, fig.cap="Example vector field computed using a smoothed surface. We can clearly observe how the arrows point now properly towards the direction with steepest increase.", fig.align="center", fig.pos="ht!"}
 
 image(x = z_dev$x, y = z_dev$y, z = z_dev$z, main = "Variable: DEV",
       xlab = "Relative time", ylab = "Relative cumulative time spent",
@@ -2404,11 +2414,6 @@ I think it is fair to say that the first pattern and its confidence intervals do
 As expected, `DEV` is quite unusable, as the correlations are low, albeit negative.
 
 
-
-## Pattern II
-
-_TODO_.
-
 ### Average distance to reference
 
 
@@ -2732,7 +2737,7 @@ stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
 With this linear combination of only three scores (out of six), we were able to significantly boost the detection to $\approx0.96$, which implies that combining both methods is of worth for a detection using (inhomogeneous) confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting. Using four or more scores goes beyond $0.97$.
 
 
-### Arbitrary-interval scores computing
+### Arbitrary-interval scores computing\label{ssec:arbint-scores}
 
 Up to now, we presented two methods to compute losses/scores over the closed interval $[0,1]$. We then have fitted a linear model to weigh, scale and translate the scores. We could evaluate how well this linear model performs if we select arbitrary intervals and compute the scores, but the expected is that smaller and earlier intervals would perform poorly. We will compute some the scores for some arbitrary intervals and then evaluate this. Then, we will attempt to learn a non-linear mapping that should correct for these residuals.
 
@@ -2885,6 +2890,339 @@ caret::confusionMatrix(
   stats::predict(object = p3_avg_arb_int_pred_cls$fit, newdata = p3_avg_arb_int_pred_cls$test))
 ```
 
+
+### Process alignment: DTW, Optimization, srBTAW\label{ssec:proc-align-compute}
+
+In the previous subsection we learned a predictive model that requires as input the start and end over which some scores were obtained (it is required since the available ground truth is constant). In a real-world scenario we might not know where exactly in the process we are. In such cases, it might be helpful to find the best alignment of some observed process with the process model. As an example, we will be using the processes from project three, and slice out the interval $[0.25,0.45]$.
+
+
+```{r}
+slice_supp <- c(0.25, 0.45)
+use_p <- all_signals$Project3
+
+get_slice_func <- function(varname) {
+  use_func <- use_p[[varname]]$get0Function()
+  function(x) sapply(X = x, FUN = function(x_) {
+    use_func((slice_supp[2] - slice_supp[1]) * x_ + slice_supp[1])
+  })
+}
+
+# Re-define the slices to support [0,1], to make the problem harder and more realistic.
+slice_req <- Signal$new(name = "REQ_WP", func = get_slice_func("REQ"), support = c(0, 1), isWp = TRUE)
+slice_dev <- Signal$new(name = "DEV_WP", func = get_slice_func("DEV"), support = c(0, 1), isWp = TRUE)
+slice_desc <- Signal$new(name = "DESC_WP", func = get_slice_func("DESC"), support = c(0, 1), isWp = TRUE)
+```
+
+
+#### Optimization-based approach
+
+Similar to how we found the optimum in section \ref{ssec:optim-t1t2}, we can pose an optimization problem:
+
+$$
+\begin{aligned}
+  {[}a,b{]}\dots&\;\text{support of the observed process (here:}\,[0.25,0.45]\text{),}
+  \\[1ex]
+  \mathcal{L}_{\text{begin}}(t_{\text{begin}})=&\;\norm{\operatorname{\overline{req}}(t_{\text{begin}})-\operatorname{req}(a)}+\norm{\operatorname{\overline{dev}}(t_{\text{begin}})-\operatorname{dev}(a)}+\norm{\operatorname{\overline{desc}}(t_{\text{begin}})-\operatorname{desc}(a)}\,\text{,}
+  \\[1ex]
+  \mathcal{L}_{\text{end}}(t_{\text{end}})=&\;\norm{\operatorname{\overline{req}}(t_{\text{end}})-\operatorname{req}(b)}+\norm{\operatorname{\overline{dev}}(t_{\text{end}})-\operatorname{dev}(b)}+\norm{\operatorname{\overline{desc}}(t_{\text{end}})-\operatorname{desc}(b)}\,\text{,}
+  \\[1ex]
+  \mathcal{L}(t_{\text{begin}},t_{\text{end}})=&\;\mathcal{L}_{\text{begin}}(t_{\text{begin}})+\mathcal{L}_{\text{end}}(t_{\text{end}})\,\text{,}
+  \\[1ex]
+  \min_{t_{\text{begin}},t_{\text{end}}\in R}&\;\mathcal{L}(t_{\text{begin}},t_{\text{end}})\,\text{,}
+  \\[1ex]
+  \text{subject to}&\;0\leq t_{\text{begin}}<t_{\text{end}}\leq1\;\text{.}
+\end{aligned}
+$$
+
+```{r}
+req_ab <- slice_req$get0Function()(c(0,1))
+dev_ab <- slice_dev$get0Function()(c(0,1))
+desc_ab <- slice_desc$get0Function()(c(0,1))
+
+set.seed(1)
+
+res <- nloptr(x0 = c(.5, .5), eval_f = function(x) {
+  a <- x[1]
+  b <- x[2]
+  abs(req_p3(a) - req_ab[1]) + abs(dev_p3(a) - dev_ab[1]) + abs(desc_p3(a) - desc_ab[1]) +
+    abs(req_p3(b) - req_ab[2]) + abs(dev_p3(b) - dev_ab[2]) + abs(desc_p3(b) - desc_ab[2])
+}, lb = c(0, 0), ub = c(1, 1), opts = list(maxeval = 1e3, algorithm = "NLOPT_LN_BOBYQA"))
+
+c(res$solution, res$objective)
+```
+
+We found the parameters `r res$solution[1]` and `r res$solution[2]` for the overall begin an end, which is quite close.
+
+
+#### DTW-based approach
+
+Here, we use open-end/-begin DTW to find the offset per variable, then for all variables combined.
+
+```{r}
+dtwRes <- loadResultsOrCompute(file = "../results/proc_align_dtw.rds", computeExpr = {
+  library(dtw)
+  X <- seq(0, 1, length.out=1e3)
+  
+  dtwRes_req <- dtw::dtw(x = req_p3(X), y = slice_req$get0Function()(X), keep.internals = TRUE)
+  dtwEx_req <- extract_signal_from_window(dtwRes_req, window = X)
+  
+  dtwRes_dev <- dtw::dtw(x = dev_p3(X), y = slice_dev$get0Function()(X), keep.internals = TRUE)
+  dtwEx_dev <- extract_signal_from_window(dtwRes_dev, window = X)
+  
+  dtwRes_desc <- dtw::dtw(x = desc_p3(X), y = slice_desc$get0Function()(X), keep.internals = TRUE)
+  dtwEx_desc <- extract_signal_from_window(dtwRes_desc, window = X)
+  
+  dtwRes_ALL <- dtw::dtw(
+    x = matrix(ncol = 3, data = c(req_p3(X), dev_p3(X), desc_p3(X))),
+    y = matrix(ncol = 3, data = c(
+      slice_req$get0Function()(X), slice_dev$get0Function()(X),
+      slice_desc$get0Function()(X))),
+    keep.internals = TRUE)
+  dtwEx_ALL <- extract_signal_from_window(dtwRes_ALL, window = X)
+  
+  c("begin_req" = dtwEx_req$start_rel, "end_req" = dtwEx_req$end_rel,
+    "begin_dev" = dtwEx_dev$start_rel, "end_dev" = dtwEx_dev$end_rel,
+    "begin_desc" = dtwEx_desc$start_rel, "end_desc" = dtwEx_desc$end_rel,
+    "begin_ALL" = dtwEx_ALL$start_rel, "end_ALL" = dtwEx_ALL$end_rel)
+})
+
+dtwRes
+```
+
+Here we get a couple results, depending on the variable. The overall result is marginally worse compared to the one we got from the optimization. Here it becomes apparent that a custom objective would be needed to detect the true begin and end, which is not possible with DTW.
+
+
+#### srBTAW-based approach
+
+Here we attempt to align the partially observed process with the process model using two different approaches. First, we attempt to use the RSS loss, which should give us similar results to what DTW achieved for the overall begin and end. Then, we use an objective to compute the correlation between processes.
+
+
+```{r}
+proc_align_srbtaw <- function(use = c("rss", "logratio")) {
+  use <- match.arg(use)
+  
+  srbtaw <- srBTAW$new(
+    theta_b = seq(0, 1, by = 0.1), gamma_bed = c(0, 1, .Machine$double.eps),
+    lambda = rep(.Machine$double.eps, 10),
+    begin = 0, end = 1, openBegin = TRUE, openEnd = TRUE)
+  srbtaw$setParams(`names<-`(c(0, 1, rep(1/10, 10)), srbtaw$getParamNames()))
+  
+  srbtaw$setSignal(signal = Signal$new(name = "REQ", func = req_p3, support = c(0, 1), isWp = FALSE))
+  srbtaw$setSignal(slice_req)
+  srbtaw$setSignal(signal = Signal$new(name = "DEV", func = dev_p3, support = c(0, 1), isWp = FALSE))
+  srbtaw$setSignal(slice_dev)
+  srbtaw$setSignal(signal = Signal$new(name = "DESC", func = desc_p3, support = c(0, 1), isWp = FALSE))
+  srbtaw$setSignal(slice_desc)
+  
+  obj <- srBTAW_LossLinearScalarizer$new(
+    computeParallel = TRUE, gradientParallel = TRUE, returnRaw = TRUE)
+  
+  if (use == "rss") {
+    loss_req <- srBTAW_Loss_Rss$new(
+      wpName = "REQ_WP", wcName = "REQ", intervals = 1:10, returnRaw = FALSE)
+    srbtaw$addLoss(loss = loss_req)
+    loss_dev <- srBTAW_Loss_Rss$new(
+      wpName = "DEV_WP", wcName = "DEV", intervals = 1:10, returnRaw = FALSE)
+    srbtaw$addLoss(loss = loss_dev)
+    loss_desc <- srBTAW_Loss_Rss$new(
+      wpName = "DESC_WP", wcName = "DESC", intervals = 1:10, returnRaw = FALSE)
+    srbtaw$addLoss(loss = loss_desc)
+    
+    obj$setObjective(name = "Loss_REQ", obj = loss_req)
+    obj$setObjective(name = "Loss_DEV", obj = loss_dev)
+    obj$setObjective(name = "Loss_DESC", obj = loss_desc)
+  } else {
+    loss_req2 <- srBTAW_Loss2Curves$new(use = "logratio",
+      srbtaw = srbtaw, wpName = "REQ_WP", wcName = "REQ", intervals = 1:10)
+    srbtaw$addLoss(loss = loss_req2)
+    
+    loss_dev2 <- srBTAW_Loss2Curves$new(use = "logratio",
+      srbtaw = srbtaw, wpName = "DEV_WP", wcName = "DEV", intervals = 1:10)
+    srbtaw$addLoss(loss = loss_dev2)
+    
+    loss_desc2 <- srBTAW_Loss2Curves$new(use = "logratio",
+      srbtaw = srbtaw, wpName = "DESC_WP", wcName = "DESC", intervals = 1:10)
+    srbtaw$addLoss(loss = loss_desc2)
+    
+    obj$setObjective(name = "Loss_REQ2", obj = loss_req2)
+    obj$setObjective(name = "Loss_DEV2", obj = loss_dev2)
+    obj$setObjective(name = "Loss_DESC2", obj = loss_desc2)
+  }
+  
+  reg <- TimeWarpRegularization$new(
+    weight = 1/2, use = "exint2", wpName = "REQ_WP", wcName = "REQ", returnRaw = use == "logratio", intervals = 1:10)
+
+  srbtaw$addLoss(loss = reg)
+  obj$setObjective(name = "reg_exint2", obj = reg)
+  srbtaw$setObjective(obj = obj)
+  srbtaw$setIsObjectiveLogarithmic(val = TRUE)
+}
+```
+
+
+```{r echo=FALSE}
+compute_proc_align <- function(srbtaw) {
+  cl <- parallel::makePSOCKcluster(min(64, parallel::detectCores()))
+  tempf <- tempfile()
+  saveRDS(object = list(a = srbtaw, b = srbtaw$getObjective()), file = tempf)
+  parallel::clusterExport(cl, varlist = list("tempf", "slice_supp"))
+  
+  res <- optimParallel::optimParallel(
+    par = srbtaw$getParams(),
+    method = "L-BFGS-B",
+    lower = rep(0, 12),
+    upper = rep(1, 12),
+    fn = function(x) {
+      temp <- readRDS(file = tempf)
+      temp$a$setParams(params = x)
+      temp$b$compute0()
+    },
+    parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
+  )
+  parallel::stopCluster(cl)
+  
+  tempFr <- FitResult$new(paramNames = c("dummy"))
+  list(
+    srbtaw = srbtaw,
+    obj = srbtaw$getObjective(),
+    res = res,
+    fr = tempFr$fromOptimParallel(optR = res))
+}
+```
+
+
+```{r align-srbtaw-rss}
+align_srbtaw_rss <- loadResultsOrCompute(file = "../results/proc_align_srbtaw_rss.rds", computeExpr = {
+  srbtaw <- proc_align_srbtaw(use = "rss")
+  compute_proc_align(srbtaw = srbtaw)
+})
+align_srbtaw_rss$res$par[c("b", "e")]
+```
+
+
+```{r align-srbtaw-logratio}
+align_srbtaw_logratio <- loadResultsOrCompute(file = "../results/proc_align_srbtaw_logratio.rds", computeExpr = {
+  srbtaw <- proc_align_srbtaw(use = "logratio")
+  compute_proc_align(srbtaw = srbtaw)
+})
+align_srbtaw_logratio$res$par[c("b", "e")]
+```
+
+As expected, the result for the RSS-based is very similar to the overall result as obtained by DTW (note that the mix-up of begin and end does not matter to srBTAW, is it regularizes this using its internal representation $\beta_l,\beta_u$). The correlation-based loss, surprisingly, manages to discover the true begin of $\approx0.25$. It is likely possible to find a combination of losses, weights, etc., that can find the offsets of some process better, but that is a bit out of scope here. In fig. \ref{fig:proc-align-srbtaw} we show the time warping as computed by the two objectives (RSS and correlation).
+
+```{r proc-align-srbtaw, echo=FALSE, fig.height=3.5, fig.cap="Open alignment of the observed process using srBTAW and 10 intervals. On the left using RSS as loss, and on the right using correlation.", fig.align="center", fig.pos="ht!"}
+align_srbtaw_rss$srbtaw$setParams(align_srbtaw_rss$res$par)
+align_srbtaw_logratio$srbtaw$setParams(align_srbtaw_logratio$res$par)
+
+ggpubr::ggarrange(
+  plotlist = list(
+    align_srbtaw_rss$srbtaw$.__enclos_env__$private$instances$`REQ_WP|REQ`$plot_dual_original(),
+    align_srbtaw_logratio$srbtaw$.__enclos_env__$private$instances$`REQ_WP|REQ`$plot_dual_original()
+  ),
+  common.legend = TRUE)
+```
+
+For demonstration purposes, we can compute the loss surface of a one-interval model using some loss:
+
+```{r echo=FALSE}
+temp_get_1interval_srbtaw <- function() {
+  srbtaw <- srBTAW$new(
+    theta_b = c(0, 1), gamma_bed = c(0, 1, .Machine$double.eps),
+    lambda = .Machine$double.eps,
+    begin = 0, end = 1, openBegin = TRUE, openEnd = TRUE)
+  srbtaw$setParams(`names<-`(c(0, 1, 1), srbtaw$getParamNames()))
+  
+  srbtaw$setSignal(signal = Signal$new(name = "REQ", func = req_p3, support = c(0, 1), isWp = FALSE))
+  srbtaw$setSignal(slice_req)
+  srbtaw$setSignal(signal = Signal$new(name = "DEV", func = dev_p3, support = c(0, 1), isWp = FALSE))
+  srbtaw$setSignal(slice_dev)
+  srbtaw$setSignal(signal = Signal$new(name = "DESC", func = desc_p3, support = c(0, 1), isWp = FALSE))
+  srbtaw$setSignal(slice_desc)
+  
+  obj <- srBTAW_LossLinearScalarizer$new(
+    computeParallel = TRUE, gradientParallel = TRUE, returnRaw = TRUE)
+  
+  loss_req <- srBTAW_Loss_Rss$new(
+    wpName = "REQ_WP", wcName = "REQ", intervals = 1, returnRaw = FALSE)
+  srbtaw$addLoss(loss = loss_req)
+  loss_dev <- srBTAW_Loss_Rss$new(
+    wpName = "DEV_WP", wcName = "DEV", intervals = 1, returnRaw = FALSE)
+  srbtaw$addLoss(loss = loss_dev)
+  loss_desc <- srBTAW_Loss_Rss$new(
+    wpName = "DESC_WP", wcName = "DESC", intervals = 1, returnRaw = FALSE)
+  srbtaw$addLoss(loss = loss_desc)
+  
+  obj$setObjective(name = "Loss_REQ", obj = loss_req)
+  obj$setObjective(name = "Loss_DEV", obj = loss_dev)
+  obj$setObjective(name = "Loss_DESC", obj = loss_desc)
+  
+  reg <- TimeWarpRegularization$new(
+    weight = 1/2, use = "exint2", wpName = "REQ_WP", wcName = "REQ", returnRaw = FALSE, intervals = 1:10)
+
+  srbtaw$addLoss(loss = reg)
+  obj$setObjective(name = "reg_exint2", obj = reg)
+  srbtaw$setObjective(obj = obj)
+  srbtaw$setIsObjectiveLogarithmic(val = TRUE)
+}
+```
+
+In figure \ref{fig:proc-align-srbtaw-loss-surface} we show the loss surface of the parameters begin and end of a one-interval alignment using srBTAW and RSS-losses.
+
+```{r}
+use_resol <- 50
+minStep <- 1 / use_resol
+use_begin <- seq(0, 1 - minStep, by = minStep)
+  
+align_srbtaw_rss_surface <- loadResultsOrCompute(file = "../results/align_srbtaw_rss_surface.rds", computeExpr = {
+  library(foreach)
+  
+  cl <- parallel::makePSOCKcluster(min(64, parallel::detectCores()))
+  parallel::clusterExport(cl, varlist = list("slice_supp"))
+  
+  doWithParallelClusterExplicit(cl = cl, expr = {
+    foreach::foreach(
+      begin = use_begin,
+      .inorder = TRUE,
+      .combine = cbind
+    ) %dopar% {
+      source(file = "../helpers.R")
+      source(file = "./common-funcs.R")
+      source(file = "../models/modelsR6.R")
+      source(file = "../models/SRBTW-R6.R")
+      
+      end <- begin + minStep
+      res <- c()
+      while (TRUE) {
+        if (end > 1) break
+        
+        srbtaw <- temp_get_1interval_srbtaw()
+        srbtaw$setParams(`names<-`(c(begin, end, 1), srbtaw$getParamNames()))
+        res <- c(res, srbtaw$getObjective()$compute0())
+        
+        end <- end + minStep
+      }
+      
+      # pad left:
+      c(rep(NA_real_, use_resol - length(res)), res)
+    }
+  })
+})
+```
+
+```{r proc-align-srbtaw-loss-surface, echo=FALSE, fig.cap="The loss surface for one-interval time warping using srBTAW of the parameters begin and end. The lowest loss is marked with a circle.", fig.align="center", fig.pos="ht!"}
+z_temp <- list(
+  x = seq(0, 1, by = minStep),
+  y = seq(0, 1, by = minStep),
+  z = align_srbtaw_rss_surface)
+
+fields::image.plot(z_temp, col = hcl.colors(101, "YlOrRd", rev = TRUE))
+
+temp <- align_srbtaw_rss_surface
+temp[is.na(temp)] <- Inf
+temp <- which(temp == min(temp), arr.ind = TRUE)
+points(x = temp[, 1] / use_resol, y = temp[, 2] / use_resol)
+title(ylab = "begin", xlab = "end")
+```
 
 
 
