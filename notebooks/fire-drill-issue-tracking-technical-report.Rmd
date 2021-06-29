@@ -3122,15 +3122,15 @@ ggpubr::ggarrange(
   common.legend = TRUE)
 ```
 
-For demonstration purposes, we can compute the loss surface of a one-interval model using some loss:
+For demonstration purposes, we can compute the loss surface of a the model that was previously fit using RSS. Here, we keep the vector $\bm{\vartheta}^{(l)}$ constant, and only update $b,e$.
 
 ```{r echo=FALSE}
-temp_get_1interval_srbtaw <- function() {
+temp_get_srbtaw <- function() {
   srbtaw <- srBTAW$new(
-    theta_b = c(0, 1), gamma_bed = c(0, 1, .Machine$double.eps),
-    lambda = .Machine$double.eps,
+    theta_b = seq(0, 1, by = 0.1), gamma_bed = c(0, 1, .Machine$double.eps),
+    lambda = rep(.Machine$double.eps, 10),
     begin = 0, end = 1, openBegin = TRUE, openEnd = TRUE)
-  srbtaw$setParams(`names<-`(c(0, 1, 1), srbtaw$getParamNames()))
+  srbtaw$setParams(`names<-`(c(0, 1, rep(1/10, 10)), srbtaw$getParamNames()))
   
   srbtaw$setSignal(signal = Signal$new(name = "REQ", func = req_p3, support = c(0, 1), isWp = FALSE))
   srbtaw$setSignal(slice_req)
@@ -3143,13 +3143,13 @@ temp_get_1interval_srbtaw <- function() {
     computeParallel = TRUE, gradientParallel = TRUE, returnRaw = TRUE)
   
   loss_req <- srBTAW_Loss_Rss$new(
-    wpName = "REQ_WP", wcName = "REQ", intervals = 1, returnRaw = FALSE)
+    wpName = "REQ_WP", wcName = "REQ", intervals = 1:10, returnRaw = FALSE)
   srbtaw$addLoss(loss = loss_req)
   loss_dev <- srBTAW_Loss_Rss$new(
-    wpName = "DEV_WP", wcName = "DEV", intervals = 1, returnRaw = FALSE)
+    wpName = "DEV_WP", wcName = "DEV", intervals = 1:10, returnRaw = FALSE)
   srbtaw$addLoss(loss = loss_dev)
   loss_desc <- srBTAW_Loss_Rss$new(
-    wpName = "DESC_WP", wcName = "DESC", intervals = 1, returnRaw = FALSE)
+    wpName = "DESC_WP", wcName = "DESC", intervals = 1:10, returnRaw = FALSE)
   srbtaw$addLoss(loss = loss_desc)
   
   obj$setObjective(name = "Loss_REQ", obj = loss_req)
@@ -3172,6 +3172,7 @@ In figure \ref{fig:proc-align-srbtaw-loss-surface} we show the loss surface of t
 use_resol <- 50
 minStep <- 1 / use_resol
 use_begin <- seq(0, 1 - minStep, by = minStep)
+use_par <- align_srbtaw_rss$res$par
   
 align_srbtaw_rss_surface <- loadResultsOrCompute(file = "../results/align_srbtaw_rss_surface.rds", computeExpr = {
   library(foreach)
@@ -3195,8 +3196,12 @@ align_srbtaw_rss_surface <- loadResultsOrCompute(file = "../results/align_srbtaw
       while (TRUE) {
         if (end > 1) break
         
-        srbtaw <- temp_get_1interval_srbtaw()
-        srbtaw$setParams(`names<-`(c(begin, end, 1), srbtaw$getParamNames()))
+        srbtaw <- temp_get_srbtaw()
+        params <- c(use_par)
+        params["b"] <- begin
+        params["e"] <- end
+        #srbtaw$setParams(`names<-`(c(begin, end, 1), srbtaw$getParamNames()))
+        srbtaw$setParams(params = params)
         res <- c(res, srbtaw$getObjective()$compute0())
         
         end <- end + minStep
@@ -3209,19 +3214,29 @@ align_srbtaw_rss_surface <- loadResultsOrCompute(file = "../results/align_srbtaw
 })
 ```
 
-```{r proc-align-srbtaw-loss-surface, echo=FALSE, fig.cap="The loss surface for one-interval time warping using srBTAW of the parameters begin and end. The lowest loss is marked with a circle.", fig.align="center", fig.pos="ht!"}
+```{r proc-align-srbtaw-loss-surface, echo=FALSE, fig.cap="The loss surface for ten-interval time warping using srBTAW of the parameters begin and end. The lowest loss is marked with a triangle", fig.align="center", fig.pos="ht!"}
 z_temp <- list(
   x = seq(0, 1, by = minStep),
   y = seq(0, 1, by = minStep),
   z = align_srbtaw_rss_surface)
 
-fields::image.plot(z_temp, col = hcl.colors(101, "YlOrRd", rev = TRUE))
+fields::image.plot(z_temp, col = hcl.colors(101, "YlOrRd", rev = TRUE),
+                   legend.shrink = .5, legend.lab = "Loss (log(RSS))", legend.line = 2.5,
+                   xlab = "", ylab = "")
+title(ylab = "begin", xlab = "end", line = 2.5)
+grid()
+
+z_temp$x <- z_temp$x[2:51]
+z_temp$y <- z_temp$y[2:51]
+contour(z_temp, col = "#222222", add = TRUE)
 
 temp <- align_srbtaw_rss_surface
 temp[is.na(temp)] <- Inf
 temp <- which(temp == min(temp), arr.ind = TRUE)
-points(x = temp[, 1] / use_resol, y = temp[, 2] / use_resol)
-title(ylab = "begin", xlab = "end")
+points(x = temp[, 1] / use_resol, y = temp[, 2] / use_resol, pch = 2, col = "red", cex = 2)
+
+legend(.01, .98, legend = c("Lowest loss"),
+       pch = 2, col = "red", bg = "white")
 ```
 
 
