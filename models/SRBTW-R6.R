@@ -1649,7 +1649,7 @@ srBTAW_Loss2Curves <- R6Class(
   public = list(
     initialize = function(
       srbtaw, wpName, wcName, weight = 1, intervals = c(), returnRaw = FALSE,
-      use = c("area", "rss", "corr", "arclen", "jsd"),
+      use = c("area", "rss", "corr", "arclen", "jsd", "logratio"),
       continuous = FALSE, numSamples = rep(if (continuous) NA_real_ else 1e3, length(intervals))
     ) {
       super$initialize(
@@ -1666,6 +1666,30 @@ srBTAW_Loss2Curves <- R6Class(
     
     getNumOutputs = function() {
       1
+    },
+    
+    funcLogRatio = function() {
+      srbtaw <- private$srbtaw
+      qs <- private$intervals
+      
+      err <- 0
+      res <- srbtaw$residuals(loss = self)
+      for (q in qs) {
+        t <- res[[q]]
+        wc <- if (srbtaw$isBawEnabled()) t$nqc else t$mqc
+        
+        err <- err + cubature::cubintegrate(f = function(x) {
+          vals <- c(t$wp(x), wc(x))
+          a <- min(vals)
+          b <- max(vals)
+          if (any(vals <= 0)) {
+            return(0)
+          }
+          -log(a / b)
+        }, lower = t$tb_q, upper = t$te_q)$integral
+      }
+      
+      `names<-`(c(err), srbtaw$getOutputNames())
     },
     
     funcArea = function() {
@@ -1818,6 +1842,8 @@ srBTAW_Loss2Curves <- R6Class(
         self$funcArclen
       } else if (private$use == "jsd") {
         self$funcJsd
+      } else if (private$use == "logratio") {
+        self$funcLogRatio
       } else {
         stop(paste0("Should not get here.."))
       }
@@ -1837,10 +1863,10 @@ srBTAW_Loss_JSD <- R6Class(
   
   public = list(
     initialize = function(
-      wpName, wcName, weight = 1, intervals = c(), numSamples = 2e3
+      wpName, wcName, weight = 1, intervals = c(), numSamples = 2e3, returnRaw = FALSE
     ) {
       super$initialize(
-        wpName = wpName, wcName = wcName, weight = weight, intervals = intervals)
+        wpName = wpName, wcName = wcName, weight = weight, intervals = intervals, returnRaw = returnRaw)
       private$numSamples <- numSamples
     },
     
