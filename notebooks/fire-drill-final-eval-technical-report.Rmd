@@ -50,6 +50,8 @@ source(file = "../models/SRBTW-R6.R")
 
 library(ggplot2)
 library(ggpubr)
+library(reshape2)
+library(Cairo)
 ```
 
 # Introduction\label{tr:fire-drill-final-eval-technical-report}
@@ -60,6 +62,196 @@ The purpose of this notebook to finally reconcile both of our approaches of dete
 # Tools
 
 Here, we define some of the tools needed for this report.
+
+
+## Theme for figures
+
+We will try to only use `ggplot2`-figures, but we want them to look as plain as the built-in plot-functionality. The template we are currently using has a textwidth of $4.67783$ inches, so we'll floor to two decimals. We define a function to create and return some custom styles. Note that in the rendered report, some figures are not shown as the sections are not evaluated or echoed, because they are meant to be run manually. Therefore, you'll have to check out the source code of this notebook in some cases.
+
+```{r echo=FALSE}
+par(family = "LM Roman 10")
+
+fe_fig_width <- 4.67
+fe_alpha <- 0.9
+
+fe_gg2_style <- function(facets = FALSE) {
+  sty <- theme_minimal(base_size = 10) + theme(
+    text = element_text(family = "serif"),
+    axis.title.x.bottom = element_text(margin = margin(t = 8)),
+    axis.title.y.left = element_text(margin = margin(r = 8)))
+  
+  if (facets) {
+    sty <- sty + theme(
+      text = element_text(family = "LM Roman 10"),
+      panel.spacing = unit(1, "mm"),
+      panel.border = element_rect(color = "#d8d8d8", fill = NA, size = .1),
+      strip.background = element_rect(fill="#f2f2f2", color = "#d8d8d8"),
+      strip.text.x = element_text(color="black", margin = margin(t = 2, b = 2)),
+      strip.text.y = element_text(color="black", margin = margin(l = 4, r = 2)))
+  }
+  sty
+}
+```
+
+
+```{r echo=FALSE}
+saveTikzAndEps <- function(ggInst, name, width = fe_fig_width, height = 3.2) {
+  tikzDevice::tikz(file = paste0("../figures/fig_fdfe_", name, ".tex"), width = width, height = height, verbose = FALSE)
+  print(ggInst)
+  dev.off()
+  
+  saveAndPlotAsEPS(ggplotInstance = ggInst, fileName = paste0("../figures/fig_fdfe_", name, ".eps"), width = width, height = height)
+}
+
+saveTikzExpr <- function(expr, name, width = fe_fig_width, height = 3.2) {
+  tikzDevice::tikz(file = paste0("../figures/fig_fdfe_", name, ".tex"), width = width, height = height, verbose = FALSE)
+  eval(expr)
+  dev.off()
+}
+
+saveEPSExpr <- function(expr, name, width = fe_fig_width, height = 3.2) {
+  setEPS()
+  postscript(paste0("../figures/fig_fdfe_", name, ".eps"), width = width, height = height)
+  eval(expr)
+  dev.off()
+}
+
+#' Add text with background box to a plot
+#'
+#' \code{boxtext} places a text given in the vector \code{labels} 
+#' onto a plot in the base graphics system and places a coloured box behind 
+#' it to make it stand out from the background.
+#' 
+#' @param x numeric vector of x-coordinates where the text labels should be 
+#' written. If the length of \code{x} and \code{y} differs, the shorter one 
+#' is recycled.
+#' @param y numeric vector of y-coordinates where the text labels should be 
+#' written. 
+#' @param labels a character vector specifying the text to be written.
+#' @param col.text the colour of the text 
+#' @param col.bg color(s) to fill or shade the rectangle(s) with. The default 
+#' \code{NA} means do not fill, i.e., draw transparent rectangles.
+#' @param border.bg color(s) for rectangle border(s). The default \code{NA}
+#' omits borders. 
+#' @param adj one or two values in [0, 1] which specify the x (and optionally 
+#' y) adjustment of the labels. 
+#' @param pos a position specifier for the text. If specified this overrides 
+#' any adj value given. Values of 1, 2, 3 and 4, respectively indicate 
+#' positions below, to the left of, above and to the right of the specified 
+#' coordinates.
+#' @param offset when \code{pos} is specified, this value gives the offset of 
+#' the label from the specified coordinate in fractions of a character width.
+#' @param padding factor used for the padding of the box around 
+#' the text. Padding is specified in fractions of a character width. If a 
+#' vector of length two is specified then different factors are used for the
+#' padding in x- and y-direction.    
+#' @param cex numeric character expansion factor; multiplied by 
+#' code{par("cex")} yields the final character size. 
+#' @param font the font to be used
+#'
+#' @return Returns the coordinates of the background rectangle(s). If 
+#' multiple labels are placed in a vactor then the coordinates are returned
+#' as a matrix with columns corresponding to xleft, xright, ybottom, ytop. 
+#' If just one label is placed, the coordinates are returned as a vector.
+#' @author Ian Kopacka
+#' @examples
+#' ## Create noisy background
+#' plot(x = runif(1000), y = runif(1000), type = "p", pch = 16, 
+#' col = "#40404060")
+#' boxtext(x = 0.5, y = 0.5, labels = "some Text", col.bg = "#b2f4f480", 
+#'     pos = 4, font = 2, cex = 1.3, padding = 1)
+#' @export
+boxtext <- function(x, y, labels = NA, col.text = NULL, col.bg = NA, 
+        border.bg = NA, adj = NULL, pos = NULL, offset = 0.5, 
+        padding = c(0.5, 0.5), cex = 1, font = graphics::par('font')){
+
+    ## The Character expansion factro to be used:
+    theCex <- graphics::par('cex')*cex
+
+    ## Is y provided:
+    if (missing(y)) y <- x
+
+    ## Recycle coords if necessary:    
+    if (length(x) != length(y)){
+        lx <- length(x)
+        ly <- length(y)
+        if (lx > ly){
+            y <- rep(y, ceiling(lx/ly))[1:lx]           
+        } else {
+            x <- rep(x, ceiling(ly/lx))[1:ly]
+        }       
+    }
+
+    ## Width and height of text
+    textHeight <- graphics::strheight(labels, cex = theCex, font = font)
+    textWidth <- graphics::strwidth(labels, cex = theCex, font = font)
+
+    ## Width of one character:
+    charWidth <- graphics::strwidth("e", cex = theCex, font = font)
+
+    ## Is 'adj' of length 1 or 2?
+    if (!is.null(adj)){
+        if (length(adj == 1)){
+            adj <- c(adj[1], 0.5)            
+        }        
+    } else {
+        adj <- c(0.5, 0.5)
+    }
+
+    ## Is 'pos' specified?
+    if (!is.null(pos)){
+        if (pos == 1){
+            adj <- c(0.5, 1)
+            offsetVec <- c(0, -offset*charWidth)
+        } else if (pos == 2){
+            adj <- c(1, 0.5)
+            offsetVec <- c(-offset*charWidth, 0)
+        } else if (pos == 3){
+            adj <- c(0.5, 0)
+            offsetVec <- c(0, offset*charWidth)
+        } else if (pos == 4){
+            adj <- c(0, 0.5)
+            offsetVec <- c(offset*charWidth, 0)
+        } else {
+            stop('Invalid argument pos')
+        }       
+    } else {
+      offsetVec <- c(0, 0)
+    }
+
+    ## Padding for boxes:
+    if (length(padding) == 1){
+        padding <- c(padding[1], padding[1])
+    }
+
+    ## Midpoints for text:
+    xMid <- x + (-adj[1] + 1/2)*textWidth + offsetVec[1]
+    yMid <- y + (-adj[2] + 1/2)*textHeight + offsetVec[2]
+
+    ## Draw rectangles:
+    rectWidth <- textWidth + 2*padding[1]*charWidth
+    rectHeight <- textHeight + 2*padding[2]*charWidth    
+    graphics::rect(xleft = xMid - rectWidth/2, 
+            ybottom = yMid - rectHeight/2, 
+            xright = xMid + rectWidth/2, 
+            ytop = yMid + rectHeight/2,
+            col = col.bg, border = border.bg)
+
+    ## Place the text:
+    graphics::text(xMid, yMid, labels, col = col.text, cex = theCex, font = font, 
+            adj = c(0.5, 0.5))    
+
+    ## Return value:
+    if (length(xMid) == 1){
+        invisible(c(xMid - rectWidth/2, xMid + rectWidth/2, yMid - rectHeight/2,
+                        yMid + rectHeight/2))
+    } else {
+        invisible(cbind(xMid - rectWidth/2, xMid + rectWidth/2, yMid - rectHeight/2,
+                        yMid + rectHeight/2))
+    }    
+}
+```
+
 
 
 ## $m$-dimensional relative continuous Pearson sample correlation coefficient
@@ -75,6 +267,8 @@ $$
   \overline{f}=\mathrm{E}[f]=&\;\left[\int_{a_{1,1}}^{a_{1,2}}\dots\int_{a_{m,1}}^{a_{m,2}}\,f(x_1,\dots,x_m)\,dx_1\dots dx_m\right]
   \\[0ex]
   &\;\;\times\prod_{i=1}^{m}\,(a_{i,1}-a_{i,2})^{-1}\,\text{, (equivalently for}\;\overline{g}\;\text{using}\;\bm{\mathit{S}}_g\text{),}
+  \\[1ex]
+  =&\;\int_0^1\dots\int_0^1\,f(\mathsf{T}(a_{1,1},a_{1,2},x_1),\,\dots\,,\mathsf{T}(a_{m,1},a_{m,2},x_m))\,dx_1\,\dots\,dx_m\,\text{,}
   \\[1em]
   \operatorname{corr}(f,g)=&\frac{
     \splitfrac{
@@ -84,12 +278,12 @@ $$
     }
   }{
     \splitfrac{
-      \sqrt{\left[\int_0^1\dots\int_0^1\,(f(\mathsf{T}(a_{1,1},a_{1,2},x_1),\,\dots)-\mathrm{E}[f])^2\,dx_1\,\dots\,dx_m\right]}
+      \left[\int_0^1\dots\int_0^1\,\Big(f\big(\mathsf{T}(a_{1,1},a_{1,2},x_1),\,\dots\big)-\mathrm{E}[f]\Big)^2\,dx_1\,\dots\,dx_m\right]^{\frac{1}{2}}
   }{
-      \times\sqrt{\left[\int_0^1\dots\int_0^1\,(g(\mathsf{T}(b_{1,1},b_{1,2},x_1),\,\dots)-\mathrm{E}[g])^2\,dx_1\,\dots\,dx_m\right]}
+      \times\left[\int_0^1\dots\int_0^1\,\Big(g\big(\mathsf{T}(b_{1,1},b_{1,2},x_1),\,\dots\big)-\mathrm{E}[g]\Big)^2\,dx_1\,\dots\,dx_m\right]^{\frac{1}{2}}
     }
   }\,\text{,}\label{eq:mdim-corr}
-  \\[1ex]
+  \\[1em]
   c_{fg}=&\;\int_0^1\dots\int_0^1\,corr(f,g)\,dx_1\,\dots\,dx_m\,\text{.}
 \end{aligned}
 $$
@@ -112,7 +306,7 @@ f_a <- approxfun(x = dens_a$x, y = dens_a$y, yleft = 0, yright = 0)
 f_b <- approxfun(x = dens_b$x, y = dens_b$y, yleft = 0, yright = 0)
 ```
 
-```{r dens-example-data, echo=FALSE, fig.cap="The densities of both normally-distributed variables.", fig.align="center", fig.pos="ht!"}
+```{r dens-example-data, echo=FALSE, fig.height=4, fig.cap="The densities of both normally-distributed variables.", fig.align="center", fig.pos="ht!"}
 curve(f_a, min(c(dens_a$x, dens_b$x)), max(c(dens_a$x, dens_b$x)), ylim = range(c(dens_a$y, dens_b$y)))
 curve(f_b, min(c(dens_a$x, dens_b$x)), max(c(dens_a$x, dens_b$x)), add = TRUE)
 ```
@@ -133,7 +327,7 @@ sum(corrvec_ab)
 ```
 
 
-```{r oned-corrvec, echo=FALSE, fig.cap="The one-dimensional correlation vector of the two discrete variables.", fig.align="center", fig.pos="ht!"}
+```{r oned-corrvec, echo=FALSE, fig.height=3, fig.cap="The one-dimensional correlation vector of the two discrete variables.", fig.align="center", fig.pos="ht!"}
 plot(corrvec_ab)
 ```
 
@@ -192,7 +386,7 @@ coef_rel_pearson_1d <- function(f, g, supp_f = c(0,1), supp_g = c(0,1)) {
 
 In figure \ref{fig:oned-corrfunc} we show the correlation of both continuous functions. Let's test using the previously generated data, density, and functions thereof:
 
-```{r oned-corrfunc, echo=FALSE, fig.cap="The one-dimensional correlation function of the two continuous variables.", fig.align="center", fig.pos="ht!"}
+```{r oned-corrfunc, echo=FALSE, fig.height=3, fig.cap="The one-dimensional correlation function of the two continuous variables.", fig.align="center", fig.pos="ht!"}
 temp <- coef_rel_pearson_1d(f = f_a, g = f_b, supp_f = range(dens_a$x), supp_g = range(dens_b$x))
 temp
 
@@ -213,13 +407,13 @@ Check, very similar. Next, we compute and plot the result of the numerator (cf. 
 sum((dens_a$y - mean(dens_a$y)) * (dens_b$y - mean(dens_b$y)))
 ```
 
-```{r disc-num, echo=FALSE, fig.cap="The discrete values that make up the numerator, plotted over all indexes.", fig.align="center", fig.pos="ht!"}
+```{r disc-num, echo=FALSE, fig.height=3, fig.cap="The discrete values that make up the numerator, plotted over all indexes.", fig.align="center", fig.pos="ht!"}
 plot((dens_a$y - mean(dens_a$y)) * (dens_b$y - mean(dens_b$y)))
 ```
 
 The continuous version of the numerator is in the previously computed result. If we integrate it, we get the __mean__ of the function (since the area under the curve over the interval $[0,1]$ is always a mean), not the sum. The function for the continuous numerator is shown in figure \ref{fig:cont-num}.
 
-```{r cont-num, echo=FALSE, fig.cap="The relative function of the continuos numerator plotted over its support.", fig.align="center", fig.pos="ht!"}
+```{r cont-num, echo=FALSE, fig.height=3, fig.cap="The relative function of the continuos numerator plotted over its support.", fig.align="center", fig.pos="ht!"}
 tempfff <- temp$fnum
 curve(tempfff, 0, 1)
 ```
@@ -239,8 +433,8 @@ c(
 ```
 
 
-```{r disc-denoms, echo=FALSE, fig.cap="Plots of the continuous denominators for both data series.", fig.align="center", fig.pos="ht!"}
-par(mfrow=c(2,1))
+```{r disc-denoms, echo=FALSE, fig.height=3, fig.cap="Plots of the discrete denominators for both data series.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(1,2))
 plot((dens_a$y - mean(dens_a$y))^2)
 plot((dens_b$y - mean(dens_b$y))^2)
 ```
@@ -264,8 +458,8 @@ c(
 ```
 
 
-```{r cont-denoms, echo=FALSE, fig.cap="Plots of the continuous denominators for both data series.", fig.align="center", fig.pos="ht!"}
-par(mfrow=c(2,1))
+```{r cont-denoms, echo=FALSE, fig.height=3, fig.cap="Plots of the continuous denominators for both data series.", fig.align="center", fig.pos="ht!"}
+par(mfrow=c(1,2))
 curve(tempf_a, 0, 1)
 curve(tempf_b, 0, 1)
 ```
@@ -348,7 +542,7 @@ CI_funcs <- readRDS(file = "../data/CI_p3avg_funcs.rds")
 CI_req_p3avg <- CI_funcs$CI_req_p3avg
 CI_dev_p3avg <- CI_funcs$CI_dev_p3avg
 
-tempcorr <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr.rds", computeExpr = {
+tempcorr <- loadResultsOrCompute(file = "../results/fdfe_2dcorr.rds", computeExpr = {
   coef_rel_pearson_2db(f = CI_req_p3avg, g = CI_dev_p3avg, maxEval = 250)
 })
 tempcorr
@@ -357,7 +551,7 @@ tempcorr
 In order to show the correlation in three dimensions, we'll compute a grid, cf. fig. \ref{fig:twod-correlation-req-dev-persp}:
 
 ```{r}
-tempgrid <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr_grid.rds", computeExpr = {
+tempgrid <- loadResultsOrCompute(file = "../results/fdfe_2dcorr_grid.rds", computeExpr = {
   outer(X = seq(0, 1, length.out = 75), Y = seq(0, 1, length.out = 75), FUN = tempcorr$fnum)
 })
 ```
@@ -365,17 +559,963 @@ tempgrid <- loadResultsOrCompute(file = "../results/fd_fe_2dcorr_grid.rds", comp
 ```{r twod-correlation-req-dev-persp, echo=FALSE, fig.cap="Correlation between the variables req\\% and dev\\%, plotted perspectively. On the left, we look at the correlation from above, while from the right, it is seen from underneath.", fig.align="center", fig.pos="ht!"}
 suppressWarnings({
   par(mfrow=c(1,2))
-  persp(tempgrid, zlim = c(-.03,.03), phi =  15, theta = -10, border = "#444444")
-  persp(tempgrid, zlim = c(-.03,.03), phi = -15, theta = -10, border = "#444444")
+  persp(tempgrid, zlim = c(-.1,.1), phi =  15, theta = -10, border = "#444444")
+  persp(tempgrid, zlim = c(-.1,.1), phi = -15, theta = -10, border = "#444444")
 })
 ```
 
-From this example we see there is clearly both, positive and negative correlation. Here is the same as a colorful contour plot (fig. \ref{fig:twod-correlation-req-dev}) (correlation goes from blue/negative to red/postive, and no correlation is white):
+From this example we see there is clearly both, positive and negative correlation. Here is the same as a colorful contour plot (fig. \ref{fig:twod-correlation-req-dev}) (correlation goes from blue/negative to red/positive, and no correlation is white):
 
 ```{r twod-correlation-req-dev, echo=FALSE, fig.cap="Correlation between the variables req\\% and dev\\%, plotted spatially.", fig.align="center", fig.pos="ht!"}
-image(tempgrid, zlim = c(-.2,.2), col = colorRampPalette(colors = c("#0000ff", "#ffffff", "#ff0000"))(101)) # uneven number, so we have a true white for 0 correlation..
-contour(tempgrid, zlim = c(-.2,.2), add = TRUE, col = "#444444")
+
+plotexpr <- expression({
+  par(mar=c(4,4,.85,.85), family = "LM Roman 10")
+  
+  fields::image.plot(
+    tempgrid,
+    zlim = .75*c(-max(tempgrid), max(tempgrid)),
+    legend.shrink = .5, legend.lab = "Relative correlation strength", legend.line = 2.5,
+    col = colorRampPalette(colors = c("#0000ff", "#ffffff", "#ff0000"))(101)) # uneven number, so we have a true white for 0 correlation..
+  title(xlab = "Relative project time", ylab = "Average confidence", line = 2.5)
+  grid()
+  contour(tempgrid, zlim = .75*c(-max(tempgrid), max(tempgrid)), add = TRUE, col = "#888888", drawlabels = FALSE)
+})
+eval(plotexpr)
 ```
+
+```{r}
+saveTikzExpr(expr = plotexpr, name = "2d_corr_req_dev_ci", height = 2.5, width = fe_fig_width)
+```
+
+
+```{r}
+pdf(file = "../figures/fig_fdfe_2d_corr_req_dev_ci.pdf", width = fe_fig_width, height = 2.5, pointsize = 8)
+eval(plotexpr)
+dev.off()
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+temp <- melt(tempgrid)
+temp$Var1 <- (temp$Var1 - min(temp$Var1)) / (max(temp$Var1) - min(temp$Var1))
+temp$Var2 <- (temp$Var2 - min(temp$Var2)) / (max(temp$Var2) - min(temp$Var2))
+ggtemp <- ggplot(data = temp, aes(x = Var1, y = Var2, z = value, fill = value)) +
+  geom_tile(aes(fill = value), alpha = fe_alpha) +
+  geom_contour(color = "grey") +
+  scale_fill_gradientn(
+    colours = colorRampPalette(colors = c("#3333dd", "#ffffff", "#dd3333"))(101),
+    limits = .5*c(-max(tempgrid), max(tempgrid))) +
+  labs(x = "Relative time", y = "Average confidence", fill = "Relative correlation strength") +
+  fe_gg2_style() +
+  theme(
+    legend.key.height = unit(2, "mm"),
+    legend.key.width = unit(1, "cm"),
+    legend.position = "bottom",
+    legend.title = element_text(margin = margin(t=-15, r=3)))
+ggtemp
+```
+
+```{r echo=FALSE, eval=FALSE}
+invisible(saveTikzAndEps(ggtemp, "2d_corr_req_dev_ci", height = 3.2))
+```
+
+
+# Plots
+
+## Type-I patterns
+
+For reproducing plots it is easiest to just sample from the functions.
+
+```{r echo=FALSE, eval=FALSE}
+tempdf <- data.frame(matrix(ncol = 4, nrow = 0))
+templ <- list(
+  REQ = req, DEV = dev, DESC = desc,
+  REQ_CI_LOWER = req_ci_lower, REQ_CI_UPPER = req_ci_upper
+)
+n <- 500
+x <- seq(from = 0, to = 1, length.out = n)
+
+for (name in names(templ)) {
+  tempdf <- rbind(tempdf, data.frame(
+    x = x,
+    y = templ[[name]](x),
+    v = name,
+    p = if (grepl("R", name)) "P1" else "P2"
+  ))
+}
+```
+
+```{r echo=FALSE, eval=FALSE}
+tempdf_rib <- rbind(data.frame(
+  x = x,
+  ymin = req_ci_lower(x),
+  ymax = req_ci_upper(x),
+  p = "P1"
+), data.frame(
+  x = x,
+  ymin = rep(0, length(x)),
+  ymax = dev_ci_upper(x),
+  p = "P2"
+))
+
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+ggplot(data = tempdf, mapping = aes(x = x, y = y, color = v)) +
+  geom_line() +
+  geom_ribbon(data = tempdf_rib, mapping = aes(x = x, y = 1, ymin = ymin, ymax = ymax, fill = p), alpha = 0.4, size = 0, show.legend = FALSE, inherit.aes = FALSE) +
+  fe_gg2_style(facets = FALSE) +
+  scale_fill_manual(values = c("red", "blue")) +
+  scale_linetype_manual(values = c(rep("solid", 2), rep("twodashed", 3))) +
+  facet_wrap(p ~.)
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+plotexpr <- rlang::expr({
+  par(mfrow=c(2,1), mar=c(3,3,.25,0), family = "LM Roman 10")#, oma=rep(0,4))
+
+
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(ylab = "Relative cum. time spent", line = 2)
+  grid()
+  
+  polygon(
+    x = seq(from = 0, to = 1, length.out = 50),
+    y = req_ci_upper(seq(from = 0, to = 1, length.out = 50)),
+    col = "#ff000033",
+    border = NA)
+  curve(req_ci_lower, 0, 1, col = "red", lty = 2, add = TRUE)
+  curve(req_ci_upper, 0, 1, col = "red", lty = 3, add = TRUE)
+  curve(req, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$REQ$get0Function()
+    curve(tempf, 0, 1, col="#dd8888", lty=2, add=TRUE)
+  }
+  
+  # other thresholds:
+  abline(h = req(t_1), col = "#888888")
+  text(x = .82, y = .64, paste0("$REQ(t_1)=", round(req(t_1), 2), "$"))
+  
+  abline(h = req_ci_upper(t_1), col = "#888888")
+  #text(x = .28, y = .86, paste0("$CI_{req}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
+  boxtext(x = .28, y = .86, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$CI_{req}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  # t_1:
+  abline(v = t_1)
+  text(x = .47, y = .04, paste0("$t_1=", t_1, "$"))
+  
+  legend(.74, .42, legend = c("upper CI", "lower CI", "REQ"),
+         col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2),
+         bg = "white", cex = .85)
+  
+  
+  
+  
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(xlab = "Relative project time",
+        ylab = "Relative cum. time spent", line = 2)
+  grid()
+  
+  polygon(
+    x = c(seq(from = 0, to = 1, length.out = 50), 1),
+    y = c(dev_ci_upper(seq(from = 0, to = 1, length.out = 50)), 0),
+    col = "#0000ff33",
+    border = NA)
+  
+  curve(dev_ci_upper, 0, 1, col = "blue", lty = 3, add = TRUE)
+  curve(desc, 0, 1, add = TRUE, col = "forestgreen", lty = 1, lwd = 3)
+  curve(dev, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$DEV$get0Function()
+    curve(tempf, 0, 1, col="#8888dd", lty=2, add=TRUE)
+    tempf <- all_signals[[pId]]$DESC$get0Function()
+    curve(tempf, 0, 1, col="#8888dd", lty=2, add=TRUE)
+  }
+  
+  # t_1(dev), t_2(dev):
+  abline(h = dev(t_1), col = "#888888")
+  #text(x = .2, y = .2, paste0("$DEV(t_1)=", round(dev(t_1), 3), "$"))
+  boxtext(x = .12, y = .2, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$DEV(t_1)=", round(dev(t_1), 3), "$"))
+  abline(h = dev(t_2), col = "#888888")
+  #text(x = .51, y = .46, paste0("$DEV(t_2)=", round(dev(t_2), 2), "$"))
+  boxtext(x = .51, y = .46, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$DEV(t_2)=", round(dev(t_2), 2), "$"))
+  
+  # other thresholds:
+  abline(h = dev_ci_upper(t_2), col = "#888888")
+  #text(x = .73, y = .77, paste0("$CI_{dev}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"))
+  boxtext(x = .73, y = .77, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$CI_{dev}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"))
+  abline(h = desc(1), col = "#888888")
+  text(x = .87, y = .2, paste0("$DESC(1)=", round(desc(1), 2), "$"))
+  
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  # t_1,t_2:
+  abline(v = t_1)
+  #text(x = .47, y = .98, paste0("$t_1=", t_1, "$"))
+  abline(v = t_2)
+  text(x = .775, y = .98, paste0("$t_2=", t_2, "$"))
+  
+  legend(.01, 1.01, legend = c("DEV upper CI", "DEV", "DESC"),
+         col = c("blue", "blue", "forestgreen"), lty = c(3, 1, 1),
+         lwd = c(1, 2, 2), bg = "white", cex = .85)
+})
+
+eval(plotexpr)
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+saveTikzExpr(name = "model_t1_it", height = 4.2, expr = plotexpr)
+saveEPSExpr(name = "model_t1_it", height = 4.2, expr = plotexpr)
+```
+
+
+
+```{r echo=FALSE, eval=FALSE}
+plotexpr <- rlang::expr({
+  par(mfrow=c(2,1), mar=c(3,3,.25,0), family = "LM Roman 10")#, family = "serif")#, oma=rep(0,4))
+
+
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(ylab = "Relative cum. time spent", line = 2)
+  grid()
+  
+  polygon(
+    x = c(seq(from = 0, to = 1, length.out = 50), t1_wavg),
+    y = c(req_ci_upper_p2a(seq(from = 0, to = 1, length.out = 50)), req_ci_lower_p2a(t1_wavg)),
+    col = "#ff00000d",
+    border = NA)
+  curve(req_p2a, 0, 1, col="red", lwd=2, add = TRUE)
+  curve(req_ci_upper_p2a, 0, 1, col="red", lty=3, lwd=1.5, add = TRUE)
+  curve(req_ci_lower_p2a, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$REQ$get0Function()
+    curve(tempf, 0, 1, col="#dd8888", lty=2, add=TRUE)
+  }
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  # t_1:
+  abline(v = t1_wavg)
+  text(x = .47, y = .04, paste0("$\\hat{t}_1=", round(t1_wavg, 2), "$"))
+  abline(v = t_1, col = "#aaaaaa")
+  text(x = .32, y = .97, paste0("$t_1=", t_1, "$"))
+  
+  legend(.74, .42, legend = c("upper CI", "lower CI", "REQ"),
+         col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2),
+         bg = "white", cex = .85)
+  
+  
+  
+  
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(xlab = "Relative project time",
+        ylab = "Relative cum. time spent", line = 2)
+  grid()
+  
+  polygon(
+    x = c(seq(from = 0, to = 1, length.out = 50), 1),
+    y = c(dev_ci_upper_p2a(seq(from = 0, to = 1, length.out = 50)), 0),
+    col = "#0000ff0d",
+    border = NA)
+  curve(dev_p2a, 0, 1, col="blue", lwd=2, add = TRUE)
+  curve(desc_p2a, 0, 1, col="forestgreen", lwd=2, add = TRUE)
+  tempf <- function(x) rep(0, length(x))
+  curve(tempf, 0, 1, col="blue", lty=2, lwd=1.5, add = TRUE)
+  curve(dev_ci_upper_p2a, 0, 1, col="blue", lty=3, lwd=1.5, add = TRUE)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$DEV$get0Function()
+    curve(tempf, 0, 1, col="#8888dd", lty=2, add=TRUE)
+    tempf <- all_signals[[pId]]$DESC$get0Function()
+    curve(tempf, 0, 1, col="#55bb55", lty=2, add=TRUE)
+  }
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  abline(v = t2_wavg)
+  text(x = .5, y = .98, paste0("$\\hat{t}_2=", round(t2_wavg, 2), "$"))
+  abline(v = t_2, col = "#aaaaaa")
+  text(x = .92, y = .32, paste0("$t_2=", t_2, "$"))
+  
+  legend(.01, 1.01, legend = c("DEV upper CI", "DEV", "DESC"),
+         col = c("blue", "blue", "forestgreen"), cex = .85,
+         lty = c(3, 1, 1), lwd = c(1, 2, 2), bg = "white")
+})
+
+eval(plotexpr)
+```
+
+```{r echo=FALSE, eval=FALSE}
+saveTikzExpr(name = "model_t2_it", height = 4.2, expr = plotexpr)
+saveEPSExpr(name = "model_t2_it", height = 4.2, expr = plotexpr)
+```
+
+```{r echo=FALSE, eval=FALSE}
+curve2 <- function(func, from, to, col = "black", lty = 1, lwd = 1, add = FALSE) {
+  f <- function(x) func(x)
+  curve(expr = f, from = from, to = to, col = col, lty = lty, lwd = lwd, add = add)
+}
+```
+
+
+
+```{r echo=FALSE, eval=FALSE}
+plotexpr <- rlang::expr({
+  par(mfrow=c(2,1), mar=c(3,3,.25,0), family = "LM Roman 10")#, oma=rep(0,4))
+
+
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(ylab = "Value", line = 2)
+  grid()
+  
+  curve2(p1_signals$A$get0Function(), 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+  curve2(p1_signals$CP$get0Function(), 0, 1, col = "blue", lty = 1, lwd = 2, add = TRUE)
+  curve2(p1_signals$FREQ$get0Function(), 0, 1, col = "forestgreen", lty = 1, lwd = 2, add = TRUE)
+  curve2(p1_signals$SCD$get0Function(), 0, 1, col = "purple", lty = 1, lwd = 2, add = TRUE)
+  
+  for (i in 1:length(project_signals)) {
+    pId <- names(project_signals)[i]
+    tempf <- project_signals[[pId]]$A$get0Function()
+    curve2(tempf, 0, 1, col="#dd8888", lty=2, add=TRUE)
+    # tempf <- project_signals[[pId]]$CP$get0Function()
+    # curve2(tempf, 0, 1, col="#8888dd", lty=2, add=TRUE)
+    # tempf <- project_signals[[pId]]$FREQ$get0Function()
+    # curve2(tempf, 0, 1, col="#88bb88", lty=2, add=TRUE)
+    # tempf <- project_signals[[pId]]$SCD$get0Function()
+    # curve2(tempf, 0, 1, col="#dd88dd", lty=2, add=TRUE)
+  }
+  
+  abline(v = fd_data_boundaries[1], col = "#888888")
+  text(x = .165, y = .45, paste0("$b_1=", fd_data_boundaries[1], "$"))
+  abline(v = fd_data_boundaries[2], col = "#888888")
+  text(x = .54, y = .98, paste0("$b_2=", fd_data_boundaries[2], "$"))
+  abline(v = fd_data_boundaries[3], col = "#888888")
+  text(x = .795, y = .31, paste0("$b_3=", fd_data_boundaries[3], "$"))
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  
+  
+  
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(ylab = "Value", xlab = "Relative project time", line = 2)
+  grid()
+  
+  curve2(p2_signals$A$get0Function(), 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+  curve2(p2_signals$CP$get0Function(), 0, 1, col = "blue", lty = 1, lwd = 2, add = TRUE)
+  curve2(p2_signals$FREQ$get0Function(), 0, 1, col = "forestgreen", lty = 1, lwd = 2, add = TRUE)
+  curve2(p2_signals$SCD$get0Function(), 0, 1, col = "purple", lty = 1, lwd = 2, add = TRUE)
+  
+  abline(v = p2_best_thetaB[2], col = "#888888")
+  text(x = .16, y = .3, paste0("$\\hat{b}_1=", round(p2_best_thetaB[2], 3), "$"))
+  abline(v = p2_best_thetaB[3], col = "#888888")
+  text(x = .345, y = .97, paste0("$\\hat{b}_2=", round(p2_best_thetaB[3], 3), "$"))
+  abline(v = p2_best_thetaB[4], col = "#888888")
+  text(x = .59, y = .97, paste0("$\\hat{b}_3=", round(p2_best_thetaB[4], 3), "$"))
+  
+  legend(.28, .73, legend = c("A", "CP", "FREQ", "SCD"),
+         col = c("red", "blue", "forestgreen", "purple"), lty = 1, lwd = 2,
+         bg = "white", cex = .85)
+})
+
+eval(plotexpr)
+
+saveTikzExpr(expr = plotexpr, name = "model_t1_t2_sc", height = 4.2)
+```
+
+
+
+
+```{r echo=FALSE, eval=FALSE}
+tempdf <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(tempdf) <- c("x", "y", "p", "v")
+n <- 500
+x <- seq(from = 0, to = 1, length.out = n)
+for (pId in names(all_signals)) {
+  for (v in c("REQ", "DEV", "DESC")) {
+    tempdf <- rbind(tempdf, data.frame(
+      x = x,
+      y = sapply(X = x, FUN = all_signals[[pId]][[v]]$get0Function()),
+      p = pId,
+      v = v
+    ))
+  }
+}
+```
+
+```{r echo=FALSE, eval=FALSE}
+plot_all_req_dev <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
+  geom_line(size = 1/3) +
+  facet_wrap(p ~., labeller = as_labeller(`names<-`(paste0("Project ", 1:9), paste0("Project", 1:9)))) +
+  fe_gg2_style(facets = TRUE) +
+  labs(color = "Variable") + xlab("Relative project time") + ylab("Relative cumulative time spent") +
+  scale_color_manual(values = c("forestgreen", "blue", "red")) +
+  scale_x_continuous(breaks = c(0, .25, .5, .75, 1), labels = paste0(c(0, .25, .5, .75, 1))) +
+  theme(legend.position = "bottom", legend.margin = margin(t=-7.5))
+
+saveTikzAndEps(ggInst = plot_all_req_dev, name = "all_projects_it", height = 3.4)
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+tempdf <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(tempdf) <- c("x", "y", "p", "v")
+
+n <- 500
+x <- seq(from = 0, to = 1, length.out = n)
+for (pId in levels(student_projects$project)) {
+  for (v in c("A", "CP", "FREQ", "SCD")) {
+    tempdf <- rbind(tempdf, data.frame(
+      x = x,
+      y = sapply(X = x, FUN = project_signals[[pId]][[v]]$get0Function()),
+      p = pId,
+      v = v
+    ))
+  }
+}
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+plot_all_acp <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
+  geom_line(size = 1/3) +
+  facet_wrap(p ~., labeller = as_labeller(`names<-`(paste0("Project ", 1:9), levels(student_projects$project)))) +
+  fe_gg2_style(facets = TRUE) +
+  labs(color = "Variable") + xlab("Relative project time") + ylab("Value") +
+  theme(legend.position = "bottom", legend.margin = margin(t=-7.5)) +
+  scale_x_continuous(breaks = c(0, .25, .5, .75, 1), labels = paste0(c(0, .25, .5, .75, 1))) +
+  scale_color_manual(values = c("red", "blue", "forestgreen", "purple"))
+
+saveTikzAndEps(ggInst = plot_all_acp, name = "all_projects_sc", height = 3.4)
+```
+
+
+
+```{r echo=FALSE, eval=FALSE}
+z_req <- loadResultsOrCompute(file = "../results/ci_p3avg_z_req.rds", computeExpr = {
+  compute_z_p3avg(varname = "REQ", x = x, y = y)
+})
+z_dev <- loadResultsOrCompute(file = "../results/ci_p3avg_z_dev.rds", computeExpr = {
+  compute_z_p3avg(varname = "DEV", x = x, y = y)
+})
+z_desc <- loadResultsOrCompute(file = "../results/ci_p3avg_z_desc.rds", computeExpr = {
+  compute_z_p3avg(varname = "DESC", x = x, y = y)
+})
+
+plotexpr <- rlang::expr({
+  par(mfrow=c(3,1), mar=c(4,4,.8,.8), family = "LM Roman 10")#, oma=rep(0,4))
+  
+  tempz <- fields::interp.surface.grid(obj = z_req, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 60), y = seq(from = 0, to = 1, length.out = 60)))
+  fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#ff6666"))(100), zlim = c(0,1),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
+  title(ylab = "Relative cum. time spent", line = 3)
+  grid()
+  
+  curve(req_p3, 0, 1, col = "red", add = TRUE)
+  
+  curve(req_ci_upper_p3avg, 0, 1, col = "#ff000033", add = TRUE, lty = 2)
+  curve(req_ci_lower_p3avg, 0, 1, col = "#ff000033", add = TRUE, lty = 3)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$REQ$get0Function()
+    curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  legend(0.69, .37, legend = c("REQ (avg.)", "Weight $=0$", "Weight $>0$"), bg = "white",
+         col = c("red", rep("#00000033", 2)), lty = c(1, 3, 2), lwd = c(2.5, 2, 2), cex = 1.1)
+  
+  
+  
+  tempz <- fields::interp.surface.grid(obj = z_dev, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 60), y = seq(from = 0, to = 1, length.out = 60)))
+  fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#6666ff"))(100), zlim = c(0,1),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
+  title(ylab = "Relative cum. time spent", line = 3)
+  grid()
+  curve(dev_p3, 0, 1, col = "blue", add = TRUE)
+  
+  curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 2)
+  curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 3)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$DEV$get0Function()
+    curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  legend(0.01, .98, legend = c("DEV (avg.)"),
+         col = "blue", lty = 1, lwd = 2.5)
+  
+  
+  tempz <- fields::interp.surface.grid(obj = z_desc, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 90), y = seq(from = 0, to = 1, length.out = 90)))
+  fields::image.plot(
+    x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "forestgreen"))(100),
+    ylim = c(0, desc_ci_upper_p3avg(1) * 1.1), zlim = c(0, 1),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
+  title(xlab = "Relative project time", ylab = "Relative cum. time spent", line = 3)
+  grid()
+  curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
+  
+  curve(desc_ci_upper_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 2)
+  curve(desc_ci_lower_p3avg, 0, 1, col = "#228B2233", add = TRUE, lty = 3)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$DESC$get0Function()
+    curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  legend(0.01, 0.98 * desc_ci_upper_p3avg(1) * 1.1, legend = c("DESC (avg.)"),
+         col = "forestgreen", lty = 1, lwd = 2.5)
+})
+
+eval(plotexpr)
+```
+```{r echo=FALSE, eval=FALSE}
+# saveTikzExpr(name = "emp_ci_req_dev", height = 4.2, expr = plotexpr)
+# saveEPSExpr(name = "emp_ci_req_dev", height = 4.2, expr = plotexpr)
+pdf(file = "../figures/fig_fdfe_emp_ci_req_dev.pdf", width = fe_fig_width, height = 5.9, pointsize = 12)
+#png(filename = "../figures/fig_fdfe_emp_ci_req_dev.png", width = 2000, height = 2000 / fe_fig_width * 4.2, pointsize = 40)
+eval(plotexpr)
+dev.off()
+```
+
+```{r}
+saveTikzExpr(name = "emp_ci_req_dev", height = 5.9, expr = plotexpr)
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+all_projects_acp <- ggplot(data = student_projects, aes(x = length(label), fill = label)) +
+  geom_bar() + facet_grid(label ~ project, labeller = ggplot2::labeller(
+    label = `names<-`(c("Adaptive", "Corrective", "Perfective"), c("a", "c", "p")),
+    project = `names<-`(paste0("Pr. ", 1:9), paste0("project_", 1:9))
+  )) +
+  fe_gg2_style(facets = TRUE) +
+  theme(legend.position = "none", axis.text.x.bottom = element_blank(), axis.title.x.bottom = element_blank(), axis.title.y.left = element_blank()) +
+  #scale_fill_manual(values = c("red", "orange", )) +
+  scale_fill_grey()
+
+saveTikzAndEps(ggInst = all_projects_acp, name = "all_projects_acp", height = 3)
+```
+
+
+
+```{r echo=FALSE, eval=FALSE}
+temp <- doWithParallelCluster(expr = {
+  g <- expand.grid(data.frame(
+    x = seq(0.4, 0.9, length.out=20),
+    y = seq(0.4, 0.8, length.out=20)
+  ))
+  
+  foreach::foreach(
+    idx = rownames(g),
+    .inorder = FALSE,
+    .combine = rbind
+  ) %dopar% {
+    p <- g[idx,]
+    
+    matrix(data = arrow_dir_smooth(x = p$x, y = p$y), nrow = 1)
+  }
+})
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+plotexpr <- expression({
+  temp <- temp[, 1:4]
+  temp <- cbind(temp, sqrt(temp[, 3]^2 * temp[, 4]^2))
+  par(mfrow=c(1,1), mar=c(4,4,.8,.8), family = "LM Roman 10")#, oma=rep(0,4))
+  
+  fields::image.plot(x = z_dev$x, y = z_dev$y, z = z_dev$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#6666ff"))(100),
+    zlim = c(0,1), # make colors weaker
+    xlim = c(0.4,0.9), ylim = c(0.4,0.6),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 2.5)
+  title(xlab = "Relative project time", ylab = "Relative cum. time spent", line = 2.5)
+  grid()
+  
+  
+  curve(dev_ci_upper_p3avg, 0, 1, add = TRUE, col = "blue", lty = 2)
+  curve(dev_ci_lower_p3avg, 0, 1, add = TRUE, col = "blue", lty = 2)
+  # tempf <- function(x) all_signals$Project5$DEV$get0Function()(x)
+  # curve(tempf, 0, 1, add = TRUE, col = "red", lwd = 2)
+  
+  for (i in 1:length(all_signals)) {
+    pId <- names(all_signals)[i]
+    tempf <- all_signals[[pId]]$DEV$get0Function()
+    curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  for (i in 1:nrow(temp)) {
+    r <- temp[i, ]
+    to <- r[3:4]
+    if (r[2] < dev_ci_lower_p3avg(r[1]) || r[2] > dev_ci_upper_p3avg(r[1])) {
+      next
+    }
+    #to <- to / max(abs(to)) * 0.01
+    to <- to / max(abs(to)) * 0.0175 * (.6 + .4 * log(r[5]) / log(max(temp[, 5])))
+    arrows(x0 = r[1] + (if (to[1] < 0) abs(to[1]) else 0), y0 = r[2] + (if (to[2] < 0) abs(to[2]) else 0),
+           x1 = r[1] + (if (to[1] < 0) abs(to[1]) else 0) + to[1], y1 = r[2] + (if (to[2] < 0) abs(to[2]) else 0) + to[2], length = 0.05, lwd = .8, col = "#333377")
+  }
+  
+  
+})
+
+eval(plotexpr)
+```
+
+```{r echo=FALSE, eval=FALSE}
+saveTikzExpr(expr = plotexpr, name = "vectorfield_dev", height = 2.3)
+saveEPSExpr(expr = plotexpr, name = "vectorfield_dev", height = 2.3)
+```
+
+```{r echo=FALSE, eval=FALSE}
+pdf(file = "../figures/fig_fdfe_vectorfield_dev.pdf", width = fe_fig_width, height = 2.3, pointsize = 8)
+eval(plotexpr)
+dev.off()
+```
+
+
+```{r}
+plotexpr <- expression({
+  par(mfrow=c(2,2), mar=c(4,4,.8,0), family = "LM Roman 10")
+  use_func <- all_signals$Project4$REQ$get0Function()
+  gbar <- req_p3
+  
+  tempz <- fields::interp.surface.grid(obj = z_req, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 80), y = seq(from = 0, to = 1, length.out = 80)))
+  
+  image(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#ff6666"))(100), zlim = c(0,1))
+  grid()
+  title(xlab = "Relative project time", ylab = "Rel. cum. time spent", line = 2.5)
+  curve(gbar, 0, 1, col = "#666666", lwd = 1.5, xlab = "", ylab = "", add = TRUE)
+  curve(use_func, 0, 1, col = "red", lwd = 2, add = TRUE)
+  curve(req_ci_upper_p3avg, 0, 1, col = "#bb000066", lwd = 1.5, lty = 3, add = TRUE)
+  curve(req_ci_lower_p3avg, 0, 1, col = "#bb000066", lwd = 1.5, lty = 2, add = TRUE)
+  
+  legend(0.01, 0.98, legend = c("Avg.", "Pr. 4"), col = c("#666666", "red"), lwd = c(1.5,2), cex = .9, bg = "white")
+  legend(0.44, 0.4, legend = c("Upper CI", "Lower CI"), col = "red", lty = c(3,2), lwd = 1.5, bg = "white")
+  
+  
+  
+  tempfo <- function(x) {
+    (.3 * tempf(x) + .7 * (1 - tempf1(x)))
+    # sapply(X = x, FUN = function(x_) {
+    #   (CI_req_p3avg(x = x_, y = use_func(x_)) + 1 - abs(req_p3(x_) - min(req_ci_upper_p3avg(x_), max(req_ci_lower_p3avg(x_), use_func(x_))))) / 2
+    # })
+  }
+  curve(tempfo, 0, 1, ylim = c(0,1), col = "Maroon", xlab = "", ylab = "", lwd = 2)
+  grid()
+  title(xlab = "Relative project time", ylab = "Objective of $\\mathsf{M}$\\textsuperscript{conf} and $\\mathsf{M}$\\textsuperscript{dist}", line = 2.5)
+  legend(0.01, 0.4, legend = c("Objective using", "$\\rho=0.3$ and $\\sigma=0.7$"), col = c("Maroon", "white"), lty = 1, lwd = 2, bg = "white")
+  # curve(tempf, add = TRUE, col="red")
+  # curve(tempf1, add = TRUE, col="blue")
+  
+  
+  
+  tempf <- function(x) {
+    sapply(X = x, FUN = function(x_) {
+      CI_req_p3avg(x = x_, y = use_func(x_))
+    })
+  }
+  
+  curve(tempf, 0, 1, xlab = "", ylab = "", col = "DarkCyan", ylim = c(0, 1), lwd = 2)
+  grid()
+  title(xlab = "Relative project time", ylab = "Empirical confidence", line = 2.5)
+  legend(0.01, 1, legend = c("Confidence"), col = "DarkCyan", lty = 1, lwd = 2, bg = "white")
+  
+  
+  
+  tempf1 <- function(x) {
+    sapply(X = x, FUN = function(x_) {
+      abs(req_p3(x_) - min(req_ci_upper_p3avg(x_), max(req_ci_lower_p3avg(x_), use_func(x_))))
+    })
+  }
+  curve(tempf1, 0, 1, col = "DarkOrange", xlab = "", ylab = "", ylim = c(0,0.45), lwd = 2)
+  grid()
+  title(xlab = "Relative project time", ylab = "Distance to avg. REQ", line = 2.5)
+  
+  tempf2 <- function(x) {
+    sapply(X = x, FUN = function(x_) {
+      max(req_p3(x_) - req_ci_lower_p3avg(x_), req_ci_upper_p3avg(x_) - req_p3(x_))
+    })
+  }
+  curve(tempf2, 0, 1, col = "DarkOrange", add = TRUE, lty = 2, lwd = 1.5)
+  legend(0.25, 0.45, legend = c("Distance", "Distance (max)"), col = "DarkOrange", lty = c(1,2), lwd = c(2,1.5), bg = "white")
+})
+eval(plotexpr)
+```
+
+```{r}
+cubature::cubintegrate(f = tempfo, 0, 1)$integral
+```
+
+
+```{r}
+readRDS(file = "../results/ci_p3avg_Lavg-test.rds")
+readRDS(file = "../results/ci_p3avg_Larea-test.rds")
+```
+```{r}
+#saveEPSExpr(expr = plotexpr, name = "empconf_areadist_req", height = 3.6)
+saveTikzExpr(expr = plotexpr, name = "empconf_areadist_req", height = 3.6)
+```
+```{r}
+cairo_ps("../figures/fig_fdfe_empconf_areadist_req.eps", family = "LM Roman 10", width = fe_fig_width, height = 3.6)
+eval(plotexpr)
+dev.off()
+```
+```{r}
+pdf(file = "../figures/fig_fdfe_empconf_areadist_req.pdf", width = fe_fig_width, height = 3.6, pointsize = 10, family = "LM Roman 10")
+eval(plotexpr)
+dev.off()
+```
+
+
+
+
+
+
+```{r echo=FALSE, eval=FALSE}
+temp <- doWithParallelCluster(expr = {
+  g <- expand.grid(data.frame(
+    x = seq(0.45, 0.8, length.out=12),
+    y = seq(0.3, .95, length.out=12)
+  ))
+  
+  foreach::foreach(
+    idx = rownames(g),
+    .inorder = FALSE,
+    .combine = rbind
+  ) %dopar% {
+    p <- g[idx,]
+    
+    matrix(data = arrow_dir_smooth(x = p$x, y = p$y), nrow = 1)
+  }
+})
+```
+
+
+
+```{r echo=FALSE, eval=FALSE}
+plotexpr <- expression({
+  temp <- temp[, 1:4]
+  temp <- cbind(temp, sqrt(temp[, 3]^2 * temp[, 4]^2))
+  par(mfrow=c(1,1), mar=c(4,4,.8,.8), family = "LM Roman 10")
+  
+  tempz <- fields::interp.surface.grid(obj = z_dev, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 125), y = seq(from = 0, to = 1, length.out = 125)))
+  
+  # plot(x=0, y=0, xlab = "", ylab = "", xlim = c(0.55,0.8), ylim = c(0.4,0.9))
+  fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#6666ff"))(100),
+    zlim = c(0,1), # make colors weaker
+    xlim = c(0.45,0.8), ylim = c(0.3,.95),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 2.5)
+  title(xlab = "Relative project time", ylab = "Relative cum. time spent", line = 2.5)
+  grid()
+  
+  
+  # curve(dev_ci_upper_p3avg, 0, 1, add = TRUE, col = "blue", lty = 2)
+  # curve(dev_ci_lower_p3avg, 0, 1, add = TRUE, col = "blue", lty = 2)
+  # tempf <- function(x) all_signals$Project5$DEV$get0Function()(x)
+  # curve(tempf, 0, 1, add = TRUE, col = "red", lwd = 2)
+  
+  # for (i in 1:length(all_signals)) {
+  #   pId <- names(all_signals)[i]
+  #   tempf <- all_signals[[pId]]$DEV$get0Function()
+  #   curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  # }
+  
+  for (i in 1:nrow(temp)) {
+    r <- temp[i, ]
+    to <- r[3:4]
+    if (r[2] < dev_ci_lower_p3avg(r[1]) || r[2] > dev_ci_upper_p3avg(r[1])) {
+      next
+    }
+    #to <- to / max(abs(to)) * 0.01
+    to <- to / max(abs(to)) * 0.0175 * (.6 + .4 * log(r[5]) / log(max(temp[, 5])))
+    arrows(x0 = r[1] + (if (to[1] < 0) abs(to[1]) else 0), y0 = r[2] + (if (to[2] < 0) abs(to[2]) else 0),
+           x1 = r[1] + (if (to[1] < 0) abs(to[1]) else 0) + to[1], y1 = r[2] + (if (to[2] < 0) abs(to[2]) else 0) + to[2], length = 0.05, lwd = 1.5, col = "#333377")
+  }
+  
+  polygon(
+    x = c(fch_x, rev(fch_x)),
+    y = c(fch_80_upper(fch_x), fch_95_upper(rev(fch_x))),
+    border = NA,
+    col = "#00000011"
+  )
+  
+  polygon(
+    x = c(fch_x, rev(fch_x)),
+    y = c(fch_80_lower(fch_x), fch_95_lower(rev(fch_x))),
+    border = NA,
+    col = "#00000011"
+  )
+  
+  polygon(
+    x = c(fch_x, rev(fch_x)),
+    y = c(fch_80_upper(fch_x), fch_80_lower(rev(fch_x))),
+    border = NA,
+    col = "#00000033"
+  )
+  
+  curve(dev_ci_lower_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 2)
+  rect(xleft = .6625, ybottom = .325, xright = .7375, ytop = .45, col = "white")
+  segments(x0 = .6625, y0 = .325, x1 = .65, y1 = fch_mean(.65), col = "#666666")
+  segments(x0 = .6625, y0 = .45, x1 = .65, y1 = fch_mean(.65), col = "#666666")
+  segments(x0 = .7375, y0 = .325, x1 = .75, y1 = fch_95_lower(.75), col = "#666666")
+  segments(x0 = .7375, y0 = .45, x1 = .75, y1 = fch_95_upper(.75), col = "#666666")
+  arrows(x0 = .675, y0 = .41, x1 = .725, y1 = .41 + (.725-.675)/ed_tc_x*ed_tc_y, lwd = 2, length = .125, col = "#800080")
+  
+  curve(fch_80_upper, 0.65, 0.75, col="lightgrey", add = TRUE)
+  curve(fch_80_lower, 0.65, 0.75, col="lightgrey", add = TRUE)
+  curve(fch_95_upper, 0.65, 0.75, col="darkgrey", add = TRUE)
+  curve(fch_95_lower, 0.65, 0.75, col="darkgrey", add = TRUE)
+  
+  curve(dev_p3, 0, 1, col = "blue", lwd = 2, add = TRUE)
+  curve(dev_ci_upper_p3avg, 0, 1, col = "#0000ff66", add = TRUE, lty = 3)
+  
+  # segments(x0 = .625, y0 = .93, x1 = .65, y1 = fch_mean(.65))
+  # segments(x0 = .625, y0 = .805, x1 = .65, y1 = fch_mean(.65))
+  # segments(x0 = .7, y0 = .93, x1 = .75, y1 = fch_95_upper(.75))
+  # segments(x0 = .7, y0 = .805, x1 = .75, y1 = fch_95_lower(.75))
+  # rect(xleft = .625, ybottom = .805, xright = .7, ytop = .93, col = "white")
+  # arrows(x0 = .675, y0 = .415, x1 = .725, y1 = .415 + (.725-.675)/ed_tc_x*ed_tc_y, lwd = 2, length = .2, col = "#800080")
+  
+  curve(pr5_dev, 0, 0.65, col = "maroon", lty = 1, lwd = 2, add = TRUE)
+  curve(pr5_dev, 0.65, 0.75, col = "maroon", lty = 4, lwd = 2, add = TRUE)
+  curve(fch_mean, 0.65, 0.75, col = "red", lty = 2, lwd = 2, add = TRUE)
+  #arrows(x0 = 0.65, x1 = 0.75, y0 = 0.65, y1 = 0.65 + 0.1 / ed_tc_x * ed_tc_y, lwd = 2, length = .2, col = "#800080")
+  
+  legend(0.455, .93, legend = c("Avg. DEV", "Upper CI", "Lower CI", "Pr. 5 DEV", "Pr. 5 actual", "Pr. 5 prediction", "Avg. direction"),
+         bg="white", col = c(rep("blue", 3), rep("maroon", 2), "red", "#800080"), cex = .85,
+         lty = c(1, 3, 2, 1, 4, 2, 1),
+         lwd = c(2, 1.5, 1.5, 2, 1.5, 2, 2, 2))
+})
+
+eval(plotexpr)
+```
+
+```{r}
+#saveEPSExpr(expr = plotexpr, name = "forecast_vectorfield", height = 2.3)
+saveTikzExpr(expr = plotexpr, name = "forecast_vectorfield", height = 2.8)
+```
+
+
+```{r}
+plotexpr <- expression({
+  par(mfrow=c(1,1), mar=c(4,4,.8,1), family = "LM Roman 10")
+  
+  align_srbtaw_rss_surface <- readRDS(file = "../results/align_srbtaw_rss_surface.rds")
+  z_temp <- list(
+    x = seq(0, 1, by = minStep),
+    y = seq(0, 1, by = minStep),
+    z = align_srbtaw_rss_surface)
+  
+  fields::image.plot(z_temp, col = hcl.colors(101, "YlOrRd", rev = TRUE),
+                     legend.shrink = .5, legend.lab = "Loss ($\\log$(RSS))", legend.line = 2.5,
+                     xlab = "", ylab = "")
+  title(ylab = "$t$\\textsubscript{begin}", xlab = "$t$\\textsubscript{end}", line = 2.5)
+  grid()
+  
+  z_temp$x <- z_temp$x[2:51]
+  z_temp$y <- z_temp$y[2:51]
+  contour(z_temp, col = "#222222", add = TRUE)
+  
+  temp <- align_srbtaw_rss_surface
+  temp[is.na(temp)] <- Inf
+  temp <- which(temp == min(temp), arr.ind = TRUE)
+  points(x = temp[, 1] / use_resol, y = temp[, 2] / use_resol, pch = 2, col = "red", cex = 2)
+  
+  legend(.01, .98, legend = c("Lowest loss ($\\approx5.672$)"),
+         pch = 2, col = "red", bg = "white", cex = 1)
+})
+
+eval(plotexpr)
+```
+
+```{r}
+saveTikzExpr(expr = plotexpr, name = "srbtaw_rss_loss", height = 2.4)
+```
+
+
+```{r}
+plotexpr <- expression({
+  temp <- t(pAll_corr[1:5,]) # skip last pattern (3b[1-16]) for the paper
+  rownames(temp) <- c(rownames(temp)[1:24], "ImpFac_m", "ImpFac_p")
+  colnames(temp) <- c("I", "II", "(*) II", "III", "(*) III")
+  temp[is.na(temp)] <- 0
+  #rownames(temp) <- gsub("_", "\\\\_", rownames(temp))
+  rownames(temp) <- sapply(X = rownames(temp), function(n) {
+    sp <- strsplit(x = n, split = "_")[[1]]
+    paste0("$\\mathsf{", sp[1], "}$", "\\textsubscript{", sp[2], "}")
+  })
+  temp <- temp[, rev(colnames(temp))]
+  
+  ggcorrplot::ggcorrplot(corr = temp, ggtheme = fe_gg2_style() + theme(
+      axis.text.x.top = element_text(angle = 90, vjust = 1/3, hjust = 0, size = 9),
+      #axis.text.y.left = element_text(size = 9),
+      legend.position = "bottom",
+      legend.text = element_text(vjust = 0),
+      legend.title = element_text(margin = margin(r = 10, b = 3)),
+      legend.key.width = unit(20, 'pt'),
+      legend.key.height = unit(8, 'pt'),
+      axis.title.y.left = element_blank()
+    )
+  ) +
+  scale_x_discrete(position = "top") +
+  #scale_y_discrete(limits = rev) +
+  scale_fill_gradient2(
+    low = "#0037AA", mid = "#eeeeee", high = "#AA0037", guide = "colorbar",
+    limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
+  labs(fill = "Pearson sample correlation")
+})
+
+eval(plotexpr)
+```
+
+```{r}
+saveTikzAndEps(ggInst = eval(plotexpr), name = "detect-sc-corr", height = 2.3)
+```
+
 
 
 
