@@ -520,11 +520,13 @@ coef_rel_pearson_2d <- function(f, g, supp_f_d1 = c(0,1), supp_g_d1 = c(0,1), su
     (f(x1_f, y1_f) - bar_f) * (g(x1_g, y1_g) - bar_g)
   }
   
-  numerator <- cubature::cubintegrate(f = function(x) {
-    cubature::cubintegrate(f = function(y) {
-      fnum(x, y)
-    }, lower = 0, upper = 1, maxEval = maxEval)$integral
-  }, lower = 0, upper = 1, maxEval = maxEval)$integral
+  numerator <- pracma::integral2(fun = fnum, xmin = 0, xmax = 1, ymin = 0, ymax = 1)$Q
+  
+#  numerator <- cubature::cubintegrate(f = function(x) {
+#    cubature::cubintegrate(f = function(y) {
+#      fnum(x, y)
+#    }, lower = 0, upper = 1, maxEval = maxEval)$integral
+#  }, lower = 0, upper = 1, maxEval = maxEval)$integral
   
   list(
     fnum = fnum,
@@ -549,7 +551,7 @@ CI_req_p3avg <- CI_funcs$CI_req_p3avg
 CI_dev_p3avg <- CI_funcs$CI_dev_p3avg
 
 tempcorr <- loadResultsOrCompute(file = "../results/fdfe_2dcorr.rds", computeExpr = {
-  coef_rel_pearson_2db(f = CI_req_p3avg, g = CI_dev_p3avg, maxEval = 250)
+  coef_rel_pearson_2d(f = CI_req_p3avg, g = CI_dev_p3avg, maxEval = 250)
 })
 tempcorr
 ```
@@ -589,12 +591,12 @@ plotexpr <- expression({
 eval(plotexpr)
 ```
 
-```{r}
+```{r eval=FALSE, echo=FALSE}
 saveTikzExpr(expr = plotexpr, name = "2d_corr_req_dev_ci", height = 2.5, width = fe_fig_width)
 ```
 
 
-```{r}
+```{r eval=FALSE, echo=FALSE}
 pdf(file = "../figures/fig_fdfe_2d_corr_req_dev_ci.pdf", width = fe_fig_width, height = 2.5, pointsize = 8)
 eval(plotexpr)
 dev.off()
@@ -949,7 +951,10 @@ plotexpr <- rlang::expr({
 })
 
 eval(plotexpr)
+```
 
+
+```{r echo=FALSE, eval=FALSE}
 saveTikzExpr(expr = plotexpr, name = "model_t1_t2_sc", height = 4.2)
 ```
 
@@ -1118,7 +1123,7 @@ eval(plotexpr)
 dev.off()
 ```
 
-```{r}
+```{r echo=FALSE, eval=FALSE}
 saveTikzExpr(name = "emp_ci_req_dev", height = 7.7, expr = plotexpr)
 ```
 
