@@ -274,7 +274,7 @@ $$
   \\[1ex]
   e\dots&\;\text{the end (absolute offset) of the last source-interval (usually}\;1\text{), also}\;e>b\text{,}
   \\[1ex]
-  \gamma_b,\gamma_e,\gamma_d\dots&\;\text{absolute min/max for}\;b,e\;\text{and min-distance between them,}
+  \gamma_b,\gamma_e,\gamma_d\dots&\;\text{global min/max for}\;b,e\;\text{and min-distance between them,}
   \\[1ex]
   &\;\text{where}\;\gamma_d\geq 0\;\land\;\gamma_b+\gamma_d\leq\gamma_e\;\text{,}
   \\[1ex]
@@ -338,7 +338,7 @@ $$
 The model $m_q^c$ now satisfies these properties:
 
 * Each interval has a length greater than or equal to $\bm{\lambda}_q$ (which must be strictly positive; a length of zero however is allowed).
-* The first interval begins at $\beta_l$, the last interval ends at $\beta_u$ (these parameters are the absolute begin/end of the target-intervals, and hence apply to where onto the reference the query will be mapped to). These parameters can either be constant or learned during optimization, effectively allowing open/closed begin- and/or -end time warping.
+* The first interval begins at $\beta_l$, the last interval ends at $\beta_u$ (these parameters are the absolute begin/end of the source-intervals, and hence apply to where onto the query will be mapped to). These parameters can either be constant or learned during optimization, effectively allowing open/closed begin- and/or -end time warping.
 * Each interval begins exactly after its predecessor, such that there are no overlaps. Intervals are seamlessly strung together.
 * The sum of the lengths of all intervals is normalized and then re-scaled using $\phi$, considering the constraints of $\gamma_d$ and the minimum length of each $q$-th interval (using its corresponding $\bm{\lambda}_q$).
 
@@ -1898,7 +1898,7 @@ Again, we would like this approach to be __self-regularizing__. That means, that
 
 In SRBAW it is possible to specify limits on a per-interval basis, so we will have two vectors, one with lower- and one with upper bounds for each interval. It would also be possible to specify the limits as a function (per interval). But at this point it is not required so we will not make that extra effort.
 
-It is important to notice that in Boundary Time/Amplitude Warping, we cannot (should not) make any assumptions about the signal within an interval. For example, we cannot know its interval-global minimum or maximum. At the same time, we want to enforce box-bounds on the warped signal. The solution is to enforce these only after the warped signal has been computed. That means, that we need to wrap the warping function.
+It is important to notice that in Boundary Time/Amplitude Warping, we cannot (must not) make any assumptions about the signal within an interval. For example, we cannot know its interval-global minimum or maximum. At the same time, we want to enforce box-bounds on the warped signal. The solution is to enforce these only after the warped signal has been computed. That means, that we need to wrap the warping function. We do this below by wrapping $n_q(\dots)$ into the $\min$/$\max$ expression $n_q^c(\dots)$.
 
 $$
 \begin{aligned}
