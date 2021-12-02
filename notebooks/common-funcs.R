@@ -325,13 +325,20 @@ area_diff_2_functions <- function(f1, f2, useCubintegrate = TRUE) {
 #' to find the maximum/minimum extents for both functions.
 area_diff_2_functions_score <- function(
   useUpperBoundFromData = FALSE,
-  numSamples = 1e4
+  numSamples = 1e4,
+  useYRange = NULL
 ) {
+  yrMissing <- missing(useYRange) || is.null(useYRange)
+  
   return(function(f1, f2) {
-    yRange <- if (!useUpperBoundFromData) { c(0,1) } else {
-      temp <- stat_diff_2_functions(
-        f1 = f1, f2 = f2, numSamples = numSamples)
-      range(temp$dataF1, temp$dataF2, na.rm = TRUE)
+    yRange <- if (yrMissing) {
+      if (!useUpperBoundFromData) { c(0,1) } else {
+        temp <- stat_diff_2_functions(
+          f1 = f1, f2 = f2, numSamples = numSamples)
+        range(temp$dataF1, temp$dataF2, na.rm = TRUE)
+      }
+    } else {
+      useYRange
     }
     yExtent <- abs(yRange[2] - yRange[1])
     
@@ -489,8 +496,11 @@ stat_diff_2_functions_rmse <- function(f1, f2, numSamples = 1e4) {
 stat_diff_2_functions_sd_var_mae_rmse_score <- function(
   use = c("sd", "var", "mae", "rmse")[1],
   useUpperBoundFromData = FALSE,
-  numSamples = 1e4
+  numSamples = 1e4,
+  useYRange = NULL
 ) {
+  yrMissing <- missing(useYRange) || is.null(useYRange)
+  
   return(function(f1, f2) {
     temp <- switch (use,
       "sd"   = stat_diff_2_functions_sd(f1 = f1, f2 = f2, numSamples = numSamples),
@@ -502,8 +512,12 @@ stat_diff_2_functions_sd_var_mae_rmse_score <- function(
       }
     )
     
-    yRange <- if (!useUpperBoundFromData) { c(0,1) } else {
-      range(temp$dataF1, temp$dataF2, na.rm = TRUE)
+    yRange <- if (yrMissing) {
+      if (!useUpperBoundFromData) { c(0,1) } else {
+        range(temp$dataF1, temp$dataF2, na.rm = TRUE)
+      }
+    } else {
+      useYRange
     }
     yExtent <- abs(yRange[2] - yRange[1])
     
@@ -1544,7 +1558,12 @@ stat_diff_2_functions_signals_score <- function(
       temp[temp > 0] <- 0
     }
     
-    sapply(frac, function(r) if (r < 1) r else 1 / r)
+    sapply(frac, function(r) {
+      if (is.nan(r)) {
+        return(0)
+      }
+      if (r < 1) r else 1 / r
+    })
   })
 }
 
