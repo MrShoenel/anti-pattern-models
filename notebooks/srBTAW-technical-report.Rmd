@@ -373,7 +373,7 @@ Now that we have sub-models that are able to transform a section of the query-si
 
 It is important to once more recall the mechanics of this suggested model:
 
-* The reference signal is segmented into two or more intervals, each with a length $>0$. This segmentation is done using a given vector of _reference-boundaries_.
+* The reference signal is segmented into one or more intervals, each with a length $>0$. This segmentation is done using a given vector of _reference-boundaries_.
   * These intervals are constant, and never changed afterwards. For each variable in each reference-interval, we have a constant segment of the corresponding reference-signal (continuous case), or a constant vector of data.
 * Each $q$-th reference-interval is associated with a $q$-th sub-model. Each such sub-model has access to the whole query-signal and its gradient, and the goal is to translate and scale the query-signal to __best-fit__ the current reference interval (this requires a loss).
   * The sub-models are designed in a way that the intervals they cover cannot overlap and connect seamlessly, among other criteria (see above).
