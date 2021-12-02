@@ -1916,7 +1916,7 @@ $$
 
 ### Gradient of the sub-model
 
-We need to pay attention when defining the gradient, for cases when $\iota_q$ and/or $\rho_q$ are parameters of the model that are learned and not constant. In our case, where we _wrap_ sr-BTW, $\iota_q=l_q^{(c)},\rho_q=\phi_q$, and $l_q^{(c)}$ depends on $\forall\,l\in\bm{\vartheta}^{(l)}$ as well as $b,e$ (if open begin and/or end), while $\phi_q$ depends on $\forall\,l_i^{(c)},i<q$. If we derive w.r.t. any of the sr-BAW parameters, i.e., $v$ or any of the terminal translations in $\bm{\vartheta}^{(y)}$, then this will eliminate any $m_q^c$, but we need to be careful when deriving for parameters that affect any $l_q^{(c)}$.
+We need to pay attention when defining the gradient, for cases when some parameters depend on parameters of the underlying model. For example, $l_q^{(c)}$ depends on $\forall\,l\in\bm{\vartheta}^{(l)}$ as well as $b,e$ (if open begin and/or end), while $\phi_q$ depends on $\forall\,l_i^{(c)},i<q$. If we derive w.r.t. any of the sr-BAW parameters, i.e., $v$ or any of the terminal translations in $\bm{\vartheta}^{(y)}$, then this will eliminate any $m_q^c$, but we need to be careful when deriving for parameters that affect any $l_q^{(c)}$.
 
 
 ### Testing
