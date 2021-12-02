@@ -1755,3 +1755,95 @@ plot_project_data <- function(data, boundaries = c()) {
 
 
 
+#' This function creates a new instance of \code{srBTAW} and adds all
+#' the signals of a pattern and the given project to it. Then it creates
+#' a single RSS-loss per variable pair and adds it to the model and a
+#' linear scalarizer that is used as objective.
+time_warp_project <- function(pattern, project, thetaB = c(0, fd_data_boundaries, 1)) {
+  stopifnot(is.logical(all.equal(names(pattern), names(project))))
+  numInt <- length(thetaB) - 1
+  
+  obj <- srBTAW_LossLinearScalarizer$new(
+    computeParallel = TRUE, gradientParallel = TRUE, returnRaw = FALSE)
+  
+  inst <- srBTAW$new(
+    theta_b = thetaB,
+    gamma_bed = c(0, 1, sqrt(.Machine$double.eps)),
+    lambda = rep(sqrt(.Machine$double.eps), numInt),
+    begin = 0, end = 1, openBegin = FALSE, openEnd = FALSE,
+    useAmplitudeWarping = FALSE)
+  inst$setParams(params = `names<-`(rep(1/numInt, numInt), inst$getParamNames()))
+  
+  for (vartype in names(pattern)) {
+    inst$setSignal(signal = pattern[[vartype]])
+    inst$setSignal(signal = project[[vartype]])
+    
+    loss <- srBTAW_Loss_Rss$new(
+      intervals = seq_len(length.out = numInt), returnRaw = TRUE, # NOT logarithmic!
+      wpName = pattern[[vartype]]$getName(), wcName = project[[vartype]]$getName(),
+      weight = 1, continuous = FALSE, numSamples = rep(1e3, numInt))
+    inst$addLoss(loss = loss)
+    obj$setObjective(name = paste("rss", vartype, sep = "_"), obj = loss)
+  }
+  
+  # Add a time-warp regularizer:
+  first_sig <- names(pattern)[1]
+  reg <- TimeWarpRegularization$new(
+    weight = 1/2, use = "exint2", wpName = pattern[[first_sig]]$getName(), wcName = project[[first_sig]]$getName(),
+    returnRaw = TRUE, intervals = seq_len(length.out = length(names(project))))
+  inst$addLoss(loss = reg)
+  obj$setObjective(name = "reg_exint2", obj = reg)
+  
+  inst$setObjective(obj = obj)
+}
+
+
+
+score_variable_alignment <- function(
+  alignment, patternName, projectName,
+  use = c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+          "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor"),
+  vartypes = names(weight_vartype),
+  useYRange = NULL
+) {
+  use <- match.arg(use)
+  sigs <- alignment$getAllSignals()
+  
+  scores <- c()
+  for (vartype in vartypes) {
+    inst <- alignment$getInstance(
+      wpName = paste0(patternName, "_", vartype),
+      wcName = paste0(projectName, "_", vartype))
+    supp <- c(inst$getTb_q(q = 1), inst$getTe_q(q = max(inst$getQ())))
+    stopifnot(supp[1] == 0 && supp[2] == 1)
+    # Now the two functions/signals: The first is the unchanged WP,
+    # the second is the warped M function of the SRBTW/SRBTWBAW!
+    f1 <- inst$getWP()
+    f2 <- Vectorize(inst$M)
+    temp <- NA_real_
+    
+    if (use == "area") {
+      temp <- area_diff_2_functions_score(useYRange = useYRange)(f1 = f1, f2 = f2)
+    } else if (use == "corr") {
+      tempsd <- stat_diff_2_functions(f1 = f1, f2 = f2)
+      temp <- stats::cor(x = tempsd$dataF1, y = tempsd$dataF2)
+      if (is.na(temp)) {
+        temp <- 0
+      }
+      temp <- (temp + 1) / 2 # move from [-1,1] \to [0,1]
+    } else if (use == "jsd") {
+      temp <- stat_diff_2_functions_symmetric_JSD_score()(f1 = f1, f2 = f2)
+    } else if (use == "kl") {
+      temp <- stat_diff_2_functions_symmetric_KL_sampled(f1 = f1, f2 = f2)$value
+    } else if (use == "arclen") {
+      temp <- stat_diff_2_functions_arclen_score()(f1 = f1, f2 = f2)
+    } else if (use %in% c("RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
+      temp <- stat_diff_2_functions_signals_score(use = use)(f1 = f1, f2 = f2)
+    } else if (use %in% c("sd", "var", "mae", "rmse")) {
+      temp <- stat_diff_2_functions_sd_var_mae_rmse_score(use = use, useYRange = useYRange)(f1 = f1, f2 = f2)
+    } else stop(paste0("Don't know score ", use))
+    
+    scores <- c(scores, `names<-`(c(temp), vartype))
+  }
+  scores
+}
