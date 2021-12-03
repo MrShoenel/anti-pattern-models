@@ -1306,11 +1306,11 @@ When aligning a project to a pattern using boundary time warping, a deviation be
 
 During the optimization, we already used a regularizer for extreme intervals (`TimeWarpRegularization` with regularizer `exint2`).
 
-## Scoring mechanisms
+## Scoring mechanisms\label{sssec:score-mech}
 
 For scoring a single project, we first warp it to the pattern, then we measure the remaining distance. We only do time-warping of the projects to the pattern. We could compute a score for each interval. However, the ground truth does not yield this, so we will only compute a scores for entire signals, i.e., over all intervals. Once aligned, computing scores is cheap, so we will try a variety of scores and see what works best.
 
-```{r score-mech}
+```{r}
 # Function score_variable_alignment(..) has been moved to common-funcs.R!
 ```
 
@@ -1321,8 +1321,7 @@ compute_all_scores <- function(alignment, patternName) {
   useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var",
                  "mae", "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
   
-  #`rownames<-`(
-  doWithParallelCluster(numCores = length(alignment), expr = {
+  `rownames<-`(doWithParallelCluster(numCores = length(alignment), expr = {
     foreach::foreach(
       projectName = names(alignment),
       .inorder = TRUE,
@@ -1343,7 +1342,7 @@ compute_all_scores <- function(alignment, patternName) {
       }
       `colnames<-`(matrix(data = scores, nrow = 1), names(scores))
     }
-  })#, sort(names(alignment)))
+  }), sort(names(alignment)))
 }
 ```
 
@@ -1408,7 +1407,9 @@ if (interactive()) {
 }
 ```
 
-```{r}
+In table \ref{tab:p1-corr} the correlations of the scores with the ground truth as computed against the first pattern are shown.
+
+```{r echo=FALSE}
 corr <- stats::cor(ground_truth$consensus, p1_scores)[1, ]
 
 if (interactive()) {
@@ -1482,9 +1483,7 @@ p2_align <- loadResultsOrCompute(file = "../results/p2_align.rds", computeExpr =
 
 ```{r score-p2}
 p2_scores <- loadResultsOrCompute(file = "../results/p2_scores.rds", computeExpr = {
-  #as.data.frame(
-  compute_all_scores(alignment = p2_align, patternName = "p2")
-  #)
+  as.data.frame(compute_all_scores(alignment = p2_align, patternName = "p2"))
 })
 ```
 
