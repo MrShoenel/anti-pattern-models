@@ -10,6 +10,8 @@ output:
     number_sections: yes
     toc: yes
     toc_depth: 6
+    lof: yes
+    lot: yes
     df_print: kable
     keep_tex: yes
   bookdown::pdf_book:

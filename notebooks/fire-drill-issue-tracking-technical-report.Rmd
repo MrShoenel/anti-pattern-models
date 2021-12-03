@@ -3564,7 +3564,7 @@ The correlations in table \ref{tab:p4-corr} are varying, but their correlation w
 
 # Correlation of scores
 
-This is a new section in the fifth iteration of this report. Similar to computing the correlation of scores against all models using source code data, we will do this here for each and every pattern based on issue-tracking data. We will be using the function `score_variable_alignment` \ref{score-mech} from the technical report using source code data. We do not have any phases in the process models for issue-tracking data. Therefore, no alignment is required. However, we still have to wrap each PM in an alignment, and will do so by defining one closed interval, without warping or amplitude correction.
+This is a new section in the fifth iteration of this report. Similar to computing the correlation of scores against all models using source code data, we will do this here for each and every pattern based on issue-tracking data. We will be using the function `score_variable_alignment` (cf. section \ref{sssec:score-mech}) from the technical report using source code data. We do not have any phases in the process models for issue-tracking data. Therefore, no alignment is required. However, we still have to wrap each PM in an alignment, and will do so by defining one closed interval, without warping or amplitude correction.
 
 As a preparation for the pseudo-alignment, we need to present each project's signals as instances of `Signal`, as well as each pattern's signals then later. This has been done at the beginning of the report, and is stored in `all_signals`. It only requires some slight modifications before we can continue.
 

@@ -1831,7 +1831,16 @@ for (i in seq_len(length.out = length(cow_og2_test1p))) {
 ```
 
 ```{r echo=FALSE}
-cow_og2_test1p_stats
+if (interactive()) {
+  cow_og2_test1p_stats
+} else {
+  knitr::kable(
+    x = cow_og2_test1p_stats,
+    booktabs = TRUE,
+    caption = "Overview of incurred alignment losses over various setups.",
+    label = "cow-og2-losses"
+  )
+}
 ```
 
 The type in above table reveals some details: 'eq' means starting lengths of equal length, 'unif' mean they wer uniformly sampled from $[0,1]$ (with out scaling them back), 'beta' means they were drawn from a Beta-distribution with $\alpha=1$ and $\beta=2$ (also, no scaling back). 'ob' and 'oe' in the name indicate that the begin and/or end was open. Finally, the number of intervals is at the end of the type.
