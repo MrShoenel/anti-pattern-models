@@ -2224,7 +2224,7 @@ The angle between the projected (predicted) `DEV`-variable of project 5 and the 
 
 
 
-# Scoring of projects
+# Scoring of projects (first batch)
 
 In the technical report for detecting the Fire Drill using source code data, we already explored a wide range of possible patterns and scoring mechanisms. All of them are based on comparing/scoring the variables (process model vs. process). Some of these we will apply here, too, but our focus is first on detection mechanisms that can facilitate the __confidence intervals__.
 
@@ -2345,7 +2345,7 @@ myCol = sample(c("pink1", "violet", "mediumpurple1", "slateblue1", "purple", "pu
 
 
 plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
-     xlab = "Relative time", ylab = "Rate of change")
+     xlab = "Relative time", ylab = "Relative cum. time spent")
 grid()
 curve(req, 0, 1, col="red", lwd=2, add = TRUE)
 curve(req_ci_upper, 0, 1, col="red", lty=2, lwd=1.5, add = TRUE)
@@ -2369,7 +2369,7 @@ legend(0.01, .98, legend = c("req%", "req% CI", paste0("Pr. ", 1:9)),
 
 
 plot(x=0, y=0, xlim = c(0,1), ylim = c(0, 1), col = "#00000000",
-     xlab = "Relative time", ylab = "Rate of change")
+     xlab = "Relative time", ylab = "Relative cum. time spent")
 grid()
 curve(dev, 0, 1, col="blue", lwd=2, add = TRUE)
 tempf <- function(x) rep(0, length(x))
@@ -2533,18 +2533,16 @@ Now we can observe quite an improvement for both variables. The correlation for 
 
 The third kind of pattern is based on data only, all the variables, confidence intervals and the strength thereof are based on the nine projects and the weight, which is the same as their consensus score.
 
-_TODO_.
-
 
 ### Scoring based on the confidence intervals
 
 We have calculated gradated confidence intervals, which means two things. First, we cannot apply a binary detection rule any longer, as the boundaries of the intervals include each project, only the weight is different. Second, when calculating a score, we will obtain a continuous measure, of which we can calculate a correlation to the consensus score of the ground truth, or, e.g., fit a linear model for scaling these scores.
 
 ```{r}
-p3_avg_ci_scores_compute <- function(pId, x1 = 0, x2 = 1) {
-  req <- all_signals[[pId]]$REQ$get0Function()
-  dev <- all_signals[[pId]]$DEV$get0Function()
-  desc <- all_signals[[pId]]$DESC$get0Function()
+p3_avg_ci_scores_compute <- function(pId, x1 = 0, x2 = 1, signals = all_signals) {
+  req <- signals[[pId]]$REQ$get0Function()
+  dev <- signals[[pId]]$DEV$get0Function()
+  desc <- signals[[pId]]$DESC$get0Function()
   
   `rownames<-`(data.frame(
     REQ = L_avgconf_p3_avg(x1 = x1, x2 = x2, f = req, CI = CI_req_p3avg),
@@ -2581,7 +2579,7 @@ if (interactive()) {
   knitr::kable(
     x = p3_avg_ci_scores,
     booktabs = TRUE,
-    caption = "The average confidence of the variables REQ, DEV and DESC of each project as integrated over the confidence intervals' hyperplane",
+    caption = "The average confidence of the variables REQ, DEV and DESC of each project as integrated over the confidence intervals' hyperplane.",
     label = "p3-avg-ci-scores"
   )
 }
