@@ -72,12 +72,12 @@ Here, we define some of the tools needed for this report.
 
 ## Theme for figures
 
-We will try to only use `ggplot2`-figures, but we want them to look as plain as the built-in plot-functionality. The template we are currently using has a textwidth of $4.67783$ inches, so we'll floor to two decimals. We define a function to create and return some custom styles. Note that in the rendered report, some figures are not shown as the sections are not evaluated or echoed, because they are meant to be run manually. Therefore, you'll have to check out the source code of this notebook in some cases.
+We will try to only use `ggplot2`-figures, but we want them to look as plain as the built-in plot-functionality. The template we are currently using has a textwidth of $4.68596$ inches, so we'll floor to two decimals. We define a function to create and return some custom styles. Note that in the rendered report, some figures are not shown as the sections are not evaluated or echoed, because they are meant to be run manually. Therefore, you'll have to check out the source code of this notebook in some cases.
 
 ```{r echo=FALSE}
 par(family = "LM Roman 10")
 
-fe_fig_width <- 4.67
+fe_fig_width <- 4.68
 fe_alpha <- 0.9
 
 fe_gg2_style <- function(facets = FALSE) {
@@ -791,6 +791,120 @@ saveEPSExpr(name = "model_t1_it", height = 4.2, expr = plotexpr)
 ```
 
 
+```{r}
+plotexpr <- rlang::expr({
+  layout(mat = matrix(data = c(1,2), nrow = 2), heights = c(4,5), widths = c(1,1))
+  par(mar=c(3,3,.25,0), family = "LM Roman 10")
+  
+  
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1.02), col = "#00000000",
+       xlab = "", ylab = "")
+  title(ylab = "Value", line = 2)
+  grid()
+  
+  curve2(p1_signals$A$get0Function(), 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+  curve2(p1_signals$CP$get0Function(), 0, 1, col = "blue", lty = 1, lwd = 2, add = TRUE)
+  curve2(p1_signals$FREQ$get0Function(), 0, 1, col = "forestgreen", lty = 1, lwd = 2, add = TRUE)
+  curve2(p1_signals$SCD$get0Function(), 0, 1, col = "purple", lty = 1, lwd = 2, add = TRUE)
+  
+  abline(v = fd_data_boundaries[1], col = "#888888")
+  text(x = .165, y = .45, paste0("$b_1=", fd_data_boundaries[1], "$"), cex = .8)
+  abline(v = fd_data_boundaries[2], col = "#888888")
+  text(x = .54, y = .98, paste0("$b_2=", fd_data_boundaries[2], "$"), cex = .8)
+  abline(v = fd_data_boundaries[3], col = "#888888")
+  text(x = .795, y = .31, paste0("$b_3=", fd_data_boundaries[3], "$"), cex = .8)
+  
+  legend(.14, 1.05, legend = c("$\\mathsf{A}$", "$\\mathsf{CP}$"),
+         col = c("red", "blue"), lty = 1, lwd = 2,
+         bg = "white", cex = .7)
+  legend(.29, 1.05, legend = c("$\\mathsf{FREQ}$", "$\\mathsf{SCD}$"),
+         col = c("forestgreen", "purple"), lty = 1, lwd = 2,
+         bg = "white", cex = .7)
+  
+  
+
+
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(xlab = "Relative project time",
+        ylab = "Relative cum. time spent", line = 2)
+  grid()
+  
+  polygon(
+    x = seq(from = 0, to = 1, length.out = 50),
+    y = req_ci_upper(seq(from = 0, to = 1, length.out = 50)),
+    col = "#ff000033",
+    border = NA)
+  
+  polygon(
+    x = c(seq(from = 0, to = 1, length.out = 50), 1),
+    y = c(dev_ci_upper(seq(from = 0, to = 1, length.out = 50)), 0),
+    col = "#0000ff33",
+    border = NA)
+  
+  curve(req_ci_lower, 0, 1, col = "red", lty = 2, add = TRUE)
+  curve(req_ci_upper, 0, 1, col = "red", lty = 3, add = TRUE)
+  curve(req, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+  
+  # other thresholds:
+  abline(h = req(t_1), col = "#888888")
+  text(x = .51, y = .64, paste0("$\\mathsf{REQ}(t_1)=", round(req(t_1), 2), "$"), cex = .8)
+  
+  abline(h = req_ci_upper(t_1), col = "#888888")
+  text(x = .515, y = .86, labels = paste0("$\\mathsf{CI}_{\\mathsf{REQ}}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"), cex = .8)
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  # t_1:
+  abline(v = t_1)
+  text(x = .47, y = 1, paste0("$t_1=", t_1, "$"), cex = .8)
+  
+  curve(dev_ci_upper, 0, 1, col = "blue", lty = 3, add = TRUE)
+  curve(desc, 0, 1, add = TRUE, col = "forestgreen", lty = 1, lwd = 3)
+  curve(dev, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
+  
+  # t_1(dev), t_2(dev):
+  abline(h = dev(t_1), col = "#888888")
+  text(x = .27, y = .11, labels = paste0("$\\mathsf{DEV}(t_1)=", round(dev(t_1), 3), "$"), cex = .8)
+  abline(h = dev(t_2), col = "#888888")
+  text(x = .745, y = .45, labels = paste0("$\\mathsf{DEV}(t_2)=", round(dev(t_2), 2), "$"), cex = .8)
+  
+  # other thresholds:
+  abline(h = dev_ci_upper(t_2), col = "#888888")
+  text(x = .74, y = .75, labels = paste0("$\\mathsf{CI}_{\\mathsf{DEV}}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"), cex = .8)
+  abline(h = desc(1), col = "#888888")
+  text(x = .89, y = .2, paste0("$\\mathsf{DESC}(1)=", round(desc(1), 2), "$"), cex = .8)
+  
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  # t_1,t_2:
+  abline(v = t_1)
+  abline(v = t_2)
+  text(x = .77, y = 1, paste0("$t_2=", t_2, "$"), cex = .8)
+  
+  legend(.01, 1.03, legend = c("$\\mathsf{REQ}$", "$\\mathsf{CI}_{\\mathsf{REQ}}^{+}$", "$\\mathsf{CI}_{\\mathsf{REQ}}^{-}$"),
+         col = "red", lty = c(1, 3, 2), lwd = c(2, 1, 1),
+         bg = "white", cex = .7)
+  
+  legend(.19, 1.03, legend = c("$\\mathsf{DESC}$", "$\\mathsf{DEV}$", "$\\mathsf{CI}_{\\mathsf{DEV}}^{+}$"),
+         col = c("forestgreen", "blue", "blue"), lty = c(1, 1, 3),
+         lwd = c(2, 2, 1), bg = "white", cex = .7)
+})
+
+eval(plotexpr)
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+saveTikzExpr(name = "model_t1_comb", height = 4, expr = plotexpr)
+```
+
+
+
+
 
 ```{r echo=FALSE, eval=FALSE}
 plotexpr <- rlang::expr({
@@ -877,13 +991,6 @@ eval(plotexpr)
 ```{r echo=FALSE, eval=FALSE}
 saveTikzExpr(name = "model_t2_it", height = 4.2, expr = plotexpr)
 saveEPSExpr(name = "model_t2_it", height = 4.2, expr = plotexpr)
-```
-
-```{r echo=FALSE, eval=FALSE}
-curve2 <- function(func, from, to, col = "black", lty = 1, lwd = 1, add = FALSE) {
-  f <- function(x) func(x)
-  curve(expr = f, from = from, to = to, col = col, lty = lty, lwd = lwd, add = add)
-}
 ```
 
 
@@ -1528,7 +1635,51 @@ saveTikzAndEps(ggInst = eval(plotexpr), name = "detect-sc-corr", height = 2.3)
 
 
 
+# Correlations of scores for issue-tracking data
 
+We want to produce one large, common correlation-table (not a matrix) using process models 1-3 and 4(1-3).
+
+```{r message=FALSE}
+plotexpr <- expression({
+  temp <- t(rbind(
+    `rownames<-`(x = pAll_it_corr, value = c("I", "II", "III")),
+    `rownames<-`(x = p4All_it_corr, value = c("*I", "*II", "*III"))
+  ))
+  temp <- temp[, rev(colnames(temp))]
+  
+  rownames(temp) <- sapply(X = rownames(temp), function(n) {
+    sp <- strsplit(x = n, split = "_")[[1]]
+    paste0("$\\mathsf{", sp[1], "}_{\\mathrm{", sp[2], "}}$")
+  })
+  
+  
+  ggcorrplot::ggcorrplot(corr = temp, ggtheme = fe_gg2_style() + theme(
+      axis.text.x.top = element_text(angle = 90, vjust = 1/3, hjust = 0, size = 8),
+      axis.text.y.left = element_text(size = 8),
+      legend.position = "bottom",
+      legend.text = element_text(vjust = 0),
+      legend.title = element_text(margin = margin(r = 10, b = 3)),
+      legend.key.width = unit(20, 'pt'),
+      legend.key.height = unit(8, 'pt'),
+      axis.title.y.left = element_blank())) +
+  scale_x_discrete(position = "top") +
+  scale_fill_gradient2(
+    low = "#0037AA", mid = "#eeeeee", high = "#AA0037", guide = "colorbar",
+    limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
+  labs(fill = "Pearson sample correlation")
+})
+
+eval(plotexpr)
+```
+
+```{r message=FALSE}
+saveTikzAndEps(ggInst = eval(plotexpr), name = "detect-it-corr", height = 4)
+```
+```{r}
+tikzDevice::tikz(file = paste0("temp", name, ".tex"), width = fe_fig_width, verbose = FALSE)
+eval(plotexpr)
+dev.off()
+```
 
 
 
