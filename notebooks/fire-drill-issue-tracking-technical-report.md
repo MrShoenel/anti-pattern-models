@@ -2417,7 +2417,7 @@ intervals of pattern I.
 In table we show the results of the binary detection, which is based on
 the manually defined homogeneous confidence intervals.
 
-### Average distance to reference
+### Average distance to reference  (pattern type I)
 
 As a bonus, to demonstrate the versatility and robustness of this
 method, we will score the projects against the first pattern, and the
@@ -2502,7 +2502,7 @@ been negative.
 As expected, `DEV` is quite unusable, as the correlations are low,
 albeit negative.
 
-### Average distance to reference
+### Average distance to reference (pattern type II (a))
 
 Let’s check the next pattern: In type II (a), we have adapted the
 thresholds *t*<sub>1</sub>, *t*<sub>2</sub> according to the ground

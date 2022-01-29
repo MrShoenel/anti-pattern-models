@@ -2297,7 +2297,7 @@ if (interactive()) {
 In table \ref{tab:p1-bin-detect} we show the results of the binary detection, which is based on the manually defined homogeneous confidence intervals.
 
 
-### Average distance to reference
+### Average distance to reference (pattern type I)
 
 As a bonus, to demonstrate the versatility and robustness of this method, we will score the projects against the first pattern, and the second pattern type II (a), which is supposed to be a slight improvement over type I. We will use the variables and confidence intervals as they were defined there, i.e., those are neither data-based nor data-enhanced. For the following tests, the variables `REQ` and `DEV` will be considered, as `DESC` does not have non-empirical confidence intervals.
 
@@ -2418,7 +2418,7 @@ I think it is fair to say that the first pattern and its confidence intervals do
 As expected, `DEV` is quite unusable, as the correlations are low, albeit negative.
 
 
-### Average distance to reference
+### Average distance to reference (pattern type II (a))
 
 
 Let's check the next pattern: In type II (a), we have adapted the thresholds $t_1,t_2$ according to the ground truth. We can see, that the CIs of this align already much better with the projects, esp. for the `DEV` variable.
