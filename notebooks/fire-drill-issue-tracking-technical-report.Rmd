@@ -99,12 +99,16 @@ load_project_issue_data <- function(pId) {
     "../data/FD_issue-based_detection.xlsx", sheet = pId)
   data[is.na(data)] <- 0
   
+  data$req <- as.numeric(data$req)
+  data$dev <- as.numeric(data$dev)
+  data$desc <- as.numeric(data$desc)
+  
   req_cs <- cumsum(data$req) / sum(data$req)
   dev_cs <- cumsum(data$dev) / sum(data$dev)
   desc_cs <- cumsum(data$desc) / max(cumsum(data$dev))
   X <- seq(from = 0, to = 1, length.out = length(req_cs))
   
-  signal_rec <- Signal$new(
+  signal_req <- Signal$new(
     func = stats::approxfun(x = X, y = req_cs, yleft = 0, yright = 1),
     name = "REQ", support = c(0,1), isWp = FALSE)
   signal_dev <- Signal$new(
@@ -116,7 +120,7 @@ load_project_issue_data <- function(pId) {
   
   list(
     data = data,
-    REQ = signal_rec,
+    REQ = signal_req,
     DEV = signal_dev,
     DESC = signal_desc
   )
