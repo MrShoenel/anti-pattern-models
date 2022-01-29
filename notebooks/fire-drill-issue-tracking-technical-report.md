@@ -39,13 +39,15 @@
             correlation](#d-continuous-relative-correlation-1)
 -   [Early detection](#early-detection)
     -   [Arbitrary-interval scores](#arbitrary-interval-scores)
+        -   [Process alignment](#process-alignment)
     -   [Forecasting within Vector
         Fields](#forecasting-within-vector-fields)
         -   [Average confidence in overlapped
             surface](#average-confidence-in-overlapped-surface)
         -   [Average direction of steepest confidence
             increase](#average-direction-of-steepest-confidence-increase)
--   [Scoring of projects](#scoring-of-projects)
+-   [Scoring of projects (first
+    batch)](#scoring-of-projects-first-batch)
     -   [Pattern I](#pattern-i)
         -   [Binary detection decision
             rule](#binary-detection-decision-rule)
@@ -62,10 +64,25 @@
             methods](#linear-combination-of-the-two-methods)
         -   [Arbitrary-interval scores
             computing](#arbitrary-interval-scores-computing)
+        -   [Process alignment: DTW, Optimization,
+            srBTAW](#process-alignment-dtw-optimization-srbtaw)
+            -   [Optimization-based
+                approach](#optimization-based-approach)
+            -   [DTW-based approach](#dtw-based-approach)
+            -   [srBTAW-based approach](#srbtaw-based-approach)
     -   [Pattern IV](#pattern-iv-1)
         -   [Scoring based on the distance to
             reference](#scoring-based-on-the-distance-to-reference)
         -   [Correlation between curves](#correlation-between-curves)
+-   [Scoring of projects (2nd batch)](#scoring-of-projects-2nd-batch)
+    -   [Ground truth](#ground-truth-1)
+    -   [Loading the new projects](#loading-the-new-projects)
+    -   [Computing the scores](#computing-the-scores)
+    -   [Predicting the ground truth](#predicting-the-ground-truth)
+-   [Correlation of scores](#correlation-of-scores)
+    -   [Pattern I, II(a), and III](#pattern-i-iia-and-iii)
+    -   [Derivative of Pattern I, II(a), and
+        III](#derivative-of-pattern-i-iia-and-iii)
 
 # Introduction
 
@@ -133,19 +150,23 @@ load_project_issue_data <- function(pId) {
   data <- read_excel("../data/FD_issue-based_detection.xlsx", sheet = pId)
   data[is.na(data)] <- 0
 
+  data$req <- as.numeric(data$req)
+  data$dev <- as.numeric(data$dev)
+  data$desc <- as.numeric(data$desc)
+
   req_cs <- cumsum(data$req)/sum(data$req)
   dev_cs <- cumsum(data$dev)/sum(data$dev)
   desc_cs <- cumsum(data$desc)/max(cumsum(data$dev))
   X <- seq(from = 0, to = 1, length.out = length(req_cs))
 
-  signal_rec <- Signal$new(func = stats::approxfun(x = X, y = req_cs, yleft = 0, 
-    yright = 1), name = "REQ", support = c(0, 1), isWp = TRUE)
+  signal_req <- Signal$new(func = stats::approxfun(x = X, y = req_cs, yleft = 0, 
+    yright = 1), name = "REQ", support = c(0, 1), isWp = FALSE)
   signal_dev <- Signal$new(func = stats::approxfun(x = X, y = dev_cs, yleft = 0, 
-    yright = 1), name = "DEV", support = c(0, 1), isWp = TRUE)
+    yright = 1), name = "DEV", support = c(0, 1), isWp = FALSE)
   signal_desc <- Signal$new(func = stats::approxfun(x = X, y = desc_cs, yleft = 0, 
-    yright = max(desc_cs)), name = "DESC", support = c(0, 1), isWp = TRUE)
+    yright = max(desc_cs)), name = "DESC", support = c(0, 1), isWp = FALSE)
 
-  list(data = data, REQ = signal_rec, DEV = signal_dev, DESC = signal_desc)
+  list(data = data, REQ = signal_req, DEV = signal_dev, DESC = signal_desc)
 }
 ```
 
@@ -161,9 +182,9 @@ desc_f <- p3_signals$DESC$get0Function()
 
 <div class="figure" style="text-align: center">
 
-<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-example-1.png" alt="The two variables of the first project."  />
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-example-1.png" alt="The three variables of the first project."  />
 <p class="caption">
-The two variables of the first project.
+The three variables of the first project.
 </p>
 
 </div>
@@ -1090,6 +1111,12 @@ smooth_signal_loess <- function(x, y, support = c(0, 1), span = .35, family = c(
 }
 ```
 
+    ## Warning: Removed 1 row(s) containing missing values (geom_path).
+
+    ## Warning: Removed 1 row(s) containing missing values (geom_path).
+
+    ## Warning: Removed 1 row(s) containing missing values (geom_path).
+
 <div class="figure" style="text-align: center">
 
 <img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p4-no-plateaus-smooth-1.png" alt="Increasing LOESS-smoothing of the non-plateau signal and its resulting gradient (span=0 means no smoothing)."  />
@@ -1256,9 +1283,10 @@ area under the latter is larger, and so will be the average.
 
 <div class="figure" style="text-align: center">
 
-<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p2p4-l3avgconf-1.png" alt="The three variables of the first project."  />
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p2p4-l3avgconf-1.png" alt="The confidence of req\% variable of projects 2 and 4 over relative project time."  />
 <p class="caption">
-The three variables of the first project.
+The confidence of req% variable of projects 2 and 4 over relative
+project time.
 </p>
 
 </div>
@@ -1367,9 +1395,10 @@ project most.
 
 <div class="figure" style="text-align: center">
 
-<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p2p4-lareadist-1.png" alt="The two variables of the first project."  />
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p2p4-lareadist-1.png" alt="The req\% variable of projects 2 and 4, together with the maximum possible distance."  />
 <p class="caption">
-The two variables of the first project.
+The req% variable of projects 2 and 4, together with the maximum
+possible distance.
 </p>
 
 </div>
@@ -1897,6 +1926,39 @@ In section we exemplary attempt to learn the non-linear relationship
 between arbitrarily chosen time spans and computed scores, and the
 constant ground truth.
 
+### Process alignment
+
+The procedure for computing scores over arbitrarily chosen intervals as
+just described requires approximate knowledge about when it was
+captured, since our ground truth is constant and the begin and end are
+input parameters to the trained model. The problem in a more generalized
+way is to align two (potentially multivariate) time series, where one of
+them is incomplete. Also, the alignment potentially has an open begin
+and/or end.
+
+For these kind of tasks, Dynamic time warping (Giorgino 2009) works
+usually well. Depending on the nature of the process(es) and process
+model, we may even solve the problem using some optimization. For
+example, we modeled the issue-tracking data as cumulative processes. We
+could pose the essentially same optimization problem as earlier, where
+we attempted to find where the process model is 0 (see section ), except
+that here would look for where the process model minus the observed
+process at *t*<sub>begin</sub> equals zero (and the same for the end
+using *t*<sub>end</sub>). However, this might not work for non-monotonic
+processes.
+
+One could also attempt a more general way of mathematical optimization
+that computes an alignment between the process model and the partially
+observed process such that some loss is minimized the better start and
+end match. This approach is essentially a manual way of **one-interval**
+boundary time warping. For that, we have **`srBTAW`**, which allows us
+to use arbitrary intervals, losses, weight, etc. For example, an
+alignment may be computed using the correlation of the processes. DTW on
+the other hand uses the Euclidean distance as distance measure, and also
+requires discrete data, which greatly limits its flexibility.
+
+In section we take an example and compute all of these.
+
 ## Forecasting within Vector Fields
 
 If we were to derive for an *inhomogeneous* confidence interval, the
@@ -2274,7 +2336,7 @@ The angle between the projected (predicted) `DEV`-variable of project 5
 and the average direction of steepest increase in confidence is
  ≈ 84.4<sup>∘</sup>.
 
-# Scoring of projects
+# Scoring of projects (first batch)
 
 In the technical report for detecting the Fire Drill using source code
 data, we already explored a wide range of possible patterns and scoring
@@ -2497,8 +2559,6 @@ The third kind of pattern is based on data only, all the variables,
 confidence intervals and the strength thereof are based on the nine
 projects and the weight, which is the same as their consensus score.
 
-*TODO*.
-
 ### Scoring based on the confidence intervals
 
 We have calculated gradated confidence intervals, which means two
@@ -2510,10 +2570,10 @@ of the ground truth, or, e.g., fit a linear model for scaling these
 scores.
 
 ``` r
-p3_avg_ci_scores_compute <- function(pId, x1 = 0, x2 = 1) {
-  req <- all_signals[[pId]]$REQ$get0Function()
-  dev <- all_signals[[pId]]$DEV$get0Function()
-  desc <- all_signals[[pId]]$DESC$get0Function()
+p3_avg_ci_scores_compute <- function(pId, x1 = 0, x2 = 1, signals = all_signals) {
+  req <- signals[[pId]]$REQ$get0Function()
+  dev <- signals[[pId]]$DEV$get0Function()
+  desc <- signals[[pId]]$DESC$get0Function()
 
   `rownames<-`(data.frame(REQ = L_avgconf_p3_avg(x1 = x1, x2 = x2, f = req, CI = CI_req_p3avg), 
     DEV = L_avgconf_p3_avg(x1 = x1, x2 = x2, f = dev, CI = CI_dev_p3avg), DESC = L_avgconf_p3_avg(x1 = x1, 
@@ -2550,7 +2610,7 @@ Table shows the computed scores.
 | Project9 | 0.2201456 | 0.1436310 | 0.0117499 |
 
 The average confidence of the variables REQ, DEV and DESC of each
-project as integrated over the confidence intervals’ hyperplane
+project as integrated over the confidence intervals’ hyperplane.
 
 Let’s test the correlation between either kind of score and the ground
 truth consensus score. The null hypothesis of this test states that both
@@ -2627,10 +2687,10 @@ probably would want to compute it as
 *S*<sup>areadist</sup> = 1 − *L*<sup>areadist</sup>.
 
 ``` r
-p3_avg_area_scores_compute <- function(pId, x1 = 0, x2 = 1) {
-  req <- all_signals[[pId]]$REQ$get0Function()
-  dev <- all_signals[[pId]]$DEV$get0Function()
-  desc <- all_signals[[pId]]$DESC$get0Function()
+p3_avg_area_scores_compute <- function(pId, x1 = 0, x2 = 1, signals = all_signals) {
+  req <- signals[[pId]]$REQ$get0Function()
+  dev <- signals[[pId]]$DEV$get0Function()
+  desc <- signals[[pId]]$DESC$get0Function()
   
   `rownames<-`(data.frame(
     REQ = L_areadist_p3_avg(
@@ -3047,6 +3107,301 @@ p3_avg_arb_int_pred_cls <- loadResultsOrCompute(file = "../results/p3_avg_arb_in
     ## Detection Prevalence   0.1117
     ## Balanced Accuracy      0.9984
 
+### Process alignment: DTW, Optimization, srBTAW
+
+In the previous subsection we learned a predictive model that requires
+as input the start and end over which some scores were obtained (it is
+required since the available ground truth is constant). In a real-world
+scenario we might not know where exactly in the process we are. In such
+cases, it might be helpful to find the best alignment of some observed
+process with the process model. As an example, we will be using the
+processes from project three, and slice out the interval \[0.25,0.45\].
+
+``` r
+slice_supp <- c(0.25, 0.45)
+use_p <- all_signals$Project3
+
+get_slice_func <- function(varname) {
+  use_func <- use_p[[varname]]$get0Function()
+  function(x) sapply(X = x, FUN = function(x_) {
+    use_func((slice_supp[2] - slice_supp[1]) * x_ + slice_supp[1])
+  })
+}
+
+# Re-define the slices to support [0,1], to make the problem harder and more
+# realistic.
+slice_req <- Signal$new(name = "REQ_WP", func = get_slice_func("REQ"), support = c(0, 
+  1), isWp = TRUE)
+slice_dev <- Signal$new(name = "DEV_WP", func = get_slice_func("DEV"), support = c(0, 
+  1), isWp = TRUE)
+slice_desc <- Signal$new(name = "DESC_WP", func = get_slice_func("DESC"), support = c(0, 
+  1), isWp = TRUE)
+```
+
+#### Optimization-based approach
+
+Similar to how we found the optimum in section , we can pose an
+optimization problem:
+
+$$
+\\begin{aligned}
+  {\[}a,b{\]}\\dots&\\;\\text{support of the observed process (here:}\\,\[0.25,0.45\]\\text{),}
+  \\\\\[1ex\]
+  \\mathcal{L}\_{\\text{begin}}(t\_{\\text{begin}})=&\\;\\left\\lvert\\,\\operatorname{\\overline{req}}(t\_{\\text{begin}})-\\operatorname{req}(a)\\,\\right\\rvert+\\left\\lvert\\,\\operatorname{\\overline{dev}}(t\_{\\text{begin}})-\\operatorname{dev}(a)\\,\\right\\rvert+\\left\\lvert\\,\\operatorname{\\overline{desc}}(t\_{\\text{begin}})-\\operatorname{desc}(a)\\,\\right\\rvert\\,\\text{,}
+  \\\\\[1ex\]
+  \\mathcal{L}\_{\\text{end}}(t\_{\\text{end}})=&\\;\\left\\lvert\\,\\operatorname{\\overline{req}}(t\_{\\text{end}})-\\operatorname{req}(b)\\,\\right\\rvert+\\left\\lvert\\,\\operatorname{\\overline{dev}}(t\_{\\text{end}})-\\operatorname{dev}(b)\\,\\right\\rvert+\\left\\lvert\\,\\operatorname{\\overline{desc}}(t\_{\\text{end}})-\\operatorname{desc}(b)\\,\\right\\rvert\\,\\text{,}
+  \\\\\[1ex\]
+  \\mathcal{L}(t\_{\\text{begin}},t\_{\\text{end}})=&\\;\\mathcal{L}\_{\\text{begin}}(t\_{\\text{begin}})+\\mathcal{L}\_{\\text{end}}(t\_{\\text{end}})\\,\\text{,}
+  \\\\\[1ex\]
+  \\min\_{t\_{\\text{begin}},t\_{\\text{end}}\\in R}&\\;\\mathcal{L}(t\_{\\text{begin}},t\_{\\text{end}})\\,\\text{,}
+  \\\\\[1ex\]
+  \\text{subject to}&\\;0\\leq t\_{\\text{begin}}\<t\_{\\text{end}}\\leq1\\;\\text{.}
+\\end{aligned}
+$$
+
+``` r
+req_ab <- (slice_req$get0Function())(c(0, 1))
+dev_ab <- (slice_dev$get0Function())(c(0, 1))
+desc_ab <- (slice_desc$get0Function())(c(0, 1))
+
+set.seed(1)
+
+res <- nloptr(x0 = c(0.5, 0.5), eval_f = function(x) {
+  a <- x[1]
+  b <- x[2]
+  abs(req_p3(a) - req_ab[1]) + abs(dev_p3(a) - dev_ab[1]) + abs(desc_p3(a) - desc_ab[1]) + 
+    abs(req_p3(b) - req_ab[2]) + abs(dev_p3(b) - dev_ab[2]) + abs(desc_p3(b) - 
+    desc_ab[2])
+}, lb = c(0, 0), ub = c(1, 1), opts = list(maxeval = 1000, algorithm = "NLOPT_LN_BOBYQA"))
+
+c(res$solution, res$objective)
+```
+
+    ## [1] 0.30356210 0.45695785 0.09384887
+
+We found the parameters 0.3035621 and 0.4569579 for the overall begin an
+end, which is quite close.
+
+#### DTW-based approach
+
+Here, we use open-end/-begin DTW to find the offset per variable, then
+for all variables combined.
+
+``` r
+dtwRes <- loadResultsOrCompute(file = "../results/proc_align_dtw.rds", computeExpr = {
+  library(dtw)
+  X <- seq(0, 1, length.out = 1000)
+
+  dtwRes_req <- dtw::dtw(x = req_p3(X), y = (slice_req$get0Function())(X), keep.internals = TRUE)
+  dtwEx_req <- extract_signal_from_window(dtwRes_req, window = X)
+
+  dtwRes_dev <- dtw::dtw(x = dev_p3(X), y = (slice_dev$get0Function())(X), keep.internals = TRUE)
+  dtwEx_dev <- extract_signal_from_window(dtwRes_dev, window = X)
+
+  dtwRes_desc <- dtw::dtw(x = desc_p3(X), y = (slice_desc$get0Function())(X), keep.internals = TRUE)
+  dtwEx_desc <- extract_signal_from_window(dtwRes_desc, window = X)
+
+  dtwRes_ALL <- dtw::dtw(x = matrix(ncol = 3, data = c(req_p3(X), dev_p3(X), desc_p3(X))), 
+    y = matrix(ncol = 3, data = c((slice_req$get0Function())(X), (slice_dev$get0Function())(X), 
+      (slice_desc$get0Function())(X))), keep.internals = TRUE)
+  dtwEx_ALL <- extract_signal_from_window(dtwRes_ALL, window = X)
+
+  c(begin_req = dtwEx_req$start_rel, end_req = dtwEx_req$end_rel, begin_dev = dtwEx_dev$start_rel, 
+    end_dev = dtwEx_dev$end_rel, begin_desc = dtwEx_desc$start_rel, end_desc = dtwEx_desc$end_rel, 
+    begin_ALL = dtwEx_ALL$start_rel, end_ALL = dtwEx_ALL$end_rel)
+})
+
+dtwRes
+```
+
+    ##  begin_req    end_req  begin_dev    end_dev begin_desc   end_desc  begin_ALL 
+    ## 0.30330330 0.45045045 0.26326326 0.45645646 0.08008008 0.69869870 0.30130130 
+    ##    end_ALL 
+    ## 0.46846847
+
+Here we get a couple results, depending on the variable. The overall
+result is marginally worse compared to the one we got from the
+optimization. Here it becomes apparent that a custom objective would be
+needed to detect the true begin and end, which is not possible with DTW.
+
+#### srBTAW-based approach
+
+Here we attempt to align the partially observed process with the process
+model using two different approaches. First, we attempt to use the RSS
+loss, which should give us similar results to what DTW achieved for the
+overall begin and end. Then, we use an objective to compute the
+correlation between processes.
+
+``` r
+proc_align_srbtaw <- function(use = c("rss", "logratio")) {
+  use <- match.arg(use)
+
+  srbtaw <- srBTAW$new(theta_b = seq(0, 1, by = 0.1), gamma_bed = c(0, 1, .Machine$double.eps), 
+    lambda = rep(.Machine$double.eps, 10), begin = 0, end = 1, openBegin = TRUE, 
+    openEnd = TRUE)
+  srbtaw$setParams(`names<-`(c(0, 1, rep(1/10, 10)), srbtaw$getParamNames()))
+
+  srbtaw$setSignal(signal = Signal$new(name = "REQ", func = req_p3, support = c(0, 
+    1), isWp = FALSE))
+  srbtaw$setSignal(slice_req)
+  srbtaw$setSignal(signal = Signal$new(name = "DEV", func = dev_p3, support = c(0, 
+    1), isWp = FALSE))
+  srbtaw$setSignal(slice_dev)
+  srbtaw$setSignal(signal = Signal$new(name = "DESC", func = desc_p3, support = c(0, 
+    1), isWp = FALSE))
+  srbtaw$setSignal(slice_desc)
+
+  obj <- srBTAW_LossLinearScalarizer$new(computeParallel = TRUE, gradientParallel = TRUE, 
+    returnRaw = TRUE)
+
+  if (use == "rss") {
+    loss_req <- srBTAW_Loss_Rss$new(wpName = "REQ_WP", wcName = "REQ", intervals = 1:10, 
+      returnRaw = FALSE)
+    srbtaw$addLoss(loss = loss_req)
+    loss_dev <- srBTAW_Loss_Rss$new(wpName = "DEV_WP", wcName = "DEV", intervals = 1:10, 
+      returnRaw = FALSE)
+    srbtaw$addLoss(loss = loss_dev)
+    loss_desc <- srBTAW_Loss_Rss$new(wpName = "DESC_WP", wcName = "DESC", intervals = 1:10, 
+      returnRaw = FALSE)
+    srbtaw$addLoss(loss = loss_desc)
+
+    obj$setObjective(name = "Loss_REQ", obj = loss_req)
+    obj$setObjective(name = "Loss_DEV", obj = loss_dev)
+    obj$setObjective(name = "Loss_DESC", obj = loss_desc)
+  } else {
+    loss_req2 <- srBTAW_Loss2Curves$new(use = "logratio", srbtaw = srbtaw, wpName = "REQ_WP", 
+      wcName = "REQ", intervals = 1:10)
+    srbtaw$addLoss(loss = loss_req2)
+
+    loss_dev2 <- srBTAW_Loss2Curves$new(use = "logratio", srbtaw = srbtaw, wpName = "DEV_WP", 
+      wcName = "DEV", intervals = 1:10)
+    srbtaw$addLoss(loss = loss_dev2)
+
+    loss_desc2 <- srBTAW_Loss2Curves$new(use = "logratio", srbtaw = srbtaw, wpName = "DESC_WP", 
+      wcName = "DESC", intervals = 1:10)
+    srbtaw$addLoss(loss = loss_desc2)
+
+    obj$setObjective(name = "Loss_REQ2", obj = loss_req2)
+    obj$setObjective(name = "Loss_DEV2", obj = loss_dev2)
+    obj$setObjective(name = "Loss_DESC2", obj = loss_desc2)
+  }
+
+  reg <- TimeWarpRegularization$new(weight = 1/2, use = "exint2", wpName = "REQ_WP", 
+    wcName = "REQ", returnRaw = use == "logratio", intervals = 1:10)
+
+  srbtaw$addLoss(loss = reg)
+  obj$setObjective(name = "reg_exint2", obj = reg)
+  srbtaw$setObjective(obj = obj)
+  srbtaw$setIsObjectiveLogarithmic(val = TRUE)
+}
+```
+
+``` r
+align_srbtaw_rss <- loadResultsOrCompute(file = "../results/proc_align_srbtaw_rss.rds", 
+  computeExpr = {
+    srbtaw <- proc_align_srbtaw(use = "rss")
+    compute_proc_align(srbtaw = srbtaw)
+  })
+align_srbtaw_rss$res$par[c("b", "e")]
+```
+
+    ##         b         e 
+    ## 0.4555679 0.3067260
+
+``` r
+align_srbtaw_logratio <- loadResultsOrCompute(file = "../results/proc_align_srbtaw_logratio.rds", 
+  computeExpr = {
+    srbtaw <- proc_align_srbtaw(use = "logratio")
+    compute_proc_align(srbtaw = srbtaw)
+  })
+align_srbtaw_logratio$res$par[c("b", "e")]
+```
+
+    ##         b         e 
+    ## 0.2492560 0.5264296
+
+As expected, the result for the RSS-based is very similar to the overall
+result as obtained by DTW (note that the mix-up of begin and end does
+not matter to srBTAW, is it regularizes this using its internal
+representation *β*<sub>*l*</sub>, *β*<sub>*u*</sub>). The
+correlation-based loss, surprisingly, manages to discover the true begin
+of  ≈ 0.25. It is likely possible to find a combination of losses,
+weights, etc., that can find the offsets of some process better, but
+that is a bit out of scope here. In fig.  we show the time warping as
+computed by the two objectives (RSS and correlation).
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/proc-align-srbtaw-1.png" alt="Open alignment of the observed process using srBTAW and 10 intervals. On the left using RSS as loss, and on the right using correlation."  />
+<p class="caption">
+Open alignment of the observed process using srBTAW and 10 intervals. On
+the left using RSS as loss, and on the right using correlation.
+</p>
+
+</div>
+
+For demonstration purposes, we can compute the loss surface of a the
+model that was previously fit using RSS. Here, we keep the vector
+**ϑ**<sup>(*l*)</sup> constant, and only update *b*, *e*.
+
+In figure we show the loss surface of the parameters begin and end of a
+one-interval alignment using srBTAW and RSS-losses.
+
+``` r
+use_resol <- 50
+minStep <- 1/use_resol
+use_begin <- seq(0, 1 - minStep, by = minStep)
+use_par <- align_srbtaw_rss$res$par
+
+align_srbtaw_rss_surface <- loadResultsOrCompute(file = "../results/align_srbtaw_rss_surface.rds", 
+  computeExpr = {
+    library(foreach)
+
+    cl <- parallel::makePSOCKcluster(min(64, parallel::detectCores()))
+    parallel::clusterExport(cl, varlist = list("slice_supp"))
+
+    doWithParallelClusterExplicit(cl = cl, expr = {
+      foreach::foreach(begin = use_begin, .inorder = TRUE, .combine = cbind) %dopar% 
+        {
+          source(file = "../helpers.R")
+          source(file = "./common-funcs.R")
+          source(file = "../models/modelsR6.R")
+          source(file = "../models/SRBTW-R6.R")
+
+          end <- begin + minStep
+          res <- c()
+          while (TRUE) {
+          if (end > 1) 
+            break
+
+          srbtaw <- temp_get_srbtaw()
+          params <- c(use_par)
+          params["b"] <- begin
+          params["e"] <- end
+          # srbtaw$setParams(`names<-`(c(begin, end, 1), srbtaw$getParamNames()))
+          srbtaw$setParams(params = params)
+          res <- c(res, srbtaw$getObjective()$compute0())
+
+          end <- end + minStep
+          }
+
+          # pad left:
+          c(rep(NA_real_, use_resol - length(res)), res)
+        }
+    })
+  })
+```
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/proc-align-srbtaw-loss-surface-1.png" alt="The loss surface for ten-interval time warping using srBTAW of the parameters begin and end. The lowest loss is marked with a triangle"  />
+<p class="caption">
+The loss surface for ten-interval time warping using srBTAW of the
+parameters begin and end. The lowest loss is marked with a triangle
+</p>
+
+</div>
+
 ## Pattern IV
 
 This pattern emerged only recently, but we have some options of scoring
@@ -3305,7 +3660,589 @@ which is the derivative of the expert-designed pattern I. However, this
 might work with a data-enhanced or data-only pattern. Our previous
 attempt using the distance in areas was much better.
 
+# Scoring of projects (2nd batch)
+
+In the meantime, we got a new batch of projects (IDs `[10,15]`). We want
+to use the regression model based on the previous batch of projects to
+calculate a degree to which the Fire Drill is present. To goal is to
+find out whether the model built on previous observations can generalize
+to new, previously unseen data. The model was fit on scores as computed
+against pattern III (average), and it used two kinds of scores: a) the
+average confidence as computed by the path of each variable it takes
+through the confidence surface, and b) the average distance to the
+reference variable (the weighted average of previous projects).
+
+So, in order to obtain predictions, we need to do n things:
+
+1.  Load the new projects – the file `FD_issue-based_detection.xlsx` was
+    updated to include the new projects. We’ll use the function
+    `load_project_issue_data()` to instantiate the signals.
+2.  Compute the two kinds of scores; we’ll run the **new** projects
+    against the pattern that is based on the **old** projects.
+3.  Use the scores in the previously fit regression model and predict a
+    ground truth.
+
+## Ground truth
+
+``` r
+ground_truth_2nd_batch <- read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";")
+ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus/10
+```
+
+We have ground truth available for the second batch. Again, the two
+raters assessed it independently first, and only later found a
+consensus. The a priori agreement between both raters was better this
+time, as the quadratic weighted Kappa increased substantially to a value
+of **0.929**. Table shows the ground truth for the new projects
+`[10-15]`.
+
+| project    | rater.a | rater.b | consensus | rater.mean | consensus_score |
+|:-----------|--------:|--------:|----------:|-----------:|----------------:|
+| project_10 |       2 |       3 |         2 |        2.5 |             0.2 |
+| project_11 |       0 |       1 |         0 |        0.5 |             0.0 |
+| project_12 |       1 |       2 |         2 |        1.5 |             0.2 |
+| project_13 |       8 |      10 |        10 |        9.0 |             1.0 |
+| project_14 |       1 |       0 |         1 |        0.5 |             0.1 |
+| project_15 |       1 |       1 |         1 |        1.0 |             0.1 |
+
+Entire ground truth as of both raters
+
+## Loading the new projects
+
+``` r
+library(readxl)
+
+all_signals_2nd_batch <- list()
+
+for (pId in paste0("Project", 10:15)) {
+  all_signals_2nd_batch[[pId]] <- load_project_issue_data(pId = pId)
+}
+```
+
+Let’s see how they look (sanity check):
+
+<div class="figure" style="text-align: top">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/project-it-vars-2nd-batch-1.png" alt="The second batch of projects [10-15]. All variables over each project's time span."  />
+<p class="caption">
+The second batch of projects \[10-15\]. All variables over each
+project’s time span.
+</p>
+
+</div>
+
+The six new projects in figure look like they do in the excel, the
+import was successful.
+
+## Computing the scores
+
+We will start by computing the scores that are based on the gradated
+confidence intervals. We can reuse the function
+`p3_avg_ci_scores_compute()`.
+
+``` r
+p3_avg_ci_2nd_batch_scores <- loadResultsOrCompute(file = "../results/p3_avg_ci_2nd_batch_scores.rds", 
+  computeExpr = {
+    doWithParallelCluster(numCores = length(all_signals_2nd_batch), expr = {
+      library(foreach)
+
+      foreach::foreach(pId = names(all_signals_2nd_batch), .inorder = TRUE, 
+        .combine = rbind) %dopar% {
+        p3_avg_ci_scores_compute(pId = pId, x1 = 0, x2 = 1, signals = all_signals_2nd_batch)
+      }
+    })
+  })
+```
+
+Table shows the computed scores.
+
+|           |       REQ |       DEV |      DESC | Project   |
+|:----------|----------:|----------:|----------:|:----------|
+| Project10 | 0.3559307 | 0.4116880 | 0.5283078 | Project10 |
+| Project11 | 0.2046314 | 0.3029024 | 0.4360296 | Project11 |
+| Project12 | 0.2950464 | 0.1413461 | 0.4061248 | Project12 |
+| Project13 | 0.1992798 | 0.4388567 | 0.2785768 | Project13 |
+| Project14 | 0.2197666 | 0.2707810 | 0.3170778 | Project14 |
+| Project15 | 0.2804880 | 0.4226075 | 0.4064899 | Project15 |
+
+The average confidence of the variables REQ, DEV and DESC of each of the
+2nd batch’s projects as integrated over the confidence intervals’
+hyperplane (as computed from the first batch of projects).
+
+The correlation with the ground truth of these scores is:
+
+``` r
+cor.test(x = ground_truth_2nd_batch$consensus_score, y = p3_avg_ci_2nd_batch_scores[, 
+  "REQ"])
+```
+
+    ## 
+    ##  Pearson's product-moment correlation
+    ## 
+    ## data:  ground_truth_2nd_batch$consensus_score and p3_avg_ci_2nd_batch_scores[, "REQ"]
+    ## t = -0.6509, df = 4, p-value = 0.5506
+    ## alternative hypothesis: true correlation is not equal to 0
+    ## 95 percent confidence interval:
+    ##  -0.8959986  0.6704848
+    ## sample estimates:
+    ##        cor 
+    ## -0.3094729
+
+``` r
+cor.test(x = ground_truth_2nd_batch$consensus_score, y = p3_avg_ci_2nd_batch_scores[, 
+  "DEV"])
+```
+
+    ## 
+    ##  Pearson's product-moment correlation
+    ## 
+    ## data:  ground_truth_2nd_batch$consensus_score and p3_avg_ci_2nd_batch_scores[, "DEV"]
+    ## t = 0.91889, df = 4, p-value = 0.4102
+    ## alternative hypothesis: true correlation is not equal to 0
+    ## 95 percent confidence interval:
+    ##  -0.5960122  0.9180114
+    ## sample estimates:
+    ##       cor 
+    ## 0.4174883
+
+``` r
+cor.test(x = ground_truth_2nd_batch$consensus_score, y = p3_avg_ci_2nd_batch_scores[, 
+  "DESC"])
+```
+
+    ## 
+    ##  Pearson's product-moment correlation
+    ## 
+    ## data:  ground_truth_2nd_batch$consensus_score and p3_avg_ci_2nd_batch_scores[, "DESC"]
+    ## t = -1.435, df = 4, p-value = 0.2246
+    ## alternative hypothesis: true correlation is not equal to 0
+    ## 95 percent confidence interval:
+    ##  -0.9466541  0.4338556
+    ## sample estimates:
+    ##        cor 
+    ## -0.5829694
+
+While these correlations seem significant, the p-values indicate
+evidence for the null hypothesis, which means no correlation. Now that
+we have these scores, we’ll compute scores for the average distance to
+the respective reference variable.
+
+``` r
+p3_avg_area_2nd_batch_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_2nd_batch_scores.rds", 
+  computeExpr = {
+    doWithParallelCluster(numCores = length(all_signals_2nd_batch), expr = {
+      library(foreach)
+
+      foreach::foreach(pId = names(all_signals_2nd_batch), .inorder = TRUE, 
+        .combine = rbind) %dopar% {
+        p3_avg_area_scores_compute(pId = pId, signals = all_signals_2nd_batch)
+      }
+    })
+  })
+```
+
+Table shows the computed scores.
+
+|           |       REQ |       DEV |      DESC | Project   |
+|:----------|----------:|----------:|----------:|:----------|
+| Project10 | 0.3960715 | 0.3542538 | 0.2625533 | Project10 |
+| Project11 | 0.7154275 | 0.6566564 | 0.2399364 | Project11 |
+| Project12 | 0.5015237 | 0.8966831 | 1.0000000 | Project12 |
+| Project13 | 0.7542608 | 0.3181776 | 0.8678727 | Project13 |
+| Project14 | 0.6904980 | 0.6757826 | 0.3152234 | Project14 |
+| Project15 | 0.6500128 | 0.3035216 | 0.9224892 | Project15 |
+
+The average distance of the variables REQ, DEV and DESC of each of the
+second batch’s projects to the previously averaged reference-variables
+$\\overline{\\operatorname{REQ}},\\overline{\\operatorname{DEV}},\\overline{\\operatorname{DESC}}$
+as computed over tethe first batch.
+
+## Predicting the ground truth
+
+Now we have all the scores of the new projects computed against the
+pattern as generated from the previous projects.
+
+``` r
+temp <- data.frame(gt_consensus = ground_truth_2nd_batch$consensus_score, ci_req = p3_avg_ci_2nd_batch_scores$REQ, 
+  area_req = p3_avg_area_2nd_batch_scores$REQ, ci_dev = p3_avg_ci_2nd_batch_scores$DEV, 
+  area_dev = p3_avg_area_2nd_batch_scores$DEV, ci_desc = p3_avg_ci_2nd_batch_scores$DESC, 
+  area_desc = p3_avg_area_2nd_batch_scores$DESC)
+
+p3_avg_lm_2nd_batch_scores <- stats::predict(object = p3_avg_lm, temp)
+# Since we are attempting a regression to positive scores, we set any negative
+# predictions to 0. Same goes for >1.
+p3_avg_lm_2nd_batch_scores[p3_avg_lm_2nd_batch_scores < 0] <- 0
+p3_avg_lm_2nd_batch_scores[p3_avg_lm_2nd_batch_scores > 1] <- 1
+
+`names<-`(round(p3_avg_lm_2nd_batch_scores * 10, 3), 10:15)
+```
+
+    ##     10     11     12     13     14     15 
+    ## 10.000  7.263  4.995  5.240  7.089  7.287
+
+``` r
+stats::cor(p3_avg_lm_2nd_batch_scores, ground_truth_2nd_batch$consensus_score)
+```
+
+    ## [1] -0.4500864
+
+These results mean that the prediction is anti-proportional to the
+ground truth, and weak at the same time. It is actually worse to have a
+negative correlation than having no correlation. This can only be
+interpreted as our previously trained regression model not being able to
+generalize to new, unseen data. This is expected, since a) we did not
+have sufficient training data, and b) the previous regression model
+being overfit on the previous data. However, and I wrote that before,
+the main point of these regression models was translation and scaling of
+the scores, not prediction. For that, much more data is required (both,
+instances and features, as the selected features cannot capture all of
+the important aspects of the deviation process and process model).
+Furthermore, these regression models (including the one we built for the
+source code data) were built using hand-picked features. Ideally, we
+would have a great number of different features, paired with something
+like a recursive feature elimination, in order to come up with a
+regression model that has reliable generalizability. Therefore, I am
+inclined not to repeat this exercise with the source code data, as we
+will have the same problem there. I will add a section about RFE and
+cross-validation and do that instead.
+
+# Correlation of scores
+
+This is a new section in the fifth iteration of this report. Similar to
+computing the correlation of scores against all models using source code
+data, we will do this here for each and every pattern based on
+issue-tracking data. We will be using the function
+`score_variable_alignment` (cf. section ) from the technical report
+using source code data. We do not have any phases in the process models
+for issue-tracking data. Therefore, no alignment is required. However,
+we still have to wrap each PM in an alignment, and will do so by
+defining one closed interval, without warping or amplitude correction.
+
+As a preparation for the pseudo-alignment, we need to present each
+project’s signals as instances of `Signal`, as well as each pattern’s
+signals then later. This has been done at the beginning of the report,
+and is stored in `all_signals`. It only requires some slight
+modifications before we can continue.
+
+Also, for the running the projects against type-IV patterns, we’ll need
+to compute their gradients. Recall that the projects’ signals were
+created using a zero-order hold, creating a cumulative quantity that
+increases step-wise, which results in extreme gradients. In section we
+have previously examined which kind of smoothing is perhaps most
+applicable in order to obtain relatively smooth gradients. The
+recommended solution was to use LOESS smoothing with a span of `0.35`,
+and not to go lower than `0.2`. A lower span preserves more details, and
+the results below were computed with a value of `0.35`. We have
+previously run these computations with the value `0.2`, with no
+significant different results.
+
+``` r
+use_span <- 0.35
+
+time_warp_wrapper <- function(pattern, derive = FALSE) {
+  signals <- list()
+
+  for (project in paste0("Project", rownames(ground_truth))) {
+    temp <- list()
+    if (derive) {
+      temp[["REQ"]] <- Signal$new(name = paste0(project, "_REQ"), support = c(0, 
+        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(all_signals[[project]]$data), 
+        y = cumsum(all_signals[[project]]$data$req), span = use_span, family = "g"))
+      temp[["DEV"]] <- Signal$new(name = paste0(project, "_DEV"), support = c(0, 
+        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(all_signals[[project]]$data), 
+        y = cumsum(all_signals[[project]]$data$dev), span = use_span, family = "g"))
+      temp[["DESC"]] <- Signal$new(name = paste0(project, "_DESC"), support = c(0, 
+        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(all_signals[[project]]$data), 
+        y = cumsum(all_signals[[project]]$data$desc), span = use_span, family = "g"))
+    } else {
+      temp[["REQ"]] <- all_signals[[project]]$REQ$clone()
+      temp$REQ$.__enclos_env__$private$name <- paste0(project, "_REQ")
+      temp[["DEV"]] <- all_signals[[project]]$DEV$clone()
+      temp$DEV$.__enclos_env__$private$name <- paste0(project, "_DEV")
+      temp[["DESC"]] <- all_signals[[project]]$DESC$clone()
+      temp$DESC$.__enclos_env__$private$name <- paste0(project, "_DESC")
+    }
+    signals[[project]] <- time_warp_project(pattern = pattern, project = temp, 
+      thetaB = c(0, 1))
+  }
+
+  signals
+}
+```
+
+## Pattern I, II(a), and III
+
+We’ll first have to assemble a list of signals that define each pattern,
+before we can wrap it in an empty alignment and calculate the various
+scores.
+
+``` r
+p1_it_signals <- list(REQ = Signal$new(name = "p1_it_REQ", func = req, support = c(0, 
+  1), isWp = TRUE), DEV = Signal$new(name = "p1_it_DEV", func = dev, support = c(0, 
+  1), isWp = TRUE), DESC = Signal$new(name = "p1_it_DESC", func = desc, support = c(0, 
+  1), isWp = TRUE))
+
+p1_it_projects <- time_warp_wrapper(pattern = p1_it_signals, derive = FALSE)
+```
+
+``` r
+p1_it_scores <- loadResultsOrCompute(file = "../results/p1_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(alignment = p1_it_projects, patternName = "p1_it", 
+    vartypes = names(p1_it_signals)))
+})
+```
+
+Table shows the correlations for each variable. This is different to how
+we did it for source code data. Each variable is shown separately in
+order not to conceal more extreme correlations that would otherwise be
+inaccessible due to aggregation.
+
+|                    | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
+|:-------------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| REQ_area           | 0.96 | 0.98 | 0.93 | 0.81 | 0.86 | 0.91 | 0.96 | 0.89 | 0.87 |
+| DEV_area           | 0.70 | 0.81 | 0.83 | 0.87 | 0.75 | 0.91 | 0.76 | 0.74 | 0.64 |
+| DESC_area          | 0.95 | 0.95 | 0.95 | 0.98 | 0.96 | 0.96 | 0.98 | 0.95 | 0.97 |
+| REQ_corr           | 1.00 | 1.00 | 0.99 | 0.98 | 0.97 | 0.98 | 0.99 | 0.98 | 0.98 |
+| DEV_corr           | 0.90 | 0.94 | 0.95 | 0.97 | 0.92 | 0.97 | 0.93 | 0.93 | 0.87 |
+| DESC_corr          | 0.50 | 0.87 | 0.94 | 0.96 | 0.84 | 0.87 | 0.98 | 0.50 | 0.83 |
+| REQ_jsd            | 0.86 | 0.92 | 0.75 | 0.57 | 0.40 | 0.73 | 0.78 | 0.58 | 0.72 |
+| DEV_jsd            | 0.42 | 0.43 | 0.52 | 0.53 | 0.40 | 0.57 | 0.45 | 0.46 | 0.38 |
+| DESC_jsd           | 0.52 | 0.58 | 0.67 | 0.78 | 0.59 | 0.58 | 0.80 | 0.52 | 0.63 |
+| REQ_kl             | 0.00 | 0.00 | 0.02 | 0.06 | 0.16 | 0.02 | 0.01 | 0.06 | 0.02 |
+| DEV_kl             | 0.15 | 0.14 | 0.09 | 0.08 | 0.15 | 0.06 | 0.12 | 0.12 | 0.18 |
+| DESC_kl            | 0.08 | 0.06 | 0.03 | 0.01 | 0.06 | 0.06 | 0.01 | 0.08 | 0.04 |
+| REQ_arclen         | 0.83 | 0.84 | 0.85 | 0.84 | 0.83 | 0.82 | 0.82 | 0.80 | 0.83 |
+| DEV_arclen         | 0.98 | 0.95 | 0.94 | 0.93 | 0.95 | 0.91 | 0.92 | 0.89 | 0.94 |
+| DESC_arclen        | 0.98 | 1.00 | 0.90 | 0.81 | 0.94 | 0.99 | 0.93 | 0.98 | 0.81 |
+| REQ_sd             | 0.94 | 0.96 | 0.93 | 0.86 | 0.76 | 0.88 | 0.92 | 0.84 | 0.88 |
+| DEV_sd             | 0.67 | 0.71 | 0.81 | 0.78 | 0.68 | 0.89 | 0.71 | 0.75 | 0.66 |
+| DESC_sd            | 0.94 | 0.95 | 0.95 | 0.98 | 0.95 | 0.94 | 0.98 | 0.94 | 0.95 |
+| REQ_var            | 1.00 | 1.00 | 1.00 | 0.98 | 0.94 | 0.99 | 0.99 | 0.97 | 0.99 |
+| DEV_var            | 0.89 | 0.92 | 0.96 | 0.95 | 0.90 | 0.99 | 0.92 | 0.94 | 0.89 |
+| DESC_var           | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| REQ_mae            | 0.96 | 0.98 | 0.93 | 0.81 | 0.86 | 0.91 | 0.96 | 0.89 | 0.87 |
+| DEV_mae            | 0.70 | 0.81 | 0.83 | 0.87 | 0.75 | 0.91 | 0.76 | 0.74 | 0.64 |
+| DESC_mae           | 0.95 | 0.95 | 0.95 | 0.98 | 0.96 | 0.96 | 0.98 | 0.95 | 0.97 |
+| REQ_rmse           | 0.95 | 0.97 | 0.92 | 0.79 | 0.79 | 0.88 | 0.94 | 0.85 | 0.85 |
+| DEV_rmse           | 0.63 | 0.73 | 0.79 | 0.80 | 0.67 | 0.88 | 0.69 | 0.69 | 0.57 |
+| DESC_rmse          | 0.93 | 0.94 | 0.94 | 0.98 | 0.94 | 0.94 | 0.98 | 0.93 | 0.96 |
+| REQ_RMS            | 0.95 | 1.00 | 0.93 | 0.85 | 0.69 | 0.92 | 0.90 | 0.78 | 0.97 |
+| DEV_RMS            | 0.62 | 0.60 | 0.76 | 0.65 | 0.60 | 0.95 | 0.63 | 0.68 | 0.64 |
+| DESC_RMS           | 0.00 | 0.18 | 0.61 | 0.95 | 0.23 | 0.14 | 0.91 | 0.00 | 0.50 |
+| REQ_Kurtosis       | 0.89 | 0.98 | 0.99 | 0.93 | 0.63 | 0.84 | 0.73 | 0.79 | 0.73 |
+| DEV_Kurtosis       | 0.94 | 0.74 | 0.83 | 0.68 | 0.76 | 0.85 | 0.84 | 1.00 | 0.93 |
+| DESC_Kurtosis      | 0.00 | 0.01 | 0.34 | 0.47 | 0.22 | 0.00 | 0.56 | 0.00 | 0.34 |
+| REQ_Peak           | 1.00 | 1.00 | 0.95 | 1.00 | 0.99 | 1.00 | 1.00 | 1.00 | 0.95 |
+| DEV_Peak           | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 |
+| DESC_Peak          | 0.00 | 0.15 | 0.84 | 0.50 | 0.71 | 0.08 | 0.96 | 0.00 | 0.51 |
+| REQ_ImpulseFactor  | 0.95 | 0.98 | 0.96 | 0.73 | 0.83 | 0.87 | 0.97 | 0.85 | 0.86 |
+| DEV_ImpulseFactor  | 0.40 | 0.54 | 0.54 | 0.63 | 0.46 | 0.70 | 0.45 | 0.44 | 0.35 |
+| DESC_ImpulseFactor | 0.00 | 0.42 | 0.57 | 0.32 | 0.11 | 0.52 | 0.75 | 0.00 | 0.33 |
+
+Scores for the aligned projects with pattern I (issue-tracking;
+p=product, m=mean).
+
+The correlation of just the ground truth with all scores is in table .
+
+    ## Warning in stats::cor(ground_truth$consensus, p1_it_scores): the standard
+    ## deviation is zero
+
+| Score      |      Value | Score       |      Value | Score              |      Value |
+|:-----------|-----------:|:------------|-----------:|:-------------------|-----------:|
+| REQ_area   | -0.5187100 | DEV_arclen  |  0.0259164 | DESC_rmse          |  0.5599840 |
+| DEV_area   |  0.2119023 | DESC_arclen | -0.8739954 | REQ_RMS            |  0.1460863 |
+| DESC_area  |  0.4882235 | REQ_sd      |  0.0289615 | DEV_RMS            |  0.1058164 |
+| REQ_corr   | -0.1641480 | DEV_sd      |  0.2512036 | DESC_RMS           |  0.8152119 |
+| DEV_corr   |  0.2042772 | DESC_sd     |  0.5686608 | REQ_Kurtosis       |  0.2631592 |
+| DESC_corr  |  0.5812074 | REQ_var     |  0.1419239 | DEV_Kurtosis       | -0.3622383 |
+| REQ_jsd    | -0.1277921 | DEV_var     |  0.2840502 | DESC_Kurtosis      |  0.7484784 |
+| DEV_jsd    |  0.3730029 | DESC_var    |  0.6121042 | REQ_Peak           | -0.4799340 |
+| DESC_jsd   |  0.7200972 | REQ_mae     | -0.5187037 | DEV_Peak           |         NA |
+| REQ_kl     | -0.0827761 | DEV_mae     |  0.2119031 | DESC_Peak          |  0.5326076 |
+| DEV_kl     | -0.3500757 | DESC_mae    |  0.4882361 | REQ_ImpulseFactor  | -0.4222044 |
+| DESC_kl    | -0.7618455 | REQ_rmse    | -0.3374198 | DEV_ImpulseFactor  |  0.2564932 |
+| REQ_arclen |  0.4237075 | DEV_rmse    |  0.2219994 | DESC_ImpulseFactor |  0.3848855 |
+
+Correlation of the ground truth with all other scores for pattern I
+(issue-tracking).
+
+The correlation matrix looks as in figure .
+
+    ## Warning in stats::cor(temp): the standard deviation is zero
+
+<div class="figure" style="text-align: top">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-it-corr-mat-1.png" alt="Correlation matrix for scores using pattern I (issue-tracking)."  />
+<p class="caption">
+Correlation matrix for scores using pattern I (issue-tracking).
+</p>
+
+</div>
+
+From now on, we’ll only compute the correlation scores for each variable
+without showing intermediate results. We’ll then later build a larger
+matrix with results from all patterns.
+
+``` r
+p2a_it_signals <- list(REQ = Signal$new(name = "p2a_it_REQ", func = req_p2a, support = c(0, 
+  1), isWp = TRUE), DEV = Signal$new(name = "p2a_it_DEV", func = dev_p2a, support = c(0, 
+  1), isWp = TRUE), DESC = Signal$new(name = "p2a_it_DESC", func = desc_p2a, support = c(0, 
+  1), isWp = TRUE))
+
+p2a_it_projects <- time_warp_wrapper(pattern = p2a_it_signals, derive = FALSE)
+```
+
+``` r
+p2a_it_scores <- loadResultsOrCompute(file = "../results/p2a_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(alignment = p2a_it_projects, patternName = "p2a_it", 
+    vartypes = names(p2a_it_signals)))
+})
+```
+
+``` r
+p3_it_signals <- list(REQ = Signal$new(name = "p3_it_REQ", func = req_p3, support = c(0, 
+  1), isWp = TRUE), DEV = Signal$new(name = "p3_it_DEV", func = dev_p3, support = c(0, 
+  1), isWp = TRUE), DESC = Signal$new(name = "p3_it_DESC", func = desc_p3, support = c(0, 
+  1), isWp = TRUE))
+
+p3_it_projects <- time_warp_wrapper(pattern = p3_it_signals, derive = FALSE)
+```
+
+``` r
+p3_it_scores <- loadResultsOrCompute(file = "../results/p3_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(alignment = p3_it_projects, patternName = "p3_it", 
+    vartypes = names(p3_it_signals)))
+})
+```
+
+Let’s attempt to aggregate the correlation scores from the first three
+patterns, and show a plot.
+
+In we show now the correlation scores per variable and score against
+each of the three patterns I, II(a), and III.
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-p2a-p3-corr-scores-1.png" alt="Table with correlation scores for the first three types of patterns, calculated against each variable separately."  />
+<p class="caption">
+Table with correlation scores for the first three types of patterns,
+calculated against each variable separately.
+</p>
+
+</div>
+
+## Derivative of Pattern I, II(a), and III
+
+In the following, we’ll basically repeat calculating the correlation
+scores of against each process model, but this time we will use
+**derivative** models and processes. That is, we will compute the scores
+based on the *rate of change*.
+
+For every cumulative quantity we should apply some smoothing in order to
+get usable gradients. This applies to all projects in all comparisons,
+as well as to process model III, since its variables are weighted
+averages of such quantities.
+
+``` r
+get_smoothed_signal_d1 <- function(name, func) {
+  xvals <- seq(from = 0, to = 1, length.out = 10000)
+  func <- smooth_signal_loess(x = xvals, y = func(xvals), support = c(0, 1), family = "g", 
+    span = use_span)
+
+  temp <- Signal$new(name = name, isWp = TRUE, support = c(0, 1), func = func)
+  Signal$new(name = name, isWp = TRUE, support = c(0, 1), func = temp$get1stOrderPd())
+}
+```
+
+The derivatives of the projects I, II(a) and III look like in the
+following figure :
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p4of-p1-p2a-p3-1.png" alt="Derivative process models type I, II(a) and III, using a smoothing-span of 0.35."  />
+<p class="caption">
+Derivative process models type I, II(a) and III, using a smoothing-span
+of 0.35.
+</p>
+
+</div>
+
+Let’s compute the scores next.
+
+``` r
+# We'll use this custom range to compute scores for area and sd/var/mae/rmse
+use_yrange <- c(-1, 10)
+
+p4p1_it_scores <- loadResultsOrCompute(file = "../results/p4p1_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p1_it_projects, 
+    patternName = "p4p1_it", vartypes = names(p4p1_it_signals)))
+})
+
+p4p2a_it_scores <- loadResultsOrCompute(file = "../results/p4p2a_it_scores.rds", 
+  computeExpr = {
+    as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p2a_it_projects, 
+      patternName = "p4p2a_it", vartypes = names(p4p2a_it_signals)))
+  })
+
+p4p3_it_scores <- loadResultsOrCompute(file = "../results/p4p3_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p3_it_projects, 
+    patternName = "p4p3_it", vartypes = names(p4p3_it_signals)))
+})
+```
+
+``` r
+p4All_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
+
+i <- 0
+c_names <- NULL
+for (vt in var_types) {
+  for (pIdx in 1:3) {
+    p_data <- if (pIdx == 1) {
+      p4p1_it_scores
+    } else if (pIdx == 2) {
+      p4p2a_it_scores
+    } else {
+      p4p3_it_scores
+    }
+
+    p4All_it_corr[pIdx, (i * length(score_types) + 1):(i * length(score_types) + 
+      length(score_types))] <- stats::cor(x = ground_truth$consensus_score, 
+      y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
+  }
+
+  i <- i + 1
+
+  c_names <- c(c_names, paste0(vt, "_", score_types))
+}
+
+colnames(p4All_it_corr) <- c_names
+rownames(p4All_it_corr) <- paste0("Pr. ", 1:3)
+p4All_it_corr[is.na(p4All_it_corr)] <- sqrt(.Machine$double.eps)
+```
+
+In figure we show now the correlation scores per variable and score
+against each of the three patterns I, II(a), and III.
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p4of-p1-p2a-p3-corr-scores-1.png" alt="Table with correlation scores for the first three types of patterns, calculated against each variable separately."  />
+<p class="caption">
+Table with correlation scores for the first three types of patterns,
+calculated against each variable separately.
+</p>
+
+</div>
+
 <div id="refs" class="references csl-bib-body hanging-indent">
+
+<div id="ref-giorgino2009" class="csl-entry">
+
+Giorgino, Toni. 2009. “Computing and Visualizing Dynamic Time Warping
+Alignments in R: The <span class="nocase">dtw</span> Package.” *Journal
+of Statistical Software* 31 (7): 1–24.
+<https://doi.org/10.18637/jss.v031.i07>.
+
+</div>
 
 <div id="ref-green1993nonparametric" class="csl-entry">
 
