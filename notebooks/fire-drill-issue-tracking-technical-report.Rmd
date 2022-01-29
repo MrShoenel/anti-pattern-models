@@ -3564,6 +3564,206 @@ The correlations in table \ref{tab:p4-corr} are varying, but their correlation w
 
 
 
+
+# Scoring of projects (2nd batch)
+
+In the meantime, we got a new batch of projects (IDs `[10,15]`). We want to use the regression model based on the previous batch of projects to calculate a degree to which the Fire Drill is present. To goal is to find out whether the model built on previous observations can generalize to new, previously unseen data. The model was fit on scores as computed against pattern III (average), and it used two kinds of scores: a) the average confidence as computed by the path of each variable it takes through the confidence surface, and b) the average distance to the reference variable (the weighted average of previous projects).
+
+So, in order to obtain predictions, we need to do n things:
+
+1. Load the new projects -- the file `FD_issue-based_detection.xlsx` was updated to include the new projects. We'll use the function `load_project_issue_data()` to instantiate the signals.
+2. Compute the two kinds of scores; we'll run the __new__ projects against the pattern that is based on the __old__ projects.
+3. Use the scores in the previously fit regression model and predict a ground truth.
+
+
+## Ground truth
+
+```{r}
+ground_truth_2nd_batch <- read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";")
+ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus / 10
+```
+
+We have ground truth available for the second batch. Again, the two raters assessed it independently first, and only later found a consensus. The a priori agreement between both raters was better this time, as the quadratic weighted Kappa increased substantially to a value of __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = ground_truth_2nd_batch$rater.a, rater.b = ground_truth_2nd_batch$rater.b, min.rating = 0, max.rating = 10), 3)`__. Table \ref{tab:groundtruth-2nd-batch} shows the ground truth for the new projects `[10-15]`.
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  ground_truth_2nd_batch
+} else {
+  knitr::kable(
+    x = ground_truth_2nd_batch,
+    booktabs = TRUE,
+    caption = "Entire ground truth as of both raters",
+    label = "groundtruth-2nd-batch"
+  )
+}
+```
+
+
+## Loading the new projects
+
+```{r}
+library(readxl)
+
+all_signals_2nd_batch <- list()
+
+for (pId in paste0("Project", 10:15)) {
+  all_signals_2nd_batch[[pId]] <- load_project_issue_data(pId = pId)
+}
+```
+
+
+Let's see how they look (sanity check):
+
+```{r echo=FALSE}
+tempdf <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(tempdf) <- c("x", "y", "p", "v")
+n <- 500
+x <- seq(from = 0, to = 1, length.out = n)
+for (pId in names(all_signals_2nd_batch)) {
+  for (v in c("REQ", "DEV", "DESC")) {
+    tempdf <- rbind(tempdf, data.frame(
+      x = x,
+      y = sapply(X = x, FUN = all_signals_2nd_batch[[pId]][[v]]$get0Function()),
+      p = pId,
+      v = v
+    ))
+  }
+}
+```
+
+```{r project-it-vars-2nd-batch, echo=FALSE, fig.cap="The second batch of projects [10-15]. All variables over each project's time span.", fig.align="top", fig.pos="ht!"}
+library(ggplot2)
+
+plot_all_req_dev <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
+  geom_line() +
+  scale_color_manual(values = c("forestgreen", "blue", "red")) +
+  facet_wrap(p ~.) +
+  theme_light() +
+  labs(color = "Variable") + xlab("Relative Time") + ylab("Cumulative Time spent") +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_rect(fill="#dfdfdf"),
+    strip.text = element_text(color="black"))
+plot_all_req_dev
+```
+
+The six new projects in figure \ref{fig:project-it-vars-2nd-batch} look like they do in the excel, the import was successful.
+
+
+## Computing the scores
+
+We will start by computing the scores that are based on the gradated confidence intervals. We can reuse the function `p3_avg_ci_scores_compute()`.
+
+```{r}
+p3_avg_ci_2nd_batch_scores <- loadResultsOrCompute(file = "../results/p3_avg_ci_2nd_batch_scores.rds", computeExpr =  {
+  doWithParallelCluster(numCores = length(all_signals_2nd_batch), expr = {
+    library(foreach)
+    
+    foreach::foreach(
+      pId = names(all_signals_2nd_batch),
+      .inorder = TRUE,
+      .combine = rbind
+    ) %dopar% {
+      p3_avg_ci_scores_compute(pId = pId, x1 = 0, x2 = 1, signals = all_signals_2nd_batch)
+    }
+  })
+})
+```
+
+
+Table \ref{tab:p3-avg-ci-2nd-batch-scores} shows the computed scores.
+
+```{r echo=FALSE}
+if (interactive()) {
+  p3_avg_ci_2nd_batch_scores
+} else {
+  knitr::kable(
+    x = p3_avg_ci_2nd_batch_scores,
+    booktabs = TRUE,
+    caption = "The average confidence of the variables REQ, DEV and DESC of each of the 2nd batch's projects as integrated over the confidence intervals' hyperplane (as computed from the first batch of projects).",
+    label = "p3-avg-ci-2nd-batch-scores"
+  )
+}
+```
+
+The correlation with the ground truth of these scores is:
+
+
+```{r}
+cor.test(x = ground_truth_2nd_batch$consensus_score, y = p3_avg_ci_2nd_batch_scores[, "REQ"])
+```
+
+```{r}
+cor.test(x = ground_truth_2nd_batch$consensus_score, y = p3_avg_ci_2nd_batch_scores[, "DEV"])
+```
+
+```{r}
+cor.test(x = ground_truth_2nd_batch$consensus_score, y = p3_avg_ci_2nd_batch_scores[, "DESC"])
+```
+
+While these correlations seem significant, the p-values indicate evidence for the null hypothesis, which means no correlation. Now that we have these scores, we'll compute scores for the average distance to the respective reference variable.
+
+
+```{r}
+p3_avg_area_2nd_batch_scores <- loadResultsOrCompute(file = "../results/p3_avg_area_2nd_batch_scores.rds", computeExpr =  {
+  doWithParallelCluster(numCores = length(all_signals_2nd_batch), expr = {
+    library(foreach)
+    
+    foreach::foreach(
+      pId = names(all_signals_2nd_batch),
+      .inorder = TRUE,
+      .combine = rbind
+    ) %dopar% {
+      p3_avg_area_scores_compute(pId = pId, signals = all_signals_2nd_batch)
+    }
+  })
+})
+```
+
+Table \ref{tab:p3-avg-area-2nd-batch-scores} shows the computed scores.
+
+```{r echo=FALSE}
+if (interactive()) {
+  p3_avg_area_2nd_batch_scores
+} else {
+  knitr::kable(
+    x = p3_avg_area_2nd_batch_scores,
+    booktabs = TRUE,
+    caption = "The average distance of the variables REQ, DEV and DESC of each of the second batch's projects to the previously averaged reference-variables $\\overline{\\operatorname{REQ}},\\overline{\\operatorname{DEV}},\\overline{\\operatorname{DESC}}$ as computed over tethe first batch.",
+    label = "p3-avg-ci-2nd-batch-scores"
+  )
+}
+```
+
+
+## Predicting the ground truth
+
+Now we have all the scores of the new projects computed against the pattern as generated from the previous projects.
+
+```{r}
+temp <- data.frame(
+  gt_consensus = ground_truth_2nd_batch$consensus_score,
+  ci_req = p3_avg_ci_2nd_batch_scores$REQ,
+  area_req = p3_avg_area_2nd_batch_scores$REQ,
+  ci_dev = p3_avg_ci_2nd_batch_scores$DEV,
+  area_dev = p3_avg_area_2nd_batch_scores$DEV,
+  ci_desc = p3_avg_ci_2nd_batch_scores$DESC,
+  area_desc = p3_avg_area_2nd_batch_scores$DESC)
+
+p3_avg_lm_2nd_batch_scores <- stats::predict(object = p3_avg_lm, temp)
+# Since we are attempting a regression to positive scores,
+# we set any negative predictions to 0. Same goes for >1.
+p3_avg_lm_2nd_batch_scores[p3_avg_lm_2nd_batch_scores < 0] <- 0
+p3_avg_lm_2nd_batch_scores[p3_avg_lm_2nd_batch_scores > 1] <- 1
+
+`names<-`(round(p3_avg_lm_2nd_batch_scores * 10, 3), 10:15)
+stats::cor(p3_avg_lm_2nd_batch_scores, ground_truth_2nd_batch$consensus_score)
+```
+
+These results mean that the prediction is anti-proportional to the ground truth, and weak at the same time. It is actually worse to have a negative correlation than having no correlation. This can only be interpreted as our previously trained regression model not being able to generalize to new, unseen data. This is expected, since a) we did not have sufficient training data, and b) the previous regression model being overfit on the previous data. However, and I wrote that before, the main point of these regression models was translation and scaling of the scores, not prediction. For that, much more data is required (both, instances and features, as the selected features cannot capture all of the important aspects of the deviation process and process model). Furthermore, these regression models (including the one we built for the source code data) were built using hand-picked features. Ideally, we would have a great number of different features, paired with something like a recursive feature elimination, in order to come up with a regression model that has reliable generalizability. Therefore, I am inclined not to repeat this exercise with the source code data, as we will have the same problem there. I will add a section about RFE and cross-validation and do that instead.
+
+
 # Correlation of scores
 
 This is a new section in the fifth iteration of this report. Similar to computing the correlation of scores against all models using source code data, we will do this here for each and every pattern based on issue-tracking data. We will be using the function `score_variable_alignment` (cf. section \ref{sssec:score-mech}) from the technical report using source code data. We do not have any phases in the process models for issue-tracking data. Therefore, no alignment is required. However, we still have to wrap each PM in an alignment, and will do so by defining one closed interval, without warping or amplitude correction.
@@ -3954,9 +4154,6 @@ ggcorrplot::ggcorrplot(corr = t(p4All_it_corr[rev(rownames(p4All_it_corr)),])) +
     limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
   labs(fill = "Pearson sample correlation")
 ```
-
-
-
 
 
 
