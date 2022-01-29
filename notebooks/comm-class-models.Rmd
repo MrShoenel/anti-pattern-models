@@ -5,16 +5,16 @@ date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
 urlcolor: blue
 output:
-  md_document:
-    toc: true
-    toc_depth: 6
-    df_print: kable
-    variant: gfm
   pdf_document:
     number_sections: true
     toc: true
     toc_depth: 6
     df_print: kable
+  md_document:
+    toc: true
+    toc_depth: 6
+    df_print: kable
+    variant: gfm
   html_document:
     number_sections: true
     toc: true
@@ -191,12 +191,37 @@ results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
 
 ### Several models: correlation and performance
 
-The following will give us a correlation matrix of the models' predictions. The goal is to find models with high performance and unrelated predictions, so that they can be combined.
+The following will give us a correlation matrix of the models' predictions. The goal is to find models with high performance and unrelated predictions, so that they can be combined. The correlations are shown in tables \ref{tab:model-prediction-correlation1} and \ref{tab:model-prediction-correlation2}.
 
 ```{r echo=FALSE, warning=FALSE}
 temp <- data.frame(round(caret::modelCor(caret::resamples(results_sl)), 4))
-temp[, 1:7]
-temp[, 8:ncol(temp)]
+
+if (interactive()) {
+  temp[, 1:7]
+  temp[, 8:ncol(temp)]
+}
+```
+
+```{r echo=FALSE, warning=FALSE}
+if (!interactive()) {
+  knitr::kable(
+    x = temp[, 1:7],
+    booktabs = TRUE,
+    caption = "Correlations of models' predictions (part 1).",
+    label = "model-prediction-correlation"
+  )
+}
+```
+
+```{r echo=FALSE, warning=FALSE}
+if (!interactive()) {
+  knitr::kable(
+    x = temp[, 8:ncol(temp)],
+    booktabs = TRUE,
+    caption = "Correlations of models' predictions (part 2).",
+    label = "model-prediction-correlation"
+  )
+}
 ```
 
 Show for each model the performance during training, and also predict on our validation data to get an idea of their goodness.
@@ -260,13 +285,13 @@ generateModelOverview <- function(
     
     overview <- rbind(overview, data.frame(
       model = modelName,
-      train_acc = maxRow$Accuracy,
-      train_Kappa = maxRow$Kappa,
+      trAcc = maxRow$Accuracy,
+      trKap = maxRow$Kappa,
       predNA = hasNAs,
-      valid_acc_witNA = cmWithNAs$overall[["Accuracy"]],
-      valid_Kappa_withNA = cmWithNAs$overall[["Kappa"]],
-      valid_acc = cm$overall[["Accuracy"]],
-      valid_Kappa = cm$overall[["Kappa"]]
+      valAcc_withNA = cmWithNAs$overall[["Accuracy"]],
+      valKap_withNA = cmWithNAs$overall[["Kappa"]],
+      valAcc = cm$overall[["Accuracy"]],
+      valKap = cm$overall[["Kappa"]]
     ))
   }
   
@@ -276,9 +301,25 @@ generateModelOverview <- function(
 ```
 
 
-```{r warning=FALSE}
+```{r warning=FALSE, eval=interactive()}
 generateModelOverview(results_sl, models_sl, validationData = valid_sl)
 ```
+
+```{r echo=FALSE, eval=!interactive()}
+temp <- generateModelOverview(results_sl, models_sl, validationData = valid_sl)
+for (cn in colnames(temp)) {
+  if (is.numeric(temp[[cn]])) {
+    temp[[cn]] <- round(temp[[cn]], 4)
+  }
+}
+
+knitr::kable(
+  x = temp,
+  booktabs = TRUE
+)
+```
+
+
 
 # Manual stacking of models
 
@@ -422,18 +463,52 @@ models_ms <- loadResultsOrCompute(file = "../results/models_ms.rds", computeExpr
 
 Now show the overview:
 
-```{r}
+```{r eval=interactive()}
 generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
 ```
+
+```{r echo=FALSE, eval=!interactive()}
+temp <- generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
+for (cn in colnames(temp)) {
+  if (is.numeric(temp[[cn]])) {
+    temp[[cn]] <- round(temp[[cn]], 4)
+  }
+}
+
+knitr::kable(
+  x = temp,
+  booktabs = TRUE
+)
+```
+
+
 
 The overview for all models, using oversampled training data, was this:
 
 ```{r}
 results_ms_all <- readRDS("../results/ms_all.rds")
 models_ms_all <- readRDS("../results/models_ms_all.rds")
+```
 
+```{r eval=interactive()}
 generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
+```
 
+```{r echo=FALSE, eval=!interactive()}
+temp <- generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
+for (cn in colnames(temp)) {
+  if (is.numeric(temp[[cn]])) {
+    temp[[cn]] <- round(temp[[cn]], 4)
+  }
+}
+
+knitr::kable(
+  x = temp,
+  booktabs = TRUE
+)
+```
+
+```{r echo=FALSE}
 results_ms_all <- NULL
 models_ms_all <- NULL
 ```
@@ -647,9 +722,7 @@ plot(list(
   x = 1:nrow(data),
   y = data$prob_a
 ))
-#lines(rollmean(data$prob_c, 5), col='red')
 lines(rollmean(data$prob_c, 10), col='blue')
-#plot(rollmean(data$prob_a, 5))
 ```
 
 
