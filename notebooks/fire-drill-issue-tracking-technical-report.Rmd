@@ -2613,10 +2613,10 @@ Looks like we are getting some strong positive correlation for the variable `DES
 Here we compute the distance of each project's variables to the previously averaged variables. This approach does not rely on inhomogeneous confidence intervals, and only considers the intervals' boundaries to integrate some distance. Ideally, the distance is $0$, and in the worst case it is $1$. If this ought to be used as score, we probably would want to compute it as $\mathit{S}^{\text{areadist}}=1-\mathit{L}^{\text{areadist}}$.
 
 ```{r}
-p3_avg_area_scores_compute <- function(pId, x1 = 0, x2 = 1) {
-  req <- all_signals[[pId]]$REQ$get0Function()
-  dev <- all_signals[[pId]]$DEV$get0Function()
-  desc <- all_signals[[pId]]$DESC$get0Function()
+p3_avg_area_scores_compute <- function(pId, x1 = 0, x2 = 1, signals = all_signals) {
+  req <- signals[[pId]]$REQ$get0Function()
+  dev <- signals[[pId]]$DEV$get0Function()
+  desc <- signals[[pId]]$DESC$get0Function()
   
   `rownames<-`(data.frame(
     REQ = L_areadist_p3_avg(
