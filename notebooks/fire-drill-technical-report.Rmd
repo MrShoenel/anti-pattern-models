@@ -1813,7 +1813,7 @@ The RFE is done via caret, with 3-times repeated, 10-fold cross validation as ou
 
 
 ```{r warning=FALSE}
-library(caret)
+library(caret, quietly = TRUE)
 
 set.seed(1337)
 

@@ -4114,6 +4114,38 @@ plot_all_req_dev
 The six new projects in figure \ref{fig:project-it-vars-2nd-batch} look like they do in the excel, the import was successful.
 
 
+## Evaluating of the binary decision rule
+
+Here we will evaluate the existing binary decision rule to find out whether it can classify the second batch of projects correctly.
+
+```{r}
+temp <- sapply(X = names(all_signals_2nd_batch), FUN = function(pName) {
+  p1_dr(projName = pName, signals = all_signals_2nd_batch)
+})
+p1_detect_2nd_batch <- data.frame(
+  detect = temp,
+  ground_truth = ground_truth_2nd_batch$consensus,
+  correct = (temp & ground_truth_2nd_batch$consensus >= 5) | (!temp & ground_truth_2nd_batch$consensus < 5)
+)
+```
+
+The results are shown in table \ref{tab:p1-bin-detect-2nd-batch}. The rule classifies __`r sum(p1_detect_2nd_batch$correct) `__ / __`r nrow(p1_detect_2nd_batch)`__ as correct. The precision is __`r Metrics::precision(actual = p1_detect$ground_truth >= 5, predicted = p1_detect$detect)`__, and the recall is __`r Metrics::recall(actual = p1_detect$ground_truth >= 5, predicted = p1_detect$detect)`__.
+
+```{r echo=FALSE}
+if (interactive()) {
+  p1_detect_2nd_batch
+} else {
+  knitr::kable(
+    x = p1_detect_2nd_batch,
+    booktabs = TRUE,
+    caption = "Binary detection using the previously defined decision rule based on homogeneous confidence intervals of pattern I, for the second batch of projects.",
+    label = "p1-bin-detect-2nd-batch"
+  )
+}
+```
+
+
+
 ## Computing the scores
 
 We will start by computing the scores that are based on the gradated confidence intervals. We can reuse the function `p3_avg_ci_scores_compute()`.
