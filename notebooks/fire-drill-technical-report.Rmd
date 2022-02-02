@@ -1791,6 +1791,82 @@ stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
 This also increased the correlation to `r round(stats::cor(p3_avg_lm_scores, ground_truth$consensus_score), 3)`.
 
 
+### Finding the most important scores\label{sssec:var-imp}
+
+Previously, we have combined some hand-picked scores into a linear model, in order to mainly scale and translate them, in order to be able to obtain predictions in the range of the actual ground truth. However, this approach is not suitable for a model that shall generalize.
+
+We have shown in figure \ref{fig:p3-avg-no-corr-mat} that most scores capture different properties of the alignment. It therefore makes sense to choose scores for a regression that, once combined, have the most predictive power in terms of accuracy (precision), and generalizability. There are quite many techniques and approaches to _feature selection_. Here, we will attempt a __recursive feature elimination__ (RFE), that uses partial least squares as estimator, a measure of __variable importance__, and using bootstrapped data (for example, @darst_using_2018).
+
+Before we start, a few things are of importance. First, a feature selection should be done whenever a new model with prediction and generalization capabilities is to be trained, i.e., it is specific to the case (here process model and observed processes). Therefore, the features we select here are only a valid selection for a model that is to make predictions on scores as obtained from the pattern type III (average, no align). Secondly, the amount of data we have only suffices for running the suggested RFE, but the data is too scarce to obtain a robust model. Therefore, the results we will obtain here are practically only usable for giving an indication as to the relative importance of features (here: scores), but we must not deduce a genuine truth from them, nor can we conclude an absolute ordering that will hold for future runs of this approach, given different data. Thirdly, and that is specific to our case, we have separate scores for each interval (previously aggregated once using the mean, and once using the product), but the score is an aggregation across all variables (activities). Having one score represent the deviation over only one contiguous, aggregated interval, should be avoided in a real-world setting, and scores should be localized to each interval, to become their own feature. However, that requires even more data. Also, one would probably not aggregate scores across variables. We will examine this scenario more closely for issue-tracking data.
+
+Let's start, we'll use the scores from `p3_avg_no_scores`:
+
+```{r}
+rfe_data <- cbind(
+  p3_avg_no_scores,
+  data.frame(gt = ground_truth$consensus))
+```
+
+The RFE is done via caret, with 3-times repeated, 10-fold cross validation as outer resampling method[^2].
+
+[^2]: https://web.archive.org/web/20211120164401/https://topepo.github.io/caret/recursive-feature-elimination.html
+
+
+```{r warning=FALSE}
+library(caret)
+
+set.seed(1337)
+
+control <- caret::trainControl(method="repeatedcv", number=10, repeats=3)
+modelFit <- caret::train(gt ~., data=rfe_data, method="pls", trControl=control)
+
+imp <- caret::varImp(object = modelFit)
+```
+
+```{r p3-avg-no-var-imp-plot, warning=FALSE, echo=FALSE, fig.cap="Plot of the relative variable importances of scores as computed against pattern III (average).", fig.align="top", fig.pos="ht!"}
+plot(imp)
+```
+
+
+The relative variable importances are shown in table \ref{tab:p3-avg-no-varimp}. Unsurprisingly, correlation is the most important feature (score), as it expresses the degree to which two curves resemble each other (regardless of their absolute difference). This is then captured by the next most important score, the RMSE, closely followed by the standard deviation and area between curves. Note that area, RMSE, sd and variance are all highly correlated, so this does not come as a surprise. The next two places is the Impulsefactor and Jenson--Shannon divergence. We observe a somewhat healthy mix between mean- and product-measures. For values that tend to be comparatively tiny, such as the JSD or KL divergence, the product reduces variance too extreme (should have used log-sums), such that the score forfeits too much of its importance.
+
+
+```{r echo=FALSE}
+temp <- imp$importance[order(-imp$importance$Overall), , drop=FALSE]
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Relative variable importances of scores as computed from all projects against pattern type III (average, no align).",
+    label = "p3-avg-no-varimp")
+}
+```
+
+The final model as selected by the RFE approach has these properties:
+
+```{r}
+modelFit
+```
+
+Now if we were to make predictions with this model, the results would be these:
+
+```{r}
+temp <- predict(object = modelFit, newdata = p3_avg_no_scores)
+round(x = temp, digits = 2)
+ground_truth$consensus
+```
+
+The correlation with the ground truth would then be:
+
+```{r}
+cor.test(ground_truth$consensus, temp)
+```
+
+
+
 ## Pattern III (b)\label{ssec:score-pattern3}
 
 The third and last pattern is based on the ground truth only. Starting with straight lines and equally long intervals, a pattern was generated and selected using a best trade-off between number of parameters and highest _likelihood_, or by the lowest loss. Like pattern II, all of these patterns were produced with time warping applied, so that we do not need to align the projects to it. We have produced 16 patterns, so let's compute the scores for all of them.
