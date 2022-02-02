@@ -2224,6 +2224,402 @@ The angle between the projected (predicted) `DEV`-variable of project 5 and the 
 
 
 
+
+# Correlation of scores
+
+This is a new section in the fifth iteration of this report. Similar to computing the correlation of scores against all models using source code data, we will do this here for each and every pattern based on issue-tracking data. We will be using the function `score_variable_alignment` (cf. section \ref{sssec:score-mech}) from the technical report using source code data. We do not have any phases in the process models for issue-tracking data. Therefore, no alignment is required. However, we still have to wrap each PM in an alignment, and will do so by defining one closed interval, without warping or amplitude correction.
+
+As a preparation for the pseudo-alignment, we need to present each project's signals as instances of `Signal`, as well as each pattern's signals then later. This has been done at the beginning of the report, and is stored in `all_signals`. It only requires some slight modifications before we can continue.
+
+Also, for the running the projects against type-IV patterns, we'll need to compute their gradients. Recall that the projects' signals were created using a zero-order hold, creating a cumulative quantity that increases step-wise, which results in extreme gradients. In section \ref{ssec:pattern-iv} we have previously examined which kind of smoothing is perhaps most applicable in order to obtain relatively smooth gradients. The recommended solution was to use LOESS smoothing with a span of `0.35`, and not to go lower than `0.2`. A lower span preserves more details, and the results below were computed with a value of `0.35`. We have previously run these computations with the value `0.2`, with no significant different results.
+
+```{r}
+use_span <- 0.35
+
+time_warp_wrapper <- function(pattern, derive = FALSE) {
+  signals <- list()
+  
+  for (project in paste0("Project", rownames(ground_truth))) {
+    temp <- list()
+    if (derive) {
+      temp[["REQ"]] <- Signal$new(
+        name = paste0(project, "_REQ"), support = c(0,1), isWp = FALSE,
+        func = smooth_signal_loess(
+          x = 1:nrow(all_signals[[project]]$data),
+          y = cumsum(all_signals[[project]]$data$req),
+          span = use_span, family = "g"))
+      temp[["DEV"]] <- Signal$new(
+        name = paste0(project, "_DEV"), support = c(0,1), isWp = FALSE,
+        func = smooth_signal_loess(
+          x = 1:nrow(all_signals[[project]]$data),
+          y = cumsum(all_signals[[project]]$data$dev),
+          span = use_span, family = "g"))
+      temp[["DESC"]] <- Signal$new(
+        name = paste0(project, "_DESC"), support = c(0,1), isWp = FALSE,
+        func = smooth_signal_loess(
+          x = 1:nrow(all_signals[[project]]$data),
+          y = cumsum(all_signals[[project]]$data$desc),
+          span = use_span, family = "g"))
+    } else {
+      temp[["REQ"]] <- all_signals[[project]]$REQ$clone()
+      temp$REQ$.__enclos_env__$private$name <- paste0(project, "_REQ")
+      temp[["DEV"]] <- all_signals[[project]]$DEV$clone()
+      temp$DEV$.__enclos_env__$private$name <- paste0(project, "_DEV")
+      temp[["DESC"]] <- all_signals[[project]]$DESC$clone()
+      temp$DESC$.__enclos_env__$private$name <- paste0(project, "_DESC")
+    }
+    signals[[project]] <- time_warp_project(
+      pattern = pattern, project = temp, thetaB = c(0,1))
+  }
+  
+  signals
+}
+```
+
+
+
+## Pattern I, II(a), and III
+
+We'll first have to assemble a list of signals that define each pattern, before we can wrap it in an empty alignment and calculate the various scores.
+
+```{r}
+p1_it_signals <- list(
+  "REQ"  = Signal$new(name = "p1_it_REQ",  func = req,  support = c(0,1), isWp = TRUE),
+  "DEV"  = Signal$new(name = "p1_it_DEV",  func = dev,  support = c(0,1), isWp = TRUE),
+  "DESC" = Signal$new(name = "p1_it_DESC", func = desc, support = c(0,1), isWp = TRUE))
+
+p1_it_projects <- time_warp_wrapper(pattern = p1_it_signals, derive = FALSE)
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+#' This method works slightly different from compute_all_scores().
+#' It does not aggregate scores across variable-types, and returns
+#' a score per type instead.
+compute_all_scores_it <- function(alignment, patternName, vartypes = names(weight_vartype), useYRange = NULL) {
+  useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+  
+  cl <- parallel::makePSOCKcluster(length(alignment))
+  parallel::clusterExport(cl, varlist = list("score_variable_alignment", "req_poly", "dev_poly"))
+  
+  `rownames<-`(doWithParallelClusterExplicit(cl = cl, expr = {
+    foreach::foreach(
+      projectName = names(alignment),
+      .inorder = TRUE,
+      .combine = rbind,
+      .packages = c("cobs")
+    ) %dopar% {
+      source("./common-funcs.R")
+      source("../models/modelsR6.R")
+      source("../models/SRBTW-R6.R")
+        
+      scores <- c()
+      for (score in useScores) {
+        for (vt in vartypes) {
+          temp <- score_variable_alignment(
+            patternName = patternName, projectName = projectName,
+            alignment = alignment[[projectName]], use = score,
+            vartypes = vt, useYRange = useYRange)
+          scores <- c(scores, `names<-`(temp, paste0(vt, "_", score)))
+        }
+      }
+      `colnames<-`(matrix(data = scores, nrow = 1), names(scores))
+    }
+  }), sort(names(alignment)))
+}
+```
+
+
+
+```{r}
+p1_it_scores <- loadResultsOrCompute(file = "../results/p1_it_scores.rds", computeExpr = {
+  as.data.frame(
+    compute_all_scores_it(
+      alignment = p1_it_projects, patternName = "p1_it", vartypes = names(p1_it_signals)))
+})
+```
+
+Table \ref{tab:p1-it-scores} shows the correlations for each variable. This is different to how we did it for source code data. Each variable is shown separately in order not to conceal more extreme correlations that would otherwise be inaccessible due to aggregation.
+
+```{r echo=FALSE}
+if (interactive()) {
+  round(t(p1_it_scores), 4)
+} else {
+  knitr::kable(
+    x = round(`colnames<-`(t(p1_it_scores), paste0("pr_", 1:9)), 2),
+    booktabs = TRUE,
+    caption = "Scores for the aligned projects with pattern I (issue-tracking; p=product, m=mean).",
+    label = "p1-it-scores"
+  )
+}
+```
+
+The correlation of just the ground truth with all scores is in table \ref{tab:p1-it-corr}.
+
+```{r echo=FALSE}
+corr <- stats::cor(ground_truth$consensus, p1_it_scores)[1, ]
+
+if (interactive()) {
+  corr
+} else {
+  perCol <- ceiling(length(corr) / 3)
+  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
+  for (idx in 1:3) {
+    off <- (idx - 1) * perCol
+    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
+    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
+  }
+  colnames(temp) <- rep(c("Score", "Value"), 3)
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Correlation of the ground truth with all other scores for pattern I (issue-tracking).",
+    label = "p1-it-corr")
+}
+```
+
+The correlation matrix looks as in figure \ref{fig:p1-it-corr-mat}.
+
+```{r p1-it-corr-mat, echo=FALSE, fig.cap="Correlation matrix for scores using pattern I (issue-tracking).", fig.align="top", fig.pos="ht!", fig.width=8, fig.height=8}
+temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p1_it_scores[,])
+
+corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
+                   tl.col = "black", tl.srt = 90)
+```
+
+
+From now on, we'll only compute the correlation scores for each variable without showing intermediate results. We'll then later build a larger matrix with results from all patterns.
+
+```{r}
+p2a_it_signals <- list(
+  "REQ"  = Signal$new(name = "p2a_it_REQ",  func = req_p2a,  support = c(0,1), isWp = TRUE),
+  "DEV"  = Signal$new(name = "p2a_it_DEV",  func = dev_p2a,  support = c(0,1), isWp = TRUE),
+  "DESC" = Signal$new(name = "p2a_it_DESC", func = desc_p2a, support = c(0,1), isWp = TRUE))
+
+p2a_it_projects <- time_warp_wrapper(pattern = p2a_it_signals, derive = FALSE)
+```
+
+
+```{r}
+p2a_it_scores <- loadResultsOrCompute(file = "../results/p2a_it_scores.rds", computeExpr = {
+  as.data.frame(
+    compute_all_scores_it(
+    alignment = p2a_it_projects, patternName = "p2a_it", vartypes = names(p2a_it_signals)))
+})
+```
+
+```{r}
+p3_it_signals <- list(
+  "REQ"  = Signal$new(name = "p3_it_REQ",  func = req_p3,  support = c(0,1), isWp = TRUE),
+  "DEV"  = Signal$new(name = "p3_it_DEV",  func = dev_p3,  support = c(0,1), isWp = TRUE),
+  "DESC" = Signal$new(name = "p3_it_DESC", func = desc_p3, support = c(0,1), isWp = TRUE))
+
+p3_it_projects <- time_warp_wrapper(pattern = p3_it_signals, derive = FALSE)
+```
+
+```{r}
+p3_it_scores <- loadResultsOrCompute(file = "../results/p3_it_scores.rds", computeExpr = {
+  as.data.frame(
+    compute_all_scores_it(
+      alignment = p3_it_projects, patternName = "p3_it", vartypes = names(p3_it_signals)))
+})
+```
+
+
+Let's attempt to aggregate the correlation scores from the first three patterns, and show a plot.
+
+```{r echo=FALSE, warning=FALSE}
+score_types <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+var_types <- names(p1_it_signals)
+
+pAll_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
+
+
+i <- 0
+c_names <- NULL
+for (vt in var_types) {
+  for (pIdx in 1:3) {
+    p_data <- if (pIdx == 1) {
+      p1_it_scores } else if (pIdx == 2) {
+        p2a_it_scores } else { p3_it_scores }
+  
+    pAll_it_corr[pIdx, (i*length(score_types)+1):(i*length(score_types)+length(score_types))] <-
+      stats::cor(
+        x = ground_truth$consensus_score,
+        y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
+  }
+  
+  i <- i + 1
+  
+  c_names <- c(c_names, paste0(vt, "_", score_types))
+}
+
+colnames(pAll_it_corr) <- c_names
+rownames(pAll_it_corr) <- paste0("Pr. ", 1:3)
+pAll_it_corr[is.na(pAll_it_corr)] <- sqrt(.Machine$double.eps)
+```
+
+In \ref{fig:p1-p2a-p3-corr-scores} we show now the correlation scores per variable and score against each of the three patterns I, II(a), and III.
+
+```{r p1-p2a-p3-corr-scores, message=FALSE, echo=FALSE, fig.cap="Table with correlation scores for the first three types of patterns, calculated against each variable separately.", fig.align="center", fig.pos="ht!", fig.width=8}
+ggcorrplot::ggcorrplot(corr = t(pAll_it_corr[rev(rownames(pAll_it_corr)),])) + theme(
+  axis.text.x.top = element_text(angle = 90, vjust = 1/3, hjust = 0, size = 9),
+  legend.position = "bottom") +
+  scale_x_discrete(position = "top") +
+  scale_fill_gradient2(
+    low = "#0037AA", mid = "#eeeeee", high = "#AA0037", guide = "colorbar",
+    limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
+  labs(fill = "Pearson sample correlation")
+```
+
+
+## Derivative of Pattern I, II(a), and III
+
+In the following, we'll basically repeat calculating the correlation scores of against each process model, but this time we will use __derivative__ models and processes. That is, we will compute the scores based on the _rate of change_.
+
+For every cumulative quantity we should apply some smoothing in order to get usable gradients. This applies to all projects in all comparisons, as well as to process model III, since its variables are weighted averages of such quantities.
+
+```{r}
+get_smoothed_signal_d1 <- function(name, func) {
+  xvals <- seq(from = 0, to = 1, length.out = 1e4)
+  func <- smooth_signal_loess(
+    x = xvals, y = func(xvals),
+    support = c(0,1), family = "g", span = use_span
+  )
+  
+  temp <- Signal$new(name = name, isWp = TRUE, support = c(0,1), func = func)
+  Signal$new(name = name, isWp = TRUE, support = c(0,1), func = temp$get1stOrderPd())
+}
+```
+
+
+
+```{r echo=FALSE}
+p4p1_it_signals <- list(
+  "REQ"  = get_smoothed_signal_d1(name = "p4p1_it_REQ",  func = req),
+  "DEV"  = get_smoothed_signal_d1(name = "p4p1_it_DEV",  func = dev),
+  "DESC" = get_smoothed_signal_d1(name = "p4p1_it_DESC", func = desc))
+
+p4p1_it_projects <- time_warp_wrapper(pattern = p4p1_it_signals, derive = TRUE)
+
+
+p4p2a_it_signals <- list(
+  "REQ"  = get_smoothed_signal_d1(name = "p4p2a_it_REQ",  func = req_p2a),
+  "DEV"  = get_smoothed_signal_d1(name = "p4p2a_it_DEV",  func = dev_p2a),
+  "DESC" = get_smoothed_signal_d1(name = "p4p2a_it_DESC", func = desc_p2a))
+
+p4p2a_it_projects <- time_warp_wrapper(pattern = p4p2a_it_signals, derive = TRUE)
+
+
+p4p3_it_signals <- list(
+  "REQ"  = get_smoothed_signal_d1(name = "p4p3_it_REQ",  func = req_p3),
+  "DEV"  = get_smoothed_signal_d1(name = "p4p3_it_DEV",  func = dev_p3),
+  "DESC" = get_smoothed_signal_d1(name = "p4p3_it_DESC", func = desc_p3))
+
+p4p3_it_projects <- time_warp_wrapper(pattern = p4p3_it_signals, derive = TRUE)
+```
+
+
+The derivatives of the projects I, II(a) and III look like in the following figure \ref{fig:p4of-p1-p2a-p3}:
+
+```{r p4of-p1-p2a-p3, message=FALSE, echo=FALSE, fig.cap=paste0("Derivative process models type I, II(a) and III, using a smoothing-span of ", use_span, "."), fig.align="center", fig.pos="ht!", fig.width=8, fig.height=6}
+par(mfrow=c(2,2))
+
+curve2(p4p1_it_signals$DEV$get0Function(), 0, 1, col = "red", xlab = "Relative time", ylab = "Change of cumulative time spent", main = "Process model IV(I)", ylim = c(0, 4.1))
+curve2(p4p1_it_signals$REQ$get0Function(), 0, 1, col = "blue", add = TRUE)
+curve2(p4p1_it_signals$DESC$get0Function(), 0, 1, col = "gold", add = TRUE)
+legend(.2, 4, legend = c("d1 cum. req%", "d1 cum. dev%", "d1 cum. desc%"), col = c("blue", "red", "gold"), lty = 1, lwd = 2)
+
+
+
+curve2(p4p2a_it_signals$DEV$get0Function(), 0, 1, col = "red", xlab = "Relative time", ylab = "Change of cumulative time spent", main = "Process model IV(II(a))", ylim = c(0, 2))
+curve2(p4p2a_it_signals$REQ$get0Function(), 0, 1, col = "blue", add = TRUE)
+curve2(p4p2a_it_signals$DESC$get0Function(), 0, 1, col = "gold", add = TRUE)
+
+
+
+curve2(p4p3_it_signals$DEV$get0Function(), 0, 1, col = "red", xlab = "Relative time", ylab = "Change of cumulative time spent", main = "Process model IV(III)", ylim = c(0, 2))
+curve2(p4p3_it_signals$REQ$get0Function(), 0, 1, col = "blue", add = TRUE)
+curve2(p4p3_it_signals$DESC$get0Function(), 0, 1, col = "gold", add = TRUE)
+```
+
+
+Let's compute the scores next.
+
+```{r}
+# We'll use this custom range to compute scores for area and sd/var/mae/rmse
+use_yrange <- c(-1, 10)
+
+p4p1_it_scores <- loadResultsOrCompute(file = "../results/p4p1_it_scores.rds", computeExpr = {
+  as.data.frame(
+    compute_all_scores_it(
+      useYRange = use_yrange,
+      alignment = p4p1_it_projects, patternName = "p4p1_it", vartypes = names(p4p1_it_signals)))
+})
+
+p4p2a_it_scores <- loadResultsOrCompute(file = "../results/p4p2a_it_scores.rds", computeExpr = {
+  as.data.frame(
+    compute_all_scores_it(
+      useYRange = use_yrange,
+      alignment = p4p2a_it_projects, patternName = "p4p2a_it", vartypes = names(p4p2a_it_signals)))
+})
+
+p4p3_it_scores <- loadResultsOrCompute(file = "../results/p4p3_it_scores.rds", computeExpr = {
+  as.data.frame(
+    compute_all_scores_it(
+      useYRange = use_yrange,
+      alignment = p4p3_it_projects, patternName = "p4p3_it", vartypes = names(p4p3_it_signals)))
+})
+```
+
+
+
+```{r}
+p4All_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
+
+i <- 0
+c_names <- NULL
+for (vt in var_types) {
+  for (pIdx in 1:3) {
+    p_data <- if (pIdx == 1) {
+      p4p1_it_scores } else if (pIdx == 2) {
+        p4p2a_it_scores } else { p4p3_it_scores }
+  
+    p4All_it_corr[pIdx, (i*length(score_types)+1):(i*length(score_types)+length(score_types))] <-
+      stats::cor(
+        x = ground_truth$consensus_score,
+        y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
+  }
+  
+  i <- i + 1
+  
+  c_names <- c(c_names, paste0(vt, "_", score_types))
+}
+
+colnames(p4All_it_corr) <- c_names
+rownames(p4All_it_corr) <- paste0("Pr. ", 1:3)
+p4All_it_corr[is.na(p4All_it_corr)] <- sqrt(.Machine$double.eps)
+```
+
+In figure \ref{fig:p4of-p1-p2a-p3-corr-scores} we show now the correlation scores per variable and score against each of the three patterns I, II(a), and III.
+
+```{r p4of-p1-p2a-p3-corr-scores, message=FALSE, echo=FALSE, fig.cap="Table with correlation scores for the first three types of patterns, calculated against each variable separately.", fig.align="center", fig.pos="ht!", fig.width=8}
+ggcorrplot::ggcorrplot(corr = t(p4All_it_corr[rev(rownames(p4All_it_corr)),])) + theme(
+  axis.text.x.top = element_text(angle = 90, vjust = 1/3, hjust = 0, size = 9),
+  legend.position = "bottom") +
+  scale_x_discrete(position = "top") +
+  scale_fill_gradient2(
+    low = "#0037AA", mid = "#eeeeee", high = "#AA0037", guide = "colorbar",
+    limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
+  labs(fill = "Pearson sample correlation")
+```
+
+
+
+
+
 # Scoring of projects (first batch)
 
 In the technical report for detecting the Fire Drill using source code data, we already explored a wide range of possible patterns and scoring mechanisms. All of them are based on comparing/scoring the variables (process model vs. process). Some of these we will apply here, too, but our focus is first on detection mechanisms that can facilitate the __confidence intervals__.
@@ -2259,10 +2655,10 @@ $$
 This can be encapsulated in a single function:
 
 ```{r}
-p1_dr <- function(projName, y = c(0.8, 0.4, 0.15, 0.7, 0.15)) {
-  req <- all_signals[[projName]]$REQ$get0Function()
-  dev <- all_signals[[projName]]$DEV$get0Function()
-  desc <- all_signals[[projName]]$DESC$get0Function()
+p1_dr <- function(projName, y = c(0.8, 0.4, 0.15, 0.7, 0.15), signals = all_signals) {
+  req <- signals[[projName]]$REQ$get0Function()
+  dev <- signals[[projName]]$DEV$get0Function()
+  desc <- signals[[projName]]$DESC$get0Function()
   
   I1 <- req(t_1) < y[1] && req(t_1) > y[2]
   I2 <- dev(t_1) < y[3] && dev(t_2) < y[4]
@@ -3834,399 +4230,6 @@ These results mean that the prediction is anti-proportional to the ground truth,
 ## Predicting using the best RFE model
 
 TODO
-
-
-# Correlation of scores
-
-This is a new section in the fifth iteration of this report. Similar to computing the correlation of scores against all models using source code data, we will do this here for each and every pattern based on issue-tracking data. We will be using the function `score_variable_alignment` (cf. section \ref{sssec:score-mech}) from the technical report using source code data. We do not have any phases in the process models for issue-tracking data. Therefore, no alignment is required. However, we still have to wrap each PM in an alignment, and will do so by defining one closed interval, without warping or amplitude correction.
-
-As a preparation for the pseudo-alignment, we need to present each project's signals as instances of `Signal`, as well as each pattern's signals then later. This has been done at the beginning of the report, and is stored in `all_signals`. It only requires some slight modifications before we can continue.
-
-Also, for the running the projects against type-IV patterns, we'll need to compute their gradients. Recall that the projects' signals were created using a zero-order hold, creating a cumulative quantity that increases step-wise, which results in extreme gradients. In section \ref{ssec:pattern-iv} we have previously examined which kind of smoothing is perhaps most applicable in order to obtain relatively smooth gradients. The recommended solution was to use LOESS smoothing with a span of `0.35`, and not to go lower than `0.2`. A lower span preserves more details, and the results below were computed with a value of `0.35`. We have previously run these computations with the value `0.2`, with no significant different results.
-
-```{r}
-use_span <- 0.35
-
-time_warp_wrapper <- function(pattern, derive = FALSE) {
-  signals <- list()
-  
-  for (project in paste0("Project", rownames(ground_truth))) {
-    temp <- list()
-    if (derive) {
-      temp[["REQ"]] <- Signal$new(
-        name = paste0(project, "_REQ"), support = c(0,1), isWp = FALSE,
-        func = smooth_signal_loess(
-          x = 1:nrow(all_signals[[project]]$data),
-          y = cumsum(all_signals[[project]]$data$req),
-          span = use_span, family = "g"))
-      temp[["DEV"]] <- Signal$new(
-        name = paste0(project, "_DEV"), support = c(0,1), isWp = FALSE,
-        func = smooth_signal_loess(
-          x = 1:nrow(all_signals[[project]]$data),
-          y = cumsum(all_signals[[project]]$data$dev),
-          span = use_span, family = "g"))
-      temp[["DESC"]] <- Signal$new(
-        name = paste0(project, "_DESC"), support = c(0,1), isWp = FALSE,
-        func = smooth_signal_loess(
-          x = 1:nrow(all_signals[[project]]$data),
-          y = cumsum(all_signals[[project]]$data$desc),
-          span = use_span, family = "g"))
-    } else {
-      temp[["REQ"]] <- all_signals[[project]]$REQ$clone()
-      temp$REQ$.__enclos_env__$private$name <- paste0(project, "_REQ")
-      temp[["DEV"]] <- all_signals[[project]]$DEV$clone()
-      temp$DEV$.__enclos_env__$private$name <- paste0(project, "_DEV")
-      temp[["DESC"]] <- all_signals[[project]]$DESC$clone()
-      temp$DESC$.__enclos_env__$private$name <- paste0(project, "_DESC")
-    }
-    signals[[project]] <- time_warp_project(
-      pattern = pattern, project = temp, thetaB = c(0,1))
-  }
-  
-  signals
-}
-```
-
-
-
-## Pattern I, II(a), and III
-
-We'll first have to assemble a list of signals that define each pattern, before we can wrap it in an empty alignment and calculate the various scores.
-
-```{r}
-p1_it_signals <- list(
-  "REQ"  = Signal$new(name = "p1_it_REQ",  func = req,  support = c(0,1), isWp = TRUE),
-  "DEV"  = Signal$new(name = "p1_it_DEV",  func = dev,  support = c(0,1), isWp = TRUE),
-  "DESC" = Signal$new(name = "p1_it_DESC", func = desc, support = c(0,1), isWp = TRUE))
-
-p1_it_projects <- time_warp_wrapper(pattern = p1_it_signals, derive = FALSE)
-```
-
-
-```{r eval=FALSE, echo=FALSE}
-#' This method works slightly different from compute_all_scores().
-#' It does not aggregate scores across variable-types, and returns
-#' a score per type instead.
-compute_all_scores_it <- function(alignment, patternName, vartypes = names(weight_vartype), useYRange = NULL) {
-  useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
-                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
-  
-  cl <- parallel::makePSOCKcluster(length(alignment))
-  parallel::clusterExport(cl, varlist = list("score_variable_alignment", "req_poly", "dev_poly"))
-  
-  `rownames<-`(doWithParallelClusterExplicit(cl = cl, expr = {
-    foreach::foreach(
-      projectName = names(alignment),
-      .inorder = TRUE,
-      .combine = rbind,
-      .packages = c("cobs")
-    ) %dopar% {
-      source("./common-funcs.R")
-      source("../models/modelsR6.R")
-      source("../models/SRBTW-R6.R")
-        
-      scores <- c()
-      for (score in useScores) {
-        for (vt in vartypes) {
-          temp <- score_variable_alignment(
-            patternName = patternName, projectName = projectName,
-            alignment = alignment[[projectName]], use = score,
-            vartypes = vt, useYRange = useYRange)
-          scores <- c(scores, `names<-`(temp, paste0(vt, "_", score)))
-        }
-      }
-      `colnames<-`(matrix(data = scores, nrow = 1), names(scores))
-    }
-  }), sort(names(alignment)))
-}
-```
-
-
-
-```{r}
-p1_it_scores <- loadResultsOrCompute(file = "../results/p1_it_scores.rds", computeExpr = {
-  as.data.frame(
-    compute_all_scores_it(
-      alignment = p1_it_projects, patternName = "p1_it", vartypes = names(p1_it_signals)))
-})
-```
-
-Table \ref{tab:p1-it-scores} shows the correlations for each variable. This is different to how we did it for source code data. Each variable is shown separately in order not to conceal more extreme correlations that would otherwise be inaccessible due to aggregation.
-
-```{r echo=FALSE}
-if (interactive()) {
-  round(t(p1_it_scores), 4)
-} else {
-  knitr::kable(
-    x = round(`colnames<-`(t(p1_it_scores), paste0("pr_", 1:9)), 2),
-    booktabs = TRUE,
-    caption = "Scores for the aligned projects with pattern I (issue-tracking; p=product, m=mean).",
-    label = "p1-it-scores"
-  )
-}
-```
-
-The correlation of just the ground truth with all scores is in table \ref{tab:p1-it-corr}.
-
-```{r echo=FALSE}
-corr <- stats::cor(ground_truth$consensus, p1_it_scores)[1, ]
-
-if (interactive()) {
-  corr
-} else {
-  perCol <- ceiling(length(corr) / 3)
-  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
-  for (idx in 1:3) {
-    off <- (idx - 1) * perCol
-    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
-    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
-  }
-  colnames(temp) <- rep(c("Score", "Value"), 3)
-  knitr::kable(
-    x = temp,
-    booktabs = TRUE,
-    caption = "Correlation of the ground truth with all other scores for pattern I (issue-tracking).",
-    label = "p1-it-corr")
-}
-```
-
-The correlation matrix looks as in figure \ref{fig:p1-it-corr-mat}.
-
-```{r p1-it-corr-mat, echo=FALSE, fig.cap="Correlation matrix for scores using pattern I (issue-tracking).", fig.align="top", fig.pos="ht!", fig.width=8, fig.height=8}
-temp <- cbind(data.frame(gt_consensus = ground_truth$consensus_score), p1_it_scores[,])
-
-corrplot::corrplot(corr = stats::cor(temp), type = "upper",# order = "hclust",
-                   tl.col = "black", tl.srt = 90)
-```
-
-
-From now on, we'll only compute the correlation scores for each variable without showing intermediate results. We'll then later build a larger matrix with results from all patterns.
-
-```{r}
-p2a_it_signals <- list(
-  "REQ"  = Signal$new(name = "p2a_it_REQ",  func = req_p2a,  support = c(0,1), isWp = TRUE),
-  "DEV"  = Signal$new(name = "p2a_it_DEV",  func = dev_p2a,  support = c(0,1), isWp = TRUE),
-  "DESC" = Signal$new(name = "p2a_it_DESC", func = desc_p2a, support = c(0,1), isWp = TRUE))
-
-p2a_it_projects <- time_warp_wrapper(pattern = p2a_it_signals, derive = FALSE)
-```
-
-
-```{r}
-p2a_it_scores <- loadResultsOrCompute(file = "../results/p2a_it_scores.rds", computeExpr = {
-  as.data.frame(
-    compute_all_scores_it(
-    alignment = p2a_it_projects, patternName = "p2a_it", vartypes = names(p2a_it_signals)))
-})
-```
-
-```{r}
-p3_it_signals <- list(
-  "REQ"  = Signal$new(name = "p3_it_REQ",  func = req_p3,  support = c(0,1), isWp = TRUE),
-  "DEV"  = Signal$new(name = "p3_it_DEV",  func = dev_p3,  support = c(0,1), isWp = TRUE),
-  "DESC" = Signal$new(name = "p3_it_DESC", func = desc_p3, support = c(0,1), isWp = TRUE))
-
-p3_it_projects <- time_warp_wrapper(pattern = p3_it_signals, derive = FALSE)
-```
-
-```{r}
-p3_it_scores <- loadResultsOrCompute(file = "../results/p3_it_scores.rds", computeExpr = {
-  as.data.frame(
-    compute_all_scores_it(
-      alignment = p3_it_projects, patternName = "p3_it", vartypes = names(p3_it_signals)))
-})
-```
-
-
-Let's attempt to aggregate the correlation scores from the first three patterns, and show a plot.
-
-```{r echo=FALSE, warning=FALSE}
-score_types <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
-                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
-var_types <- names(p1_it_signals)
-
-pAll_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
-
-
-i <- 0
-c_names <- NULL
-for (vt in var_types) {
-  for (pIdx in 1:3) {
-    p_data <- if (pIdx == 1) {
-      p1_it_scores } else if (pIdx == 2) {
-        p2a_it_scores } else { p3_it_scores }
-  
-    pAll_it_corr[pIdx, (i*length(score_types)+1):(i*length(score_types)+length(score_types))] <-
-      stats::cor(
-        x = ground_truth$consensus_score,
-        y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
-  }
-  
-  i <- i + 1
-  
-  c_names <- c(c_names, paste0(vt, "_", score_types))
-}
-
-colnames(pAll_it_corr) <- c_names
-rownames(pAll_it_corr) <- paste0("Pr. ", 1:3)
-pAll_it_corr[is.na(pAll_it_corr)] <- sqrt(.Machine$double.eps)
-```
-
-In \ref{fig:p1-p2a-p3-corr-scores} we show now the correlation scores per variable and score against each of the three patterns I, II(a), and III.
-
-```{r p1-p2a-p3-corr-scores, message=FALSE, echo=FALSE, fig.cap="Table with correlation scores for the first three types of patterns, calculated against each variable separately.", fig.align="center", fig.pos="ht!", fig.width=8}
-ggcorrplot::ggcorrplot(corr = t(pAll_it_corr[rev(rownames(pAll_it_corr)),])) + theme(
-  axis.text.x.top = element_text(angle = 90, vjust = 1/3, hjust = 0, size = 9),
-  legend.position = "bottom") +
-  scale_x_discrete(position = "top") +
-  scale_fill_gradient2(
-    low = "#0037AA", mid = "#eeeeee", high = "#AA0037", guide = "colorbar",
-    limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
-  labs(fill = "Pearson sample correlation")
-```
-
-
-## Derivative of Pattern I, II(a), and III
-
-In the following, we'll basically repeat calculating the correlation scores of against each process model, but this time we will use __derivative__ models and processes. That is, we will compute the scores based on the _rate of change_.
-
-For every cumulative quantity we should apply some smoothing in order to get usable gradients. This applies to all projects in all comparisons, as well as to process model III, since its variables are weighted averages of such quantities.
-
-```{r}
-get_smoothed_signal_d1 <- function(name, func) {
-  xvals <- seq(from = 0, to = 1, length.out = 1e4)
-  func <- smooth_signal_loess(
-    x = xvals, y = func(xvals),
-    support = c(0,1), family = "g", span = use_span
-  )
-  
-  temp <- Signal$new(name = name, isWp = TRUE, support = c(0,1), func = func)
-  Signal$new(name = name, isWp = TRUE, support = c(0,1), func = temp$get1stOrderPd())
-}
-```
-
-
-
-```{r echo=FALSE}
-p4p1_it_signals <- list(
-  "REQ"  = get_smoothed_signal_d1(name = "p4p1_it_REQ",  func = req),
-  "DEV"  = get_smoothed_signal_d1(name = "p4p1_it_DEV",  func = dev),
-  "DESC" = get_smoothed_signal_d1(name = "p4p1_it_DESC", func = desc))
-
-p4p1_it_projects <- time_warp_wrapper(pattern = p4p1_it_signals, derive = TRUE)
-
-
-p4p2a_it_signals <- list(
-  "REQ"  = get_smoothed_signal_d1(name = "p4p2a_it_REQ",  func = req_p2a),
-  "DEV"  = get_smoothed_signal_d1(name = "p4p2a_it_DEV",  func = dev_p2a),
-  "DESC" = get_smoothed_signal_d1(name = "p4p2a_it_DESC", func = desc_p2a))
-
-p4p2a_it_projects <- time_warp_wrapper(pattern = p4p2a_it_signals, derive = TRUE)
-
-
-p4p3_it_signals <- list(
-  "REQ"  = get_smoothed_signal_d1(name = "p4p3_it_REQ",  func = req_p3),
-  "DEV"  = get_smoothed_signal_d1(name = "p4p3_it_DEV",  func = dev_p3),
-  "DESC" = get_smoothed_signal_d1(name = "p4p3_it_DESC", func = desc_p3))
-
-p4p3_it_projects <- time_warp_wrapper(pattern = p4p3_it_signals, derive = TRUE)
-```
-
-
-The derivatives of the projects I, II(a) and III look like in the following figure \ref{fig:p4of-p1-p2a-p3}:
-
-```{r p4of-p1-p2a-p3, message=FALSE, echo=FALSE, fig.cap=paste0("Derivative process models type I, II(a) and III, using a smoothing-span of ", use_span, "."), fig.align="center", fig.pos="ht!", fig.width=8, fig.height=6}
-par(mfrow=c(2,2))
-
-curve2(p4p1_it_signals$DEV$get0Function(), 0, 1, col = "red", xlab = "Relative time", ylab = "Change of cumulative time spent", main = "Process model IV(I)", ylim = c(0, 4.1))
-curve2(p4p1_it_signals$REQ$get0Function(), 0, 1, col = "blue", add = TRUE)
-curve2(p4p1_it_signals$DESC$get0Function(), 0, 1, col = "gold", add = TRUE)
-legend(.2, 4, legend = c("d1 cum. req%", "d1 cum. dev%", "d1 cum. desc%"), col = c("blue", "red", "gold"), lty = 1, lwd = 2)
-
-
-
-curve2(p4p2a_it_signals$DEV$get0Function(), 0, 1, col = "red", xlab = "Relative time", ylab = "Change of cumulative time spent", main = "Process model IV(II(a))", ylim = c(0, 2))
-curve2(p4p2a_it_signals$REQ$get0Function(), 0, 1, col = "blue", add = TRUE)
-curve2(p4p2a_it_signals$DESC$get0Function(), 0, 1, col = "gold", add = TRUE)
-
-
-
-curve2(p4p3_it_signals$DEV$get0Function(), 0, 1, col = "red", xlab = "Relative time", ylab = "Change of cumulative time spent", main = "Process model IV(III)", ylim = c(0, 2))
-curve2(p4p3_it_signals$REQ$get0Function(), 0, 1, col = "blue", add = TRUE)
-curve2(p4p3_it_signals$DESC$get0Function(), 0, 1, col = "gold", add = TRUE)
-```
-
-
-Let's compute the scores next.
-
-```{r}
-# We'll use this custom range to compute scores for area and sd/var/mae/rmse
-use_yrange <- c(-1, 10)
-
-p4p1_it_scores <- loadResultsOrCompute(file = "../results/p4p1_it_scores.rds", computeExpr = {
-  as.data.frame(
-    compute_all_scores_it(
-      useYRange = use_yrange,
-      alignment = p4p1_it_projects, patternName = "p4p1_it", vartypes = names(p4p1_it_signals)))
-})
-
-p4p2a_it_scores <- loadResultsOrCompute(file = "../results/p4p2a_it_scores.rds", computeExpr = {
-  as.data.frame(
-    compute_all_scores_it(
-      useYRange = use_yrange,
-      alignment = p4p2a_it_projects, patternName = "p4p2a_it", vartypes = names(p4p2a_it_signals)))
-})
-
-p4p3_it_scores <- loadResultsOrCompute(file = "../results/p4p3_it_scores.rds", computeExpr = {
-  as.data.frame(
-    compute_all_scores_it(
-      useYRange = use_yrange,
-      alignment = p4p3_it_projects, patternName = "p4p3_it", vartypes = names(p4p3_it_signals)))
-})
-```
-
-
-
-```{r}
-p4All_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
-
-i <- 0
-c_names <- NULL
-for (vt in var_types) {
-  for (pIdx in 1:3) {
-    p_data <- if (pIdx == 1) {
-      p4p1_it_scores } else if (pIdx == 2) {
-        p4p2a_it_scores } else { p4p3_it_scores }
-  
-    p4All_it_corr[pIdx, (i*length(score_types)+1):(i*length(score_types)+length(score_types))] <-
-      stats::cor(
-        x = ground_truth$consensus_score,
-        y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
-  }
-  
-  i <- i + 1
-  
-  c_names <- c(c_names, paste0(vt, "_", score_types))
-}
-
-colnames(p4All_it_corr) <- c_names
-rownames(p4All_it_corr) <- paste0("Pr. ", 1:3)
-p4All_it_corr[is.na(p4All_it_corr)] <- sqrt(.Machine$double.eps)
-```
-
-In figure \ref{fig:p4of-p1-p2a-p3-corr-scores} we show now the correlation scores per variable and score against each of the three patterns I, II(a), and III.
-
-```{r p4of-p1-p2a-p3-corr-scores, message=FALSE, echo=FALSE, fig.cap="Table with correlation scores for the first three types of patterns, calculated against each variable separately.", fig.align="center", fig.pos="ht!", fig.width=8}
-ggcorrplot::ggcorrplot(corr = t(p4All_it_corr[rev(rownames(p4All_it_corr)),])) + theme(
-  axis.text.x.top = element_text(angle = 90, vjust = 1/3, hjust = 0, size = 9),
-  legend.position = "bottom") +
-  scale_x_discrete(position = "top") +
-  scale_fill_gradient2(
-    low = "#0037AA", mid = "#eeeeee", high = "#AA0037", guide = "colorbar",
-    limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
-  labs(fill = "Pearson sample correlation")
-```
-
 
 
 
