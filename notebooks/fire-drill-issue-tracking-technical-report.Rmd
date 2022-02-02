@@ -2739,6 +2739,73 @@ stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
 With this linear combination of only three scores (out of six), we were able to significantly boost the detection to $\approx0.96$, which implies that combining both methods is of worth for a detection using (inhomogeneous) confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting. Using four or more scores goes beyond $0.97$.
 
 
+### Variable importance: most important scores
+
+TODO: MOVE THIS SECTION p.g.a. `p3_it_scores`
+
+In the report for source code data (section \ref{sssec:var-imp}), we have previously determined the most important features. We'll do the same computation here. The results will then allow us to compare against the relative importances as determined by source code data.
+
+```{r}
+rfe_data_it <- cbind(
+  p3_it_scores,
+  data.frame(gt = ground_truth$consensus))
+```
+
+```{r warning=FALSE}
+library(caret)
+
+set.seed(1337)
+
+control <- caret::trainControl(method="repeatedcv", number=10, repeats=3)
+modelFit_it_all <- caret::train(gt ~., data=rfe_data_it, method="pls", trControl=control)
+
+imp_it_all <- caret::varImp(object = modelFit_it_all)
+```
+
+```{r var-imp-all-features, echo=FALSE, fig.height=4.5, fig.cap="Variable-importance for all features (activities) for predicting the ground truth.", fig.align="center", fig.pos="ht!"}
+plot(imp_it_all)
+```
+
+The `DESC`-activity with its three most important and dominating features Peak, RMS, and ImpulseFactor dominates the field, which could be due to, e.g., the `DESC`-activity being less characteristic than the others, ergo we get a more coherent predictor. Also, the first three features are quite similar to each other. The resulting model uses __`r modelFit_it_all$bestTune$ncomp`__ components.
+
+For issue-tracking data we do have the scores for each variable (activity) separately, so we will attempt to also compute importances on a per-activity basis. This will also allow us to compare importances across activities. The expectation is that different activities will have a different order and magnitude of importances, since each activity has its own characteristics.
+
+```{r}
+temp <- loadResultsOrCompute(file = "../results/modelFit_it_3.rds", computeExpr = {
+  set.seed(0xbeef)
+
+  temp <- colnames(rfe_data_it)
+  cols_req <- temp[grep(pattern = "^(req_)|(gt)", ignore.case = TRUE, x = temp)]
+  cols_dev <- temp[grep(pattern = "^(dev_)|(gt)", ignore.case = TRUE, x = temp)]
+  cols_desc <- temp[grep(pattern = "^(desc_)|(gt)", ignore.case = TRUE, x = temp)]
+  
+  list(
+    "req" = caret::train(gt ~., data=rfe_data_it[cols_req], method="pls", trControl=control),
+    "dev" = caret::train(gt ~., data=rfe_data_it[cols_dev], method="pls", trControl=control),
+    "desc" = caret::train(gt ~., data=rfe_data_it[cols_desc], method="pls", trControl=control))
+})
+
+modelFit_it_req <- temp$req
+modelFit_it_dev <- temp$dev
+modelFit_it_desc <- temp$desc
+
+imp_it_req <- caret::varImp(object = modelFit_it_req)
+imp_it_dev <- caret::varImp(object = modelFit_it_dev)
+imp_it_desc <- caret::varImp(object = modelFit_it_desc)
+```
+
+
+When comparing figures \ref{fig:var-imp-all-features} and \ref{fig:var-imp-all-features-sep}, we observe that
+
+
+```{r var-imp-all-features-sep, echo=FALSE, fig.height=4.5, fig.cap="Variable-importance for all features (activities) separately for predicting the ground truth on a per-activity basis.", fig.align="center", fig.pos="ht!"}
+temp <- imp_it_req
+temp$importance <- rbind(temp$importance, imp_it_dev$importance, imp_it_desc$importance)
+plot(temp)
+```
+
+
+
 ### Arbitrary-interval scores computing\label{ssec:arbint-scores}
 
 Up to now, we presented two methods to compute losses/scores over the closed interval $[0,1]$. We then have fitted a linear model to weigh, scale and translate the scores. We could evaluate how well this linear model performs if we select arbitrary intervals and compute the scores, but the expected is that smaller and earlier intervals would perform poorly. We will compute some the scores for some arbitrary intervals and then evaluate this. Then, we will attempt to learn a non-linear mapping that should correct for these residuals.
@@ -3110,7 +3177,7 @@ align_srbtaw_logratio <- loadResultsOrCompute(file = "../results/proc_align_srbt
 align_srbtaw_logratio$res$par[c("b", "e")]
 ```
 
-As expected, the result for the RSS-based is very similar to the overall result as obtained by DTW (note that the mix-up of begin and end does not matter to srBTAW, is it regularizes this using its internal representation $\beta_l,\beta_u$). The correlation-based loss, surprisingly, manages to discover the true begin of $\approx0.25$. It is likely possible to find a combination of losses, weights, etc., that can find the offsets of some process better, but that is a bit out of scope here. In fig. \ref{fig:proc-align-srbtaw} we show the time warping as computed by the two objectives (RSS and correlation).
+As expected, the RSS-based result is very similar to the overall result as obtained by DTW (note that the mix-up of begin and end does not matter to srBTAW, is it regularizes this using its internal representation $\beta_l,\beta_u$). The correlation-based loss, surprisingly, manages to discover the true begin of $\approx0.25$. It is likely possible to find a combination of losses, weights, etc., that can find the offsets of some process better, but that is a bit out of scope here. In fig. \ref{fig:proc-align-srbtaw} we show the time warping as computed by the two objectives (RSS and correlation).
 
 ```{r proc-align-srbtaw, echo=FALSE, fig.height=3.5, fig.cap="Open alignment of the observed process using srBTAW and 10 intervals. On the left using RSS as loss, and on the right using correlation.", fig.align="center", fig.pos="ht!"}
 align_srbtaw_rss$srbtaw$setParams(align_srbtaw_rss$res$par)
@@ -3762,6 +3829,11 @@ stats::cor(p3_avg_lm_2nd_batch_scores, ground_truth_2nd_batch$consensus_score)
 ```
 
 These results mean that the prediction is anti-proportional to the ground truth, and weak at the same time. It is actually worse to have a negative correlation than having no correlation. This can only be interpreted as our previously trained regression model not being able to generalize to new, unseen data. This is expected, since a) we did not have sufficient training data, and b) the previous regression model being overfit on the previous data. However, and I wrote that before, the main point of these regression models was translation and scaling of the scores, not prediction. For that, much more data is required (both, instances and features, as the selected features cannot capture all of the important aspects of the deviation process and process model). Furthermore, these regression models (including the one we built for the source code data) were built using hand-picked features. Ideally, we would have a great number of different features, paired with something like a recursive feature elimination, in order to come up with a regression model that has reliable generalizability. Therefore, I am inclined not to repeat this exercise with the source code data, as we will have the same problem there. I will add a section about RFE and cross-validation and do that instead.
+
+
+## Predicting using the best RFE model
+
+TODO
 
 
 # Correlation of scores
