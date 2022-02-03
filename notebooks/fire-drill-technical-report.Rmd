@@ -842,15 +842,15 @@ While this worked I suppose it is fair to say that our initial pattern is hardly
 We can produce a pattern by computing a weighted average over all available ground truth. As weight, we can use either rater's score, their mean or consensus (default).
 
 ```{r}
-gt_weighted_avg <- function(vartype, wtype = c("consensus", "rater.a", "rater.b", "rater.mean")) {
+gt_weighted_avg <- function(vartype, wtype = c("consensus", "rater.a", "rater.b", "rater.mean"), use_signals = project_signals, use_ground_truth = ground_truth) {
   wtype <- match.arg(wtype)
-  gt <- ground_truth[ground_truth[[wtype]] > 0, ]
+  gt <- use_ground_truth[use_ground_truth[[wtype]] > 0, ]
   wTotal <- sum(gt[[wtype]])
   proj <- gt$project
   weights <- `names<-`(gt[[wtype]], gt$project)
   
   funcs <- lapply(
-    project_signals, function(ps) ps[[vartype]]$get0Function())
+    use_signals, function(ps) ps[[vartype]]$get0Function())
   
   Vectorize(function(x) {
     val <- 0
