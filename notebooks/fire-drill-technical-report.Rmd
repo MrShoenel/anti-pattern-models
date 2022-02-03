@@ -1870,6 +1870,434 @@ cor.test(ground_truth$consensus, temp)
 ```
 
 
+### Pattern as confidence surface
+
+Exactly how it was done for issue-tracking data (refer for details to subsection \ref{sssec:inhomo-conf-interval}, as here we will only create and show the resulting pattern), we can produce a data-only pattern that features the weighted average for each variable, but also a confidence surface that takes the ground truth into account. Note that as the time of adding this section, we have access to a second batch of projects, including a ground truth. We will therefore include those here, as data-only patterns become better with each observation.
+
+```{r}
+ground_truth_2nd_batch <- read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";")
+ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus / 10
+rownames(ground_truth_2nd_batch) <- paste0((1+nrow(ground_truth)):(nrow(ground_truth)+nrow(ground_truth_2nd_batch)))
+
+temp <- rbind(ground_truth, ground_truth_2nd_batch)
+omega <- temp$consensus_score
+names(omega) <- paste0("Project", 1:length(omega))
+```
+
+The weighted averaged signals are stored in `p3_avg_signals`, so we need to compute two things: first, we need functions to delineate the confidence surface ($\operatorname{CI}_{\text{upper}}(x)$ and $\operatorname{CI}_{\text{upper}}(x)$), and second, we need a function that produces the gradated surface within those bounds ($\operatorname{CI}(x,y)$). This is very similar to how it was done for issue-tracking, so most of the code is not shown here (check the source code for this notebook).
+
+Let's load the new batch and do some required preprocessing:
+
+```{r}
+student_projects_2nd_batch <- read.csv(file = "../data/student-projects_2nd-batch.csv", sep = ";")
+student_projects_2nd_batch$label <- as.factor(student_projects_2nd_batch$label)
+student_projects_2nd_batch$project <- as.factor(student_projects_2nd_batch$project)
+student_projects_2nd_batch$AuthorTimeNormalized <- NA_real_
+
+for (pId in levels(student_projects_2nd_batch$project)) {
+  student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeNormalized <-
+    (student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeUnixEpochMilliSecs -
+      min(student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeUnixEpochMilliSecs))
+  student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeNormalized <-
+    (student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeNormalized /
+      max(student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeNormalized))
+}
+```
+
+
+```{r echo=FALSE}
+project_signals_2nd_batch <- list()
+
+# passed to stats::density
+use_kernel <- "gauss" # "rect"
+
+for (pId in levels(student_projects_2nd_batch$project)) {
+  temp <- student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]
+  
+  # We'll need these for the densities:
+  acp_ratios <- table(temp$label) / sum(table(temp$label))
+  
+  dens_a <- densitySafe(
+    from = 0, to = 1, safeVal = NA_real_,
+    data = temp[temp$label == "a", ]$AuthorTimeNormalized,
+    ratio = acp_ratios[["a"]], kernel = use_kernel)
+  
+  dens_cp <- densitySafe(
+    from = 0, to = 1, safeVal = NA_real_,
+    data = temp[temp$label == "c" | temp$label == "p", ]$AuthorTimeNormalized,
+    ratio = acp_ratios[["c"]] + acp_ratios[["p"]], kernel = use_kernel)
+  
+  dens_freq <- densitySafe(
+    from = 0, to = 1, safeVal = NA_real_,
+    data = temp$AuthorTimeNormalized, ratio = 1, kernel = use_kernel)
+  
+  # All densities need to be scaled together once more, by dividing
+  # for the maximum value of the FREQ-variable.
+  ymax <- max(c(attr(dens_a, "ymax"), attr(dens_cp, "ymax"), attr(dens_freq, "ymax")))
+  dens_a <- stats::approxfun(
+    x = attr(dens_a, "x"), y = sapply(X = attr(dens_a, "x"), FUN = dens_a) / ymax)
+  dens_cp <- stats::approxfun(
+    x = attr(dens_cp, "x"), y = sapply(X = attr(dens_cp, "x"), FUN = dens_cp) / ymax)
+  dens_freq <- stats::approxfun(
+    x = attr(dens_freq, "x"), y = sapply(X = attr(dens_freq, "x"), FUN = dens_freq) / ymax)
+  
+  project_signals_2nd_batch[[pId]] <- list(
+    A = Signal$new(name = paste(pId, "A", sep = "_"),
+                   func = dens_a, support = c(0, 1), isWp = FALSE),
+    CP = Signal$new(name = paste(pId, "CP", sep = "_"),
+                    func = dens_cp, support = c(0, 1), isWp = FALSE),
+    FREQ = Signal$new(name = paste(pId, "FREQ", sep = "_"),
+                      func = dens_freq, support = c(0, 1), isWp = FALSE)
+  )
+}
+
+
+# Now, for each project, we estimate the variable for the source code density as follows:
+for (pId in levels(student_projects_2nd_batch$project)) {
+  temp <- data.frame(
+    x = student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeNormalized,
+    y = student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$Density)
+  temp <- temp[with(temp, order(x)), ]
+  
+  # Using a polynomial with maximum possible degree, we smooth the
+  # SCD-data, as it can be quite "peaky"
+  temp_poly <- poly_autofit_max(x = temp$x, y = temp$y, startDeg = 13)
+  
+  dens_scd <- Vectorize((function() {
+    rx <- range(temp$x)
+    ry <- range(temp$y)
+    poly_y <- stats::predict(temp_poly, x = temp$x)
+    tempf <- stats::approxfun(x = temp$x, y = poly_y, ties = "ordered")
+    function(x) {
+      if (x < rx[1] || x > rx[2]) {
+        return(NA_real_)
+      }
+      max(ry[1], min(ry[2], tempf(x)))
+    }
+  })())
+  
+  project_signals_2nd_batch[[pId]][["SCD"]] <- Signal$new(
+    name = paste(pId, "SCD", sep = "_"), func = dens_scd,
+    support = c(0, 1), isWp = FALSE)
+}
+```
+
+The second batch of projects and their variables are shown in figure \ref{fig:project-vars-2nd-batch}.
+
+```{r echo=FALSE}
+tempdf <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(tempdf) <- c("x", "y", "p", "v")
+
+n <- 500
+x <- seq(from = 0, to = 1, length.out = n)
+for (pId in levels(student_projects_2nd_batch$project)) {
+  for (v in c("A", "CP", "FREQ", "SCD")) {
+    tempdf <- rbind(tempdf, data.frame(
+      x = x,
+      y = sapply(X = x, FUN = project_signals_2nd_batch[[pId]][[v]]$get0Function()),
+      p = pId,
+      v = v
+    ))
+  }
+}
+```
+
+
+```{r project-vars-2nd-batch, echo=FALSE, fig.cap="All variables over each project's time span (second batch of projects).", fig.align="top", fig.pos="ht!"}
+plot_all_acp <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
+  geom_line() +
+  facet_wrap(p ~.) +
+  theme_light() +
+  labs(color = "Variable") + xlab("Relative Time") + ylab("Value") +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_rect(fill="#dfdfdf"),
+    strip.text = element_text(color="black"))
+plot_all_acp
+```
+
+We will need to produce the weighted average for each variable, as we have done it previously for creating pattern type III. It needs to be redone, because we want to include the new projects.
+
+```{r}
+p3_avg_signals_all <- list()
+
+for (vartype in names(weight_vartype)) {
+  p3_avg_signals_all[[vartype]] <- Signal$new(
+    name = paste0("p3_avg_", vartype), support = c(0, 1), isWp = TRUE,
+    func = gt_weighted_avg(
+      vartype = vartype,
+      use_signals = append(project_signals, project_signals_2nd_batch),
+      use_ground_truth = rbind(ground_truth, ground_truth_2nd_batch)))
+}
+```
+
+Next, we'll produce the lower and upper bounds vor each variable:
+
+```{r echo=FALSE}
+funclist_A <- list()
+funclist_CP <- list()
+funclist_FREQ <- list()
+funclist_SCD <- list()
+
+for (pId in names(project_signals)) {
+  # transform "project_6" to "Project6"
+  pId_fl <- paste0("Project", regmatches(x = pId, gregexpr(pattern = "\\d+", text = pId))[[1]])
+  funclist_A[[pId_fl]] <- project_signals[[pId]]$A$get0Function()
+  funclist_CP[[pId_fl]] <- project_signals[[pId]]$CP$get0Function()
+  funclist_FREQ[[pId_fl]] <- project_signals[[pId]]$FREQ$get0Function()
+  funclist_SCD[[pId_fl]] <- project_signals[[pId]]$SCD$get0Function()
+}
+
+for (pId in names(project_signals_2nd_batch)) {
+  # transform "project_6" to "Project6"
+  pId_fl <- paste0("Project", regmatches(x = pId, gregexpr(pattern = "\\d+", text = pId))[[1]])
+  funclist_A[[pId_fl]] <- project_signals_2nd_batch[[pId]]$A$get0Function()
+  funclist_CP[[pId_fl]] <- project_signals_2nd_batch[[pId]]$CP$get0Function()
+  funclist_FREQ[[pId_fl]] <- project_signals_2nd_batch[[pId]]$FREQ$get0Function()
+  funclist_SCD[[pId_fl]] <- project_signals_2nd_batch[[pId]]$SCD$get0Function()
+}
+
+CI_bound_p3avg <- function(x, funclist, omega, upper = TRUE) {
+  sapply(X = x, FUN = function(x_) {
+  val <- unlist(lapply(X = names(funclist), FUN = function(fname) {
+    if (omega[fname] == 0)
+      (if (upper)
+        -Inf else Inf) else funclist[[fname]](x_)
+  }))
+  
+  if (upper)
+    max(val) else min(val)
+  })
+}
+```
+
+
+```{r}
+a_ci_upper_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_A, omega = omega, upper = TRUE)
+a_ci_lower_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_A, omega = omega, upper = FALSE)
+
+cp_ci_upper_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_CP, omega = omega, upper = TRUE)
+cp_ci_lower_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_CP, omega = omega, upper = FALSE)
+
+freq_ci_upper_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_FREQ, omega = omega, upper = TRUE)
+freq_ci_lower_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_FREQ, omega = omega, upper = FALSE)
+
+scd_ci_upper_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_SCD, omega = omega, upper = TRUE)
+scd_ci_lower_p3avg <- function(x) CI_bound_p3avg(
+  x = x, funclist = funclist_SCD, omega = omega, upper = FALSE)
+```
+
+
+```{r echo=FALSE}
+h_p3avg <- function(funclist, x, y, upper = TRUE, f_ci) {
+  unlist(lapply(X = funclist, FUN = function(f) {
+    sapply(X = f(x), function(val) {
+      if (upper && val >= y) {
+        1
+        #f_ci(x) - val <-- this could be an alternative using the boundaries
+      } else if (!upper && val <= y) {
+        1
+        #val - f_ci(x)
+      } else {
+        0
+      }
+    })
+  }))
+}
+
+h_upper_p3avg <- function(funclist, x, y, f_ci) h_p3avg(funclist = funclist, x = x, y = y, upper = TRUE, f_ci = f_ci)
+h_lower_p3avg <- function(funclist, x, y, f_ci) h_p3avg(funclist = funclist, x = x, y = y, upper = FALSE, f_ci = f_ci)
+
+CI_p3avg <- function(x, y, funclist, f_ci_upper, f_ci_lower, gbar, omega) {
+  stopifnot(length(x) == length(y))
+  
+  sapply(X = seq_len(length.out = length(x)), FUN = function(idx) {
+    xi <- x[idx]
+    yi <- y[idx]
+    
+    if (yi > f_ci_upper(xi) || yi < f_ci_lower(xi)) {
+      return(0)
+    }
+    
+    gbarval <- gbar(xi)
+    hval <- if (gbarval < yi) {
+      h_upper_p3avg(funclist = funclist, x = xi, y = yi, f_ci = f_ci_upper)
+    } else {
+      h_lower_p3avg(funclist = funclist, x = xi, y = yi, f_ci = f_ci_lower)
+    }
+    
+    omega %*% hval / sum(omega)
+  })
+}
+```
+
+
+```{r}
+CI_a_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_A, f_ci_upper = a_ci_upper_p3avg, f_ci_lower = a_ci_lower_p3avg, gbar = p3_avg_signals_all$A$get0Function(), omega = omega)
+CI_cp_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_CP, f_ci_upper = cp_ci_upper_p3avg, f_ci_lower = cp_ci_lower_p3avg, gbar = p3_avg_signals_all$CP$get0Function(), omega = omega)
+CI_freq_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_FREQ, f_ci_upper = freq_ci_upper_p3avg, f_ci_lower = freq_ci_lower_p3avg, gbar = p3_avg_signals_all$FREQ$get0Function(), omega = omega)
+CI_scd_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_SCD, f_ci_upper = scd_ci_upper_p3avg, f_ci_lower = scd_ci_lower_p3avg, gbar = p3_avg_signals_all$SCD$get0Function(), omega = omega)
+
+saveRDS(object = list(
+  CI_a_p3avg = CI_a_p3avg,
+  CI_cp_p3avg = CI_cp_p3avg,
+  CI_freq_p3avg = CI_freq_p3avg,
+  CI_scd_p3avg = CI_scd_p3avg
+), file = "../data/CI_p3avg_funcs_SC.rds")
+```
+
+```{r echo=FALSE}
+x <- seq(0, 1, length.out = 200)
+y <- seq(0, 1, length.out = 200)
+
+compute_z_p3avg <- function(varname, x, y, interp = NA_real_) {
+  # We cannot call outer because our functions are not properly vectorized.
+  #z <- outer(X = x, Y = y, FUN = CI_req_p3avg)
+  f <- if (varname == "A") {
+    CI_a_p3avg
+  } else if (varname == "CP") {
+    CI_cp_p3avg
+  } else if (varname == "FREQ") {
+    CI_freq_p3avg
+  } else {
+    CI_scd_p3avg
+  }
+  
+  z <- matrix(nrow = length(x), ncol = length(y))
+  for (i in 1:length(x)) {
+    for (j in 1:length(y)) {
+      z[i, j] <- f(x = x[i], y = y[j])
+    }
+  }
+  
+  res <- list(x = x, y = y, z = z)
+  
+  if (!is.na(interp)) {
+    res <- fields::interp.surface.grid(obj = res, grid.list = list(
+      x = seq(from = min(x), to = max(x), length.out = interp),
+      y = seq(from = min(y), to = max(y), length.out = interp)))
+  }
+  
+  res
+}
+```
+
+
+```{r}
+z_a <- loadResultsOrCompute(file = "../results/ci_p3avg_z_a.rds", computeExpr = {
+  compute_z_p3avg(varname = "A", x = x, y = y)
+})
+z_cp <- loadResultsOrCompute(file = "../results/ci_p3avg_z_cp.rds", computeExpr = {
+  compute_z_p3avg(varname = "CP", x = x, y = y)
+})
+z_freq <- loadResultsOrCompute(file = "../results/ci_p3avg_z_freq.rds", computeExpr = {
+  compute_z_p3avg(varname = "FREQ", x = x, y = y)
+})
+z_scd <- loadResultsOrCompute(file = "../results/ci_p3avg_z_scd.rds", computeExpr = {
+  compute_z_p3avg(varname = "SCD", x = x, y = y)
+})
+```
+
+In figure \ref{fig:p3-emp-cis-sc} we finally show the empirical confidence surfaces for all four variables, as computed over the first two batches of projects.
+
+```{r p3-emp-cis-sc, echo=FALSE, fig.height=8, fig.cap="The empirical confidence intervals for the four variables as mined from the source code of all projects. Higher saturation of the color correlates with higher confidence. Projects with zero weight contribute to the CIs' boundaries, but not to the hyperplane.", fig.align="center", fig.pos="ht!"}
+# Those are the colors from ggplot2
+# cols <- scales::hue_pal()(4)
+par(mfrow=c(2,2))
+
+
+## A:
+image(x = z_a$x, y = z_a$y, z = z_a$z, main = "Variable: A",
+      xlab = "Relative time", ylab = "Relative amount of activity",
+      col = colorRampPalette(colors = c("#ffffff", "#f8766d"))(100), zlim = c(0,1))
+grid()
+
+curve2(p3_avg_signals_all$A$get0Function(), 0, 1, col = "red", add = TRUE)
+curve2(a_ci_upper_p3avg, 0, 1, col = "#f8766d33", add = TRUE, lty = 2)
+curve2(a_ci_lower_p3avg, 0, 1, col = "#f8766d33", add = TRUE, lty = 3)
+
+temp <- append(project_signals, project_signals_2nd_batch)
+for (i in 1:length(temp)) {
+  pId <- names(temp)[i]
+  tempf <- temp[[pId]]$A$get0Function()
+  curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
+       col = "#00000033", lty = c(3, 2), lwd = 2)
+
+
+## CP:
+image(x = z_cp$x, y = z_cp$y, z = z_cp$z, main = "Variable: CP",
+      xlab = "Relative time", ylab = "Relative amount of activity",
+      col = colorRampPalette(colors = c("#ffffff", "#7cae00"))(100), zlim = c(0,1))
+grid()
+
+curve2(p3_avg_signals_all$CP$get0Function(), 0, 1, col = "darkgreen", add = TRUE)
+curve2(cp_ci_upper_p3avg, 0, 1, col = "#7cae0033", add = TRUE, lty = 2)
+curve2(cp_ci_lower_p3avg, 0, 1, col = "#7cae0033", add = TRUE, lty = 3)
+
+temp <- append(project_signals, project_signals_2nd_batch)
+for (i in 1:length(temp)) {
+  pId <- names(temp)[i]
+  tempf <- temp[[pId]]$CP$get0Function()
+  curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
+       col = "#00000033", lty = c(3, 2), lwd = 2)
+
+
+## FREQ:
+image(x = z_freq$x, y = z_freq$y, z = z_freq$z, main = "Variable: FREQ",
+      xlab = "Relative time", ylab = "Relative amount of activity",
+      col = colorRampPalette(colors = c("#ffffff", "#00BFC4"))(100), zlim = c(0,1))
+grid()
+
+curve2(p3_avg_signals_all$FREQ$get0Function(), 0, 1, col = "blue", add = TRUE)
+curve2(freq_ci_upper_p3avg, 0, 1, col = "#00BFC433", add = TRUE, lty = 2)
+curve2(freq_ci_lower_p3avg, 0, 1, col = "#00BFC433", add = TRUE, lty = 3)
+
+temp <- append(project_signals, project_signals_2nd_batch)
+for (i in 1:length(temp)) {
+  pId <- names(temp)[i]
+  tempf <- temp[[pId]]$FREQ$get0Function()
+  curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+legend(0.01, .98, legend = c("Weight = 0", "Weight > 0"),
+       col = "#00000033", lty = c(3, 2), lwd = 2)
+
+
+## SCD:
+image(x = z_scd$x, y = z_scd$y, z = z_scd$z, main = "Variable: SCD",
+      xlab = "Relative time", ylab = "Source code density",
+      col = colorRampPalette(colors = c("#ffffff", "#C77CFF"))(100), zlim = c(0,1))
+grid()
+
+curve2(p3_avg_signals_all$SCD$get0Function(), 0, 1, col = "purple", add = TRUE)
+curve2(scd_ci_upper_p3avg, 0, 1, col = "#C77CFF33", add = TRUE, lty = 2)
+curve2(scd_ci_lower_p3avg, 0, 1, col = "#C77CFF33", add = TRUE, lty = 3)
+
+temp <- append(project_signals, project_signals_2nd_batch)
+for (i in 1:length(temp)) {
+  pId <- names(temp)[i]
+  tempf <- temp[[pId]]$SCD$get0Function()
+  curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+}
+
+legend(0.325, .22, legend = c("Weight = 0", "Weight > 0"),
+       col = "#00000033", lty = c(3, 2), lwd = 2)
+```
+
+
 
 ## Pattern III (b)\label{ssec:score-pattern3}
 
