@@ -3135,9 +3135,7 @@ stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
 With this linear combination of only three scores (out of six), we were able to significantly boost the detection to $\approx0.96$, which implies that combining both methods is of worth for a detection using (inhomogeneous) confidence intervals only. If we only combine the scores of the variable `REQ` into a model, we still achieve a correlation of $\approx0.88$. This should probably be preferred to keep the degrees of freedom low, countering overfitting. Using four or more scores goes beyond $0.97$.
 
 
-### Variable importance: most important scores
-
-TODO: MOVE THIS SECTION p.g.a. `p3_it_scores`
+### Variable importance: most important scores\label{sssec:var-imp-it}
 
 In the report for source code data (section \ref{sssec:var-imp}), we have previously determined the most important features. We'll do the same computation here. The results will then allow us to compare against the relative importances as determined by source code data.
 
@@ -3148,18 +3146,19 @@ rfe_data_it <- cbind(
 ```
 
 ```{r warning=FALSE}
-library(caret)
+library(caret, quietly = TRUE)
 
 set.seed(1337)
 
-control <- caret::trainControl(method="repeatedcv", number=10, repeats=3)
-modelFit_it_all <- caret::train(gt ~., data=rfe_data_it, method="pls", trControl=control)
+control <- caret::trainControl(method = "repeatedcv", number = 10, repeats = 3)
+modelFit_it_all <- caret::train(gt ~., data = rfe_data_it, method = "pls", trControl = control)
 
 imp_it_all <- caret::varImp(object = modelFit_it_all)
 ```
 
-```{r var-imp-all-features, echo=FALSE, fig.height=4.5, fig.cap="Variable-importance for all features (activities) for predicting the ground truth.", fig.align="center", fig.pos="ht!"}
-plot(imp_it_all)
+```{r var-imp-all-features, echo=FALSE, fig.height=6.5, fig.cap="Normalized variable-importance for all features (activities) for predicting the ground truth, relative to each other and expressed in percent.", fig.align="center", fig.pos="ht!"}
+
+plot_var_imp(imp_it_all)
 ```
 
 The `DESC`-activity with its three most important and dominating features Peak, RMS, and ImpulseFactor dominates the field, which could be due to, e.g., the `DESC`-activity being less characteristic than the others, ergo we get a more coherent predictor. Also, the first three features are quite similar to each other. The resulting model uses __`r modelFit_it_all$bestTune$ncomp`__ components.
@@ -3181,23 +3180,24 @@ temp <- loadResultsOrCompute(file = "../results/modelFit_it_3.rds", computeExpr 
     "desc" = caret::train(gt ~., data=rfe_data_it[cols_desc], method="pls", trControl=control))
 })
 
-modelFit_it_req <- temp$req
-modelFit_it_dev <- temp$dev
-modelFit_it_desc <- temp$desc
-
-imp_it_req <- caret::varImp(object = modelFit_it_req)
-imp_it_dev <- caret::varImp(object = modelFit_it_dev)
-imp_it_desc <- caret::varImp(object = modelFit_it_desc)
+imp_it_req <- caret::varImp(object = temp$req)
+imp_it_dev <- caret::varImp(object = temp$dev)
+imp_it_desc <- caret::varImp(object = temp$desc)
 ```
 
 
-When comparing figures \ref{fig:var-imp-all-features} and \ref{fig:var-imp-all-features-sep}, we observe that
+When comparing figures \ref{fig:var-imp-all-features} and \ref{fig:var-imp-all-features-sep}, we observe that the importance of features varies if we were to predict a ground truth on a per-activity basis. We also observe some features being important in all cases, such as RMS, or the Jensen--Shannon divergence.
 
 
-```{r var-imp-all-features-sep, echo=FALSE, fig.height=4.5, fig.cap="Variable-importance for all features (activities) separately for predicting the ground truth on a per-activity basis.", fig.align="center", fig.pos="ht!"}
-temp <- imp_it_req
-temp$importance <- rbind(temp$importance, imp_it_dev$importance, imp_it_desc$importance)
-plot(temp)
+```{r var-imp-all-features-sep, echo=FALSE, fig.height=5, fig.cap="Variable-importance for all features (activities) separately for predicting the ground truth on a per-activity basis (normalized and relative).", fig.align="center", fig.pos="ht!"}
+
+temp <- rbind(
+  cbind(imp_it_req$importance, data.frame(Activity = rep("REQ", nrow(imp_it_req$importance)))),
+  cbind(imp_it_dev$importance, data.frame(Activity = rep("DEV", nrow(imp_it_dev$importance)))),
+  cbind(imp_it_desc$importance, data.frame(Activity = rep("DESC", nrow(imp_it_desc$importance)))))
+temp$Activity <- factor(temp$Activity, levels = unique(temp$Activity), ordered = TRUE)
+
+plot_var_imp(temp) + facet_wrap(Activity~., scales = "free_y", ncol = 2)
 ```
 
 
@@ -4121,7 +4121,7 @@ plot_all_req_dev
 The six new projects in figure \ref{fig:project-it-vars-2nd-batch} look like they do in the excel, the import was successful.
 
 
-## Evaluating of the binary decision rule
+## Evaluating of the binary decision rule\label{ssec:eval-dr-2nd-batch}
 
 Here we will evaluate the existing binary decision rule to find out whether it can classify the second batch of projects correctly.
 
@@ -4263,17 +4263,43 @@ p3_avg_lm_2nd_batch_scores[p3_avg_lm_2nd_batch_scores > 1] <- 1
 stats::cor(p3_avg_lm_2nd_batch_scores, ground_truth_2nd_batch$consensus_score)
 ```
 
-These results mean that the prediction is anti-proportional to the ground truth, and weak at the same time. It is actually worse to have a negative correlation than having no correlation. This can only be interpreted as our previously trained regression model not being able to generalize to new, unseen data. This is expected, since a) we did not have sufficient training data, and b) the previous regression model being overfit on the previous data. However, and I wrote that before, the main point of these regression models was translation and scaling of the scores, not prediction. For that, much more data is required (both, instances and features, as the selected features cannot capture all of the important aspects of the deviation process and process model). Furthermore, these regression models (including the one we built for the source code data) were built using hand-picked features. Ideally, we would have a great number of different features, paired with something like a recursive feature elimination, in order to come up with a regression model that has reliable generalizability. Therefore, I am inclined not to repeat this exercise with the source code data, as we will have the same problem there. I will add a section about RFE and cross-validation and do that instead.
+These results mean that the prediction is anti-proportional to the ground truth, and weak at the same time. It is actually worse to have a negative correlation than having no correlation. This can only be interpreted as our previously trained regression model not being able to generalize to new, unseen data. This is expected, since a) we did not have sufficient training data, and b) the previous regression model being overfit on the previous data. However, and I wrote that before, the main point of these regression models was translation and scaling of the scores, not prediction. For that, much more data is required (both, instances and features, as the selected features cannot capture all of the important aspects of the deviation process and process model). Furthermore, these regression models (including the one we built for the source code data) were built using hand-picked features. Ideally, we would have a great number of different features, paired with something like a recursive feature elimination, in order to come up with a regression model that has reliable generalizability. Therefore, I am inclined not to repeat this exercise with the source code data, as we will have the same problem there.
 
 
 ## Predicting using the best RFE model
 
-TODO
+We have previously computed the variable importances in section \ref{sssec:var-imp-it}, using the first batch of projects. We will not attempt this for the second batch. Rather, we will use the best model as found by the recursive feature elimination and use it to make predictions on the second batch. Previously, we evaluated the binary decision rule on the new projects (cf. section \ref{ssec:eval-dr-2nd-batch}).
+
+```{r}
+p3_it_2nd_batch_scores <- loadResultsOrCompute(file = "../results/p3_it_2nd_batch_scores.rds", computeExpr = {
+  p3_it_projects_2nd_batch <- time_warp_wrapper(
+    pattern = p3_it_signals, derive = FALSE,
+    use_signals = all_signals_2nd_batch, use_ground_truth = ground_truth_2nd_batch)
+  
+  as.data.frame(
+    compute_all_scores_it(
+      alignment = p3_it_projects_2nd_batch, patternName = "p3_it", vartypes = names(p3_it_signals)))
+})
+```
+
+```{r}
+# Note that these predictions are already scaled!
+p3_avg_rfe_2nd_batch_scores <- stats::predict(object = modelFit_it_all, p3_it_2nd_batch_scores)
+# Since we are attempting a regression to positive scores,
+# we set any negative predictions to 0. Same goes for >1.
+p3_avg_rfe_2nd_batch_scores[p3_avg_rfe_2nd_batch_scores < 0] <- 0
+p3_avg_rfe_2nd_batch_scores[p3_avg_rfe_2nd_batch_scores > 10] <- 10
+
+`names<-`(round(p3_avg_rfe_2nd_batch_scores, 4), rownames(ground_truth_2nd_batch))
+stats::cor(p3_avg_rfe_2nd_batch_scores, ground_truth_2nd_batch$consensus)
+```
+
+These results are similarly worse to those obtained from the previous section, where we predicted using the linear model. The only conclusion we can now draw confidently is that we have insufficient training data in order to train a model that can generalize to new data (likely both, instances and feature granularity). However, the features we found to be most important have a good chance to be actually the most important ones. If we were to repeat the variable-importance experiment with a lot more data (projects), we might get a similar ranking and relative importance. It is only that currently, the amount of data does not suffice to generalize from the observations, even if we have a good selection and weighting of features.
 
 
 
+# References {-}
 
-
-
+<div id="refs"></div>
 
 
