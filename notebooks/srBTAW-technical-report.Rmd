@@ -35,6 +35,9 @@ output:
 \newcommand{\infdiv}[2]{#1\;\|\;#2}
 
 ```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+Sys.setenv(LANG = "en_US.UTF-8")
+Sys.setenv(LC_ALL = "en_US.UTF-8")
+Sys.setenv(LC_CTYPE = "en_US.UTF-8")
 library(knitr)
 opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
 ```
