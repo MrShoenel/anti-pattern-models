@@ -2207,10 +2207,14 @@ z_scd <- loadResultsOrCompute(file = "../results/ci_p3avg_z_scd.rds", computeExp
 
 In figure \ref{fig:p3-emp-cis-sc} we finally show the empirical confidence surfaces for all four variables, as computed over the first two batches of projects.
 
-```{r p3-emp-cis-sc, echo=FALSE, fig.height=8, fig.cap="The empirical confidence intervals for the four variables as mined from the source code of all projects. Higher saturation of the color correlates with higher confidence. Projects with zero weight contribute to the CIs' boundaries, but not to the hyperplane.", fig.align="center", fig.pos="ht!"}
+```{r p3-emp-cis-sc, echo=FALSE, fig.height=7, fig.cap="The empirical confidence intervals for the four variables as mined from the source code of all projects. Higher saturation of the color correlates with higher confidence. Projects with zero weight contribute to the CIs' boundaries, but not to the hyperplane.", fig.align="center", fig.pos="ht!"}
 # Those are the colors from ggplot2
 # cols <- scales::hue_pal()(4)
-par(mfrow=c(2,2))
+par(mfrow = c(2, 2),     # 2x2 layout
+    oma = c(0, 0, 0, 0), # two rows of text at the outer left and bottom margin
+    mar = c(4, 3, 3, 1), # space for one row of text at ticks and to separate plots
+    mgp = c(2, 1, 0),    # axis label at 2 rows distance, tick labels at 1 row
+    xpd = NA)  
 
 
 ## A:
