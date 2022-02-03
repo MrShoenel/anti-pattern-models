@@ -629,7 +629,7 @@ curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
 legend(0, 1, legend = c("cum. emp. req%", "cum. emp. dev%", "cum. emp. desc%"), col = c("blue", "red", "forestgreen"), lty = 1, lwd = 2)
 ```
 
-### Determining an empirical and inhomogeneous confidence interval
+### Determining an empirical and inhomogeneous confidence interval\label{sssec:inhomo-conf-interval}
 
 Also, we want to calculate an empirical confidence interval and -surface, based on the projects' data and the consensus of the ground truth. The boundary of the lower confidence interval is defined as the infimum of all signals (and the upper CI as the supremum of all signals):
 
@@ -2236,36 +2236,36 @@ Also, for the running the projects against type-IV patterns, we'll need to compu
 ```{r}
 use_span <- 0.35
 
-time_warp_wrapper <- function(pattern, derive = FALSE) {
+time_warp_wrapper <- function(pattern, derive = FALSE, use_signals = all_signals, use_ground_truth = ground_truth) {
   signals <- list()
   
-  for (project in paste0("Project", rownames(ground_truth))) {
+  for (project in paste0("Project", rownames(use_ground_truth))) {
     temp <- list()
     if (derive) {
       temp[["REQ"]] <- Signal$new(
         name = paste0(project, "_REQ"), support = c(0,1), isWp = FALSE,
         func = smooth_signal_loess(
-          x = 1:nrow(all_signals[[project]]$data),
-          y = cumsum(all_signals[[project]]$data$req),
+          x = 1:nrow(use_signals[[project]]$data),
+          y = cumsum(use_signals[[project]]$data$req),
           span = use_span, family = "g"))
       temp[["DEV"]] <- Signal$new(
         name = paste0(project, "_DEV"), support = c(0,1), isWp = FALSE,
         func = smooth_signal_loess(
-          x = 1:nrow(all_signals[[project]]$data),
-          y = cumsum(all_signals[[project]]$data$dev),
+          x = 1:nrow(use_signals[[project]]$data),
+          y = cumsum(use_signals[[project]]$data$dev),
           span = use_span, family = "g"))
       temp[["DESC"]] <- Signal$new(
         name = paste0(project, "_DESC"), support = c(0,1), isWp = FALSE,
         func = smooth_signal_loess(
-          x = 1:nrow(all_signals[[project]]$data),
-          y = cumsum(all_signals[[project]]$data$desc),
+          x = 1:nrow(use_signals[[project]]$data),
+          y = cumsum(use_signals[[project]]$data$desc),
           span = use_span, family = "g"))
     } else {
-      temp[["REQ"]] <- all_signals[[project]]$REQ$clone()
+      temp[["REQ"]] <- use_signals[[project]]$REQ$clone()
       temp$REQ$.__enclos_env__$private$name <- paste0(project, "_REQ")
-      temp[["DEV"]] <- all_signals[[project]]$DEV$clone()
+      temp[["DEV"]] <- use_signals[[project]]$DEV$clone()
       temp$DEV$.__enclos_env__$private$name <- paste0(project, "_DEV")
-      temp[["DESC"]] <- all_signals[[project]]$DESC$clone()
+      temp[["DESC"]] <- use_signals[[project]]$DESC$clone()
       temp$DESC$.__enclos_env__$private$name <- paste0(project, "_DESC")
     }
     signals[[project]] <- time_warp_project(
