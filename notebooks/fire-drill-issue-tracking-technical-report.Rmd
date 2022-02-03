@@ -4044,9 +4044,16 @@ So, in order to obtain predictions, we need to do n things:
 ```{r}
 ground_truth_2nd_batch <- read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";")
 ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus / 10
+rownames(ground_truth_2nd_batch) <- paste0((1+nrow(ground_truth)):(nrow(ground_truth)+nrow(ground_truth_2nd_batch)))
 ```
 
 We have ground truth available for the second batch. Again, the two raters assessed it independently first, and only later found a consensus. The a priori agreement between both raters was better this time, as the quadratic weighted Kappa increased substantially to a value of __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = ground_truth_2nd_batch$rater.a, rater.b = ground_truth_2nd_batch$rater.b, min.rating = 0, max.rating = 10), 3)`__. Table \ref{tab:groundtruth-2nd-batch} shows the ground truth for the new projects `[10-15]`.
+
+```{r echo=FALSE}
+temp <- rbind(ground_truth, ground_truth_2nd_batch)
+```
+
+The quadratic weighted Kappa for the entirety of __both batches__ is __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = temp$rater.a, rater.b = temp$rater.b, min.rating = 0, max.rating = 10), 3)`__.
 
 
 ```{r echo=FALSE}
