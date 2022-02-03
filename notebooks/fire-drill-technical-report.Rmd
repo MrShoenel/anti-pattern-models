@@ -198,7 +198,7 @@ The ground truth was extracted from nine student-conducted projects. Seven of th
 student_projects <- read.csv(file = "../data/student-projects.csv", sep = ";")
 ```
 
-We have a total of:
+In the first batch, we have a total of:
 
 * Nine projects,
 * `r length(unique(student_projects$AuthorNominalLabel))` authors that authored `r nrow(student_projects)` commits total which are of type
@@ -376,7 +376,7 @@ for (pId in levels(student_projects$project)) {
 ```
 
 
-```{r project-vars, echo=FALSE, fig.cap="All variables over each project's time span", fig.align="top", fig.pos="ht!"}
+```{r project-vars, echo=FALSE, fig.cap="All variables over each project's time span (first batch of projects).", fig.align="top", fig.pos="ht!"}
 plot_all_acp <- ggplot(data = tempdf, aes(x = x, y = y, color = v)) +
   geom_line() +
   facet_wrap(p ~.) +
@@ -1826,8 +1826,9 @@ modelFit <- caret::train(gt ~., data=rfe_data, method="pls", trControl=control)
 imp <- caret::varImp(object = modelFit)
 ```
 
-```{r p3-avg-no-var-imp-plot, warning=FALSE, echo=FALSE, fig.cap="Plot of the relative variable importances of scores as computed against pattern III (average).", fig.align="top", fig.pos="ht!"}
-plot(imp)
+```{r p3-avg-no-var-imp-plot, warning=FALSE, echo=FALSE, fig.height=5, fig.cap="Plot of the relative variable importances of scores as computed against pattern III (average).", fig.align="top", fig.pos="ht!"}
+
+plot_var_imp(imp)
 ```
 
 
