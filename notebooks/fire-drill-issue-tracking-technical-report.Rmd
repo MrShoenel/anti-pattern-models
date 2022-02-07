@@ -2696,6 +2696,101 @@ if (interactive()) {
 In table \ref{tab:p1-bin-detect} we show the results of the binary detection, which is based on the manually defined homogeneous confidence intervals.
 
 
+#### Manually adjusting the rule
+
+Through manual inspection, we found out that the decision rule can be re-calibrated in order to achieve 100% accuracy on the projects. If the thresholds were $y_1=0.73$ (instead of $0.8$) and $y_4=0.69$ (instead of $0.7), not only would the detection results align perfectly with the ground truth assessment (eliminating both false positives), but also $I_1$ no longer be detected in all projects, failing in projects 2, 6 and 7.
+
+
+#### Automatically adjusting the rule
+
+In order to automatically adjust the thresholds, we could use a global search. This should work well because the problem is tiny and can be quickly evaluated. First, we define a function to return the accuracy given some thresholds. This function can then be used in the optimizer:
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+# This is actually only done later, but I need to load it here
+ground_truth_2nd_batch <- read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";")
+ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus / 10
+rownames(ground_truth_2nd_batch) <- paste0((1+nrow(ground_truth)):(nrow(ground_truth)+nrow(ground_truth_2nd_batch)))
+library(readxl)
+all_signals_2nd_batch <- list()
+for (pId in paste0("Project", 10:15)) {
+  all_signals_2nd_batch[[pId]] <- load_project_issue_data(pId = pId)
+}
+```
+
+
+```{r}
+eval_thresholds <- (function() {
+  temp <- append(all_signals, all_signals_2nd_batch)
+  gt <- c(ground_truth$consensus >= 5, ground_truth_2nd_batch$consensus >= 5)
+  function(x) {
+    det <- sapply(X = names(temp), FUN = function(pName) {
+      p1_dr(projName = pName, signals = temp, y = x)
+    })
+    sum(det == gt) / length(gt)
+  }
+})()
+```
+
+Using the above function and the manually re-calibrated thresholds, we get an accuracy of `1`:
+
+```{r}
+eval_thresholds(c(0.73, 0.4, 0.15, 0.69, 0.15))
+```
+
+Now let's try to find thresholds using a global search:
+
+
+```{r}
+set.seed(1337)
+
+x0 <- c(0.8, 0.4, 0.15, 0.7, 0.15)
+
+nloptr(
+  x0 = x0,
+  eval_f = function(x) {
+    1 - eval_thresholds(x=x)
+  },
+  lb = c(0.7, 0.3, 0.05, 0.6, 0.05),
+  ub = c(0.9, 0.5, 0.25, 0.8, 0.25),
+  opts = list(
+    stopval = 0, # any solution with accuracy=1 is optimal!
+    algorithm = "NLOPT_GN_DIRECT_L_RAND"),
+)
+```
+
+Re-running this global search produces different optimal solutions, such as $\bm{y}=\{0.8,0.4,0.15,0.666,0.15\}^\top$, $\bm{y}=\{0.8,0.4,0.0833,0.633,0.15\}^\top$, $\bm{y}=\{0.8,0.333,0.083,0.633,0.15\}^\top$, or $\bm{y}=\{0.722,0.1,0.5,0.1,0.177\}^\top$.
+
+As an experiment, we could also force to find an optimal solution that is maximally far away from our manually found solution ($\bm{x}_0$), by adding some regularization:
+
+```{r}
+res <- loadResultsOrCompute(file = "../results/p1_optim_y.rds", computeExpr = {
+  set.seed(1339)
+
+  req_max <- sqrt(sum((c(0, 1, 1, 0, 1) - x0)^2)) # ~1.7141
+  
+  res <- nloptr::nloptr(
+    x0 = x0,
+    eval_f = function(x) {
+      acc <- eval_thresholds(x=x)
+      reg <- sqrt(sum((x - x0)^2)) / req_max # the max is ~1.7131 using the bounds 0,1
+      # We want to maximize accuracy + reg (increase distance)!
+      -log(reg + 2*acc) # accuracy is twice as important!
+    },
+    lb = rep(0, 5),
+    ub = rep(1, 5),
+    opts = list(
+      maxeval = 1e4,
+      stopval = -log(3 - sqrt(.Machine$double.eps)), # ~-1.0986 but we're not gonna get there
+      algorithm = "NLOPT_GN_DIRECT_L_RAND"),
+  )
+})
+
+res
+```
+
+So I have re-run this a couple of times, and it appears that there is a small solution space that is maximally far away, where the first four values for $\bm{y}$ are $\approx\{1,0,1,0\}$, and $y_5$ gets pushed towards $0.18$, but ultimately needs to be lower than that ($\approx 0.179$).
+
+
 ### Average distance to reference (pattern type I)
 
 As a bonus, to demonstrate the versatility and robustness of this method, we will score the projects against the first pattern, and the second pattern type II (a), which is supposed to be a slight improvement over type I. We will use the variables and confidence intervals as they were defined there, i.e., those are neither data-based nor data-enhanced. For the following tests, the variables `REQ` and `DEV` will be considered, as `DESC` does not have non-empirical confidence intervals.
@@ -4050,13 +4145,13 @@ ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus / 10
 rownames(ground_truth_2nd_batch) <- paste0((1+nrow(ground_truth)):(nrow(ground_truth)+nrow(ground_truth_2nd_batch)))
 ```
 
-We have ground truth available for the second batch. Again, the two raters assessed it independently first, and only later found a consensus. The a priori agreement between both raters was better this time, as the quadratic weighted Kappa increased substantially to a value of __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = ground_truth_2nd_batch$rater.a, rater.b = ground_truth_2nd_batch$rater.b, min.rating = 0, max.rating = 10), 3)`__. Table \ref{tab:groundtruth-2nd-batch} shows the ground truth for the new projects `[10-15]`.
+We have ground truth available for the second batch. Again, the two raters assessed it independently first, and only later found a consensus. The a priori agreement between both raters was better this time, as the quadratic weighted Kappa increased substantially to a value of __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = ground_truth_2nd_batch$rater.a, rater.b = ground_truth_2nd_batch$rater.b, min.rating = 0, max.rating = 10), 3)`__ (correlation is __`r round(stats::cor(x = ground_truth_2nd_batch$rater.a, y = ground_truth_2nd_batch$rater.b), 3)`__). Table \ref{tab:groundtruth-2nd-batch} shows the ground truth for the new projects `[10-15]`.
 
 ```{r echo=FALSE}
 temp <- rbind(ground_truth, ground_truth_2nd_batch)
 ```
 
-The quadratic weighted Kappa for the entirety of __both batches__ is __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = temp$rater.a, rater.b = temp$rater.b, min.rating = 0, max.rating = 10), 3)`__.
+For the entirety of __both batches__, the quadratic weighted Kappa is __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = temp$rater.a, rater.b = temp$rater.b, min.rating = 0, max.rating = 10), 3)`__, and the Pearson correlation of both raters' assessments is __`r round(stats::cor(x = temp$rater.a, y = temp$rater.b), 3)`__.
 
 
 ```{r echo=FALSE}
