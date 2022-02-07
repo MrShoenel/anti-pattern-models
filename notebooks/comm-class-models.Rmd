@@ -211,7 +211,7 @@ if (!interactive()) {
     x = temp[, 1:7],
     booktabs = TRUE,
     caption = "Correlations of models' predictions (part 1).",
-    label = "model-prediction-correlation"
+    label = "model-prediction-correlation1"
   )
 }
 ```
@@ -222,7 +222,7 @@ if (!interactive()) {
     x = temp[, 8:ncol(temp)],
     booktabs = TRUE,
     caption = "Correlations of models' predictions (part 2).",
-    label = "model-prediction-correlation"
+    label = "model-prediction-correlation2"
   )
 }
 ```

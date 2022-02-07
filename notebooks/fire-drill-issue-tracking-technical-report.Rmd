@@ -4331,7 +4331,7 @@ if (interactive()) {
     x = p3_avg_area_2nd_batch_scores,
     booktabs = TRUE,
     caption = "The average distance of the variables REQ, DEV and DESC of each of the second batch's projects to the previously averaged reference-variables $\\overline{\\operatorname{REQ}},\\overline{\\operatorname{DEV}},\\overline{\\operatorname{DESC}}$ as computed over tethe first batch.",
-    label = "p3-avg-ci-2nd-batch-scores"
+    label = "p3-avg-area-2nd-batch-scores"
   )
 }
 ```
