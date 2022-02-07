@@ -1235,6 +1235,148 @@ saveTikzExpr(name = "emp_ci_req_dev", height = 7.7, expr = plotexpr)
 ```
 
 
+```{r}
+z_a <- loadResultsOrCompute(file = "../results/ci_p3avg_z_a.rds", computeExpr = {
+  compute_z_p3avg(varname = "A", x = x, y = y)
+})
+z_cp <- loadResultsOrCompute(file = "../results/ci_p3avg_z_cp.rds", computeExpr = {
+  compute_z_p3avg(varname = "CP", x = x, y = y)
+})
+z_freq <- loadResultsOrCompute(file = "../results/ci_p3avg_z_freq.rds", computeExpr = {
+  compute_z_p3avg(varname = "FREQ", x = x, y = y)
+})
+z_scd <- loadResultsOrCompute(file = "../results/ci_p3avg_z_scd.rds", computeExpr = {
+  compute_z_p3avg(varname = "SCD", x = x, y = y)
+})
+
+
+plotexpr <- rlang::expr({
+  par(mfrow=c(4,1), mar=c(2,4,1,.8), family = "LM Roman 10", cex.axis = 1.5, oma=rep(0,4))
+  # par(mar = c(5,4,0,1), family = "LM Roman 10", cex.axis = 1.1)
+  # layout(mat = matrix(data = c(1,0,2, 0,0,0, 3,0,4), byrow = TRUE, ncol = 3),
+  #        heights = c(10,2,10), widths = c(10,2,10))
+  
+  
+  
+  tempz <- fields::interp.surface.grid(obj = z_a, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 90), y = seq(from = 0, to = 1, length.out = 90)))
+  fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#f8766d"))(100), zlim = c(0,1),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3)#, legend.cex = 1)
+  title(ylab = "Relative amount of activity", line = 2.5, cex.lab = 1.2)
+  grid()
+  
+  curve2(p3_avg_signals_all$A$get0Function(), 0, 1, col = "red", add = TRUE)
+  curve2(a_ci_upper_p3avg, 0, 1, col = "#f8766d33", add = TRUE, lty = 2)
+  curve2(a_ci_lower_p3avg, 0, 1, col = "#f8766d33", add = TRUE, lty = 3)
+  
+  temp <- append(project_signals, project_signals_2nd_batch)
+  for (i in 1:length(temp)) {
+    pId <- names(temp)[i]
+    tempf <- temp[[pId]]$A$get0Function()
+    curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  legend(0.01, .98, legend = c("A (avg.)", "Weight $=0$", "Weight $>0$"),# bg = "white",
+         col = c("red", rep("#00000033", 2)), lty = c(1, 3, 2), lwd = c(2.5, 2, 2), cex = 1.2)
+  
+  
+  
+  
+  tempz <- fields::interp.surface.grid(obj = z_cp, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 90), y = seq(from = 0, to = 1, length.out = 90)))
+  fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#7CAE00"))(100), zlim = c(0,1),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
+  title(ylab = "Relative amount of activity", line = 2.5, cex.lab = 1.2)
+  grid()
+  
+  curve2(p3_avg_signals_all$CP$get0Function(), 0, 1, col = "darkgreen", add = TRUE)
+  curve2(cp_ci_upper_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 2)
+  curve2(cp_ci_lower_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 3)
+  
+  temp <- append(project_signals, project_signals_2nd_batch)
+  for (i in 1:length(temp)) {
+    pId <- names(temp)[i]
+    tempf <- temp[[pId]]$CP$get0Function()
+    curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  legend(0.01, .98, legend = c("CP (avg.)"),
+         col = "darkgreen", lty = 1, lwd = 2.5, cex = 1.2)
+  
+  
+  
+  
+  tempz <- fields::interp.surface.grid(obj = z_freq, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 90), y = seq(from = 0, to = 1, length.out = 90)))
+  fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#00BFC4"))(100), zlim = c(0,1),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
+  title(ylab = "Relative amount of activity", line = 2.5, cex.lab = 1.2)
+  grid()
+  
+  curve2(p3_avg_signals_all$FREQ$get0Function(), 0, 1, col = "blue", add = TRUE)
+  curve2(freq_ci_upper_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 2)
+  curve2(freq_ci_lower_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 3)
+  
+  temp <- append(project_signals, project_signals_2nd_batch)
+  for (i in 1:length(temp)) {
+    pId <- names(temp)[i]
+    tempf <- temp[[pId]]$FREQ$get0Function()
+    curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  legend(0.01, .98, legend = c("FREQ (avg.)"),
+         col = "blue", lty = 1, lwd = 2.5, cex = 1.2)
+  
+  
+  
+  
+  tempz <- fields::interp.surface.grid(obj = z_scd, grid.list = list(
+    x = seq(from = 0, to = 1, length.out = 90), y = seq(from = 0, to = 1, length.out = 90)))
+  fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
+    xlab = "", ylab = "",
+    col = colorRampPalette(colors = c("#ffffff", "#C77CFF"))(100), zlim = c(0,1),
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
+  title(ylab = "Source code density", line = 2.5, cex.lab = 1.2)
+  grid()
+  
+  curve2(p3_avg_signals_all$SCD$get0Function(), 0, 1, col = "purple", add = TRUE)
+  curve2(scd_ci_upper_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 2)
+  curve2(scd_ci_lower_p3avg, 0, 1, col = "#0000ff33", add = TRUE, lty = 3)
+  
+  temp <- append(project_signals, project_signals_2nd_batch)
+  for (i in 1:length(temp)) {
+    pId <- names(temp)[i]
+    tempf <- temp[[pId]]$SCD$get0Function()
+    curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
+  }
+  
+  legend(0.325, .2, legend = c("SCD (avg.)"),
+         col = "purple", lty = 1, lwd = 2.5, cex = 1.2)
+})
+
+eval(plotexpr)
+```
+
+```{r}
+pdf(file = "../figures/fig_fdfe_emp_ci_req_dev_sc.pdf", width = 3.33, height = 7.5, pointsize = 9)
+eval(plotexpr)
+dev.off()
+```
+
+
+```{r}
+saveTikzExpr(name = "emp_ci_req_dev_sc", height = 7, width = 3.525, expr = plotexpr)
+```
+
+
+
+
 ```{r echo=FALSE, eval=FALSE}
 all_projects_acp <- ggplot(data = student_projects, aes(x = length(label), fill = label)) +
   geom_bar() + facet_grid(label ~ project, labeller = ggplot2::labeller(
