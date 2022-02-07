@@ -17,7 +17,7 @@ find:
 -   [**Data** (CSV)](./data) and (precomputed) [**Results**
     (RDS)](./results) - All data required for reproduction is included.
     All the results, too. Some of them take days to compute, so be
-    aware. Also see (Hönel et al. 2021).
+    aware. Also see (Hönel et al. 2022).
 
 # Abstract
 
@@ -56,16 +56,16 @@ potentially well detectable.
 
 Hönel, Sebastian. 2021. “Technical Reports Compilation: Detecting the
 Fire Drill Anti-Pattern Using Source Code and Issue-Tracking Data.”
-<https://arxiv.org/abs/2104.15090>.
+*CoRR*. <https://doi.org/10.13140/RG.2.2.35805.33766/2>.
 
 </div>
 
 <div id="ref-honel_picha_2021" class="csl-entry">
 
-Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2021.
-“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects with
+Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
+“Detection of the Fire Drill Anti-Pattern: 16 Real-World Projects with
 Ground Truth, Issue-Tracking Data, Source Code Density, Models and
-Code.” Zenodo. <https://doi.org/10.5281/zenodo.4734053>.
+Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
 
 </div>
 
