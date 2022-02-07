@@ -1904,6 +1904,12 @@ for (pId in levels(student_projects_2nd_batch$project)) {
 }
 ```
 
+Below, we show the amount of commits in each project:
+
+```{r}
+table(student_projects_2nd_batch$project)
+```
+
 
 ```{r echo=FALSE}
 project_signals_2nd_batch <- list()
