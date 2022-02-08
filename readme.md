@@ -63,7 +63,7 @@ Fire Drill Anti-Pattern Using Source Code and Issue-Tracking Data.”
 <div id="ref-honel_picha_2021" class="csl-entry">
 
 Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
-“Detection of the Fire Drill Anti-Pattern: 16 Real-World Projects with
+“Detection of the Fire Drill Anti-Pattern: 15 Real-World Projects with
 Ground Truth, Issue-Tracking Data, Source Code Density, Models and
 Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
 
