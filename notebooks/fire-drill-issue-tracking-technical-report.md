@@ -1,3 +1,42 @@
+---
+author: Sebastian Hönel
+bibliography: ../inst/REFERENCES.bib
+date: February 08, 2022
+header-includes:
+- 
+- 
+- 
+output:
+  bookdown::pdf_document2:
+    df_print: kable
+    fig_caption: yes
+    keep_tex: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+  html_document:
+    df_print: kable
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+  md_document:
+    df_print: kable
+    toc: yes
+    toc_depth: 6
+    variant: gfm
+  word_document: default
+title: "Technical Report: Detecting the Fire Drill anti-pattern using
+  issue-tracking data"
+urlcolor: blue
+---
+
+
+
+
+
+
+
 -   [Introduction](#introduction)
 -   [Importing the data](#importing-the-data)
     -   [Ground truth](#ground-truth)
@@ -46,15 +85,23 @@
             surface](#average-confidence-in-overlapped-surface)
         -   [Average direction of steepest confidence
             increase](#average-direction-of-steepest-confidence-increase)
+-   [Correlation of scores](#correlation-of-scores)
+    -   [Pattern I, II(a), and III](#pattern-i-iia-and-iii)
+    -   [Derivative of Pattern I, II(a), and
+        III](#derivative-of-pattern-i-iia-and-iii)
 -   [Scoring of projects (first
     batch)](#scoring-of-projects-first-batch)
     -   [Pattern I](#pattern-i)
         -   [Binary detection decision
             rule](#binary-detection-decision-rule)
-        -   [Average distance to
-            reference](#average-distance-to-reference)
-        -   [Average distance to
-            reference](#average-distance-to-reference-1)
+            -   [Manually adjusting the
+                rule](#manually-adjusting-the-rule)
+            -   [Automatically adjusting the
+                rule](#automatically-adjusting-the-rule)
+        -   [Average distance to reference (pattern
+            type I)](#average-distance-to-reference-pattern-type-i)
+        -   [Average distance to reference (pattern type II
+            (a))](#average-distance-to-reference-pattern-type-ii-a)
     -   [Pattern III (average)](#pattern-iii-average)
         -   [Scoring based on the confidence
             intervals](#scoring-based-on-the-confidence-intervals)
@@ -62,6 +109,8 @@
             average](#scoring-based-on-the-distance-to-average)
         -   [Linear combination of the two
             methods](#linear-combination-of-the-two-methods)
+        -   [Variable importance: most important
+            scores](#variable-importance-most-important-scores)
         -   [Arbitrary-interval scores
             computing](#arbitrary-interval-scores-computing)
         -   [Process alignment: DTW, Optimization,
@@ -77,12 +126,13 @@
 -   [Scoring of projects (2nd batch)](#scoring-of-projects-2nd-batch)
     -   [Ground truth](#ground-truth-1)
     -   [Loading the new projects](#loading-the-new-projects)
+    -   [Evaluating of the binary decision
+        rule](#evaluating-of-the-binary-decision-rule)
     -   [Computing the scores](#computing-the-scores)
     -   [Predicting the ground truth](#predicting-the-ground-truth)
--   [Correlation of scores](#correlation-of-scores)
-    -   [Pattern I, II(a), and III](#pattern-i-iia-and-iii)
-    -   [Derivative of Pattern I, II(a), and
-        III](#derivative-of-pattern-i-iia-and-iii)
+    -   [Predicting using the best RFE
+        model](#predicting-using-the-best-rfe-model)
+-   [References](#references)
 
 # Introduction
 
@@ -95,7 +145,7 @@ with different and additional approaches, i.e., it is not just a
 repetition of the other technical report.
 
 All complementary data and results can be found at Zenodo (Hönel et al.
-2021). This notebook was written in a way that it can be run without any
+2022). This notebook was written in a way that it can be run without any
 additional efforts to reproduce the outputs (using the pre-computed
 results). This notebook has a canonical
 URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-issue-tracking-technical-report.Rmd)</sup>
@@ -2336,6 +2386,334 @@ The angle between the projected (predicted) `DEV`-variable of project 5
 and the average direction of steepest increase in confidence is
  ≈ 84.4<sup>∘</sup>.
 
+# Correlation of scores
+
+This is a new section in the fifth iteration of this report. Similar to
+computing the correlation of scores against all models using source code
+data, we will do this here for each and every pattern based on
+issue-tracking data. We will be using the function
+`score_variable_alignment` (cf. section ) from the technical report
+using source code data. We do not have any phases in the process models
+for issue-tracking data. Therefore, no alignment is required. However,
+we still have to wrap each PM in an alignment, and will do so by
+defining one closed interval, without warping or amplitude correction.
+
+As a preparation for the pseudo-alignment, we need to present each
+project’s signals as instances of `Signal`, as well as each pattern’s
+signals then later. This has been done at the beginning of the report,
+and is stored in `all_signals`. It only requires some slight
+modifications before we can continue.
+
+Also, for the running the projects against type-IV patterns, we’ll need
+to compute their gradients. Recall that the projects’ signals were
+created using a zero-order hold, creating a cumulative quantity that
+increases step-wise, which results in extreme gradients. In section we
+have previously examined which kind of smoothing is perhaps most
+applicable in order to obtain relatively smooth gradients. The
+recommended solution was to use LOESS smoothing with a span of `0.35`,
+and not to go lower than `0.2`. A lower span preserves more details, and
+the results below were computed with a value of `0.35`. We have
+previously run these computations with the value `0.2`, with no
+significant different results.
+
+``` r
+use_span <- 0.35
+
+time_warp_wrapper <- function(pattern, derive = FALSE, use_signals = all_signals, 
+  use_ground_truth = ground_truth) {
+  signals <- list()
+
+  for (project in paste0("Project", rownames(use_ground_truth))) {
+    temp <- list()
+    if (derive) {
+      temp[["REQ"]] <- Signal$new(name = paste0(project, "_REQ"), support = c(0, 
+        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(use_signals[[project]]$data), 
+        y = cumsum(use_signals[[project]]$data$req), span = use_span, family = "g"))
+      temp[["DEV"]] <- Signal$new(name = paste0(project, "_DEV"), support = c(0, 
+        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(use_signals[[project]]$data), 
+        y = cumsum(use_signals[[project]]$data$dev), span = use_span, family = "g"))
+      temp[["DESC"]] <- Signal$new(name = paste0(project, "_DESC"), support = c(0, 
+        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(use_signals[[project]]$data), 
+        y = cumsum(use_signals[[project]]$data$desc), span = use_span, family = "g"))
+    } else {
+      temp[["REQ"]] <- use_signals[[project]]$REQ$clone()
+      temp$REQ$.__enclos_env__$private$name <- paste0(project, "_REQ")
+      temp[["DEV"]] <- use_signals[[project]]$DEV$clone()
+      temp$DEV$.__enclos_env__$private$name <- paste0(project, "_DEV")
+      temp[["DESC"]] <- use_signals[[project]]$DESC$clone()
+      temp$DESC$.__enclos_env__$private$name <- paste0(project, "_DESC")
+    }
+    signals[[project]] <- time_warp_project(pattern = pattern, project = temp, 
+      thetaB = c(0, 1))
+  }
+
+  signals
+}
+```
+
+## Pattern I, II(a), and III
+
+We’ll first have to assemble a list of signals that define each pattern,
+before we can wrap it in an empty alignment and calculate the various
+scores.
+
+``` r
+p1_it_signals <- list(REQ = Signal$new(name = "p1_it_REQ", func = req, support = c(0, 
+  1), isWp = TRUE), DEV = Signal$new(name = "p1_it_DEV", func = dev, support = c(0, 
+  1), isWp = TRUE), DESC = Signal$new(name = "p1_it_DESC", func = desc, support = c(0, 
+  1), isWp = TRUE))
+
+p1_it_projects <- time_warp_wrapper(pattern = p1_it_signals, derive = FALSE)
+```
+
+``` r
+p1_it_scores <- loadResultsOrCompute(file = "../results/p1_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(alignment = p1_it_projects, patternName = "p1_it", 
+    vartypes = names(p1_it_signals)))
+})
+```
+
+Table shows the correlations for each variable. This is different to how
+we did it for source code data. Each variable is shown separately in
+order not to conceal more extreme correlations that would otherwise be
+inaccessible due to aggregation.
+
+|                    | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
+|:-------------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| REQ_area           | 0.96 | 0.98 | 0.93 | 0.81 | 0.86 | 0.91 | 0.96 | 0.89 | 0.87 |
+| DEV_area           | 0.70 | 0.81 | 0.83 | 0.87 | 0.75 | 0.91 | 0.76 | 0.74 | 0.64 |
+| DESC_area          | 0.95 | 0.95 | 0.95 | 0.98 | 0.96 | 0.96 | 0.98 | 0.95 | 0.97 |
+| REQ_corr           | 1.00 | 1.00 | 0.99 | 0.98 | 0.97 | 0.98 | 0.99 | 0.98 | 0.98 |
+| DEV_corr           | 0.90 | 0.94 | 0.95 | 0.97 | 0.92 | 0.97 | 0.93 | 0.93 | 0.87 |
+| DESC_corr          | 0.50 | 0.87 | 0.94 | 0.96 | 0.84 | 0.87 | 0.98 | 0.50 | 0.83 |
+| REQ_jsd            | 0.86 | 0.92 | 0.75 | 0.57 | 0.40 | 0.73 | 0.78 | 0.58 | 0.72 |
+| DEV_jsd            | 0.42 | 0.43 | 0.52 | 0.53 | 0.40 | 0.57 | 0.45 | 0.46 | 0.38 |
+| DESC_jsd           | 0.52 | 0.58 | 0.67 | 0.78 | 0.59 | 0.58 | 0.80 | 0.52 | 0.63 |
+| REQ_kl             | 0.00 | 0.00 | 0.02 | 0.06 | 0.16 | 0.02 | 0.01 | 0.06 | 0.02 |
+| DEV_kl             | 0.15 | 0.14 | 0.09 | 0.08 | 0.15 | 0.06 | 0.12 | 0.12 | 0.18 |
+| DESC_kl            | 0.08 | 0.06 | 0.03 | 0.01 | 0.06 | 0.06 | 0.01 | 0.08 | 0.04 |
+| REQ_arclen         | 0.83 | 0.84 | 0.85 | 0.84 | 0.83 | 0.82 | 0.82 | 0.80 | 0.83 |
+| DEV_arclen         | 0.98 | 0.95 | 0.94 | 0.93 | 0.95 | 0.91 | 0.92 | 0.89 | 0.94 |
+| DESC_arclen        | 0.98 | 1.00 | 0.90 | 0.81 | 0.94 | 0.99 | 0.93 | 0.98 | 0.81 |
+| REQ_sd             | 0.94 | 0.96 | 0.93 | 0.86 | 0.76 | 0.88 | 0.92 | 0.84 | 0.88 |
+| DEV_sd             | 0.67 | 0.71 | 0.81 | 0.78 | 0.68 | 0.89 | 0.71 | 0.75 | 0.66 |
+| DESC_sd            | 0.94 | 0.95 | 0.95 | 0.98 | 0.95 | 0.94 | 0.98 | 0.94 | 0.95 |
+| REQ_var            | 1.00 | 1.00 | 1.00 | 0.98 | 0.94 | 0.99 | 0.99 | 0.97 | 0.99 |
+| DEV_var            | 0.89 | 0.92 | 0.96 | 0.95 | 0.90 | 0.99 | 0.92 | 0.94 | 0.89 |
+| DESC_var           | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| REQ_mae            | 0.96 | 0.98 | 0.93 | 0.81 | 0.86 | 0.91 | 0.96 | 0.89 | 0.87 |
+| DEV_mae            | 0.70 | 0.81 | 0.83 | 0.87 | 0.75 | 0.91 | 0.76 | 0.74 | 0.64 |
+| DESC_mae           | 0.95 | 0.95 | 0.95 | 0.98 | 0.96 | 0.96 | 0.98 | 0.95 | 0.97 |
+| REQ_rmse           | 0.95 | 0.97 | 0.92 | 0.79 | 0.79 | 0.88 | 0.94 | 0.85 | 0.85 |
+| DEV_rmse           | 0.63 | 0.73 | 0.79 | 0.80 | 0.67 | 0.88 | 0.69 | 0.69 | 0.57 |
+| DESC_rmse          | 0.93 | 0.94 | 0.94 | 0.98 | 0.94 | 0.94 | 0.98 | 0.93 | 0.96 |
+| REQ_RMS            | 0.95 | 1.00 | 0.93 | 0.85 | 0.69 | 0.92 | 0.90 | 0.78 | 0.97 |
+| DEV_RMS            | 0.62 | 0.60 | 0.76 | 0.65 | 0.60 | 0.95 | 0.63 | 0.68 | 0.64 |
+| DESC_RMS           | 0.00 | 0.18 | 0.61 | 0.95 | 0.23 | 0.14 | 0.91 | 0.00 | 0.50 |
+| REQ_Kurtosis       | 0.89 | 0.98 | 0.99 | 0.93 | 0.63 | 0.84 | 0.73 | 0.79 | 0.73 |
+| DEV_Kurtosis       | 0.94 | 0.74 | 0.83 | 0.68 | 0.76 | 0.85 | 0.84 | 1.00 | 0.93 |
+| DESC_Kurtosis      | 0.00 | 0.01 | 0.34 | 0.47 | 0.22 | 0.00 | 0.56 | 0.00 | 0.34 |
+| REQ_Peak           | 1.00 | 1.00 | 0.95 | 1.00 | 0.99 | 1.00 | 1.00 | 1.00 | 0.95 |
+| DEV_Peak           | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 |
+| DESC_Peak          | 0.00 | 0.15 | 0.84 | 0.50 | 0.71 | 0.08 | 0.96 | 0.00 | 0.51 |
+| REQ_ImpulseFactor  | 0.95 | 0.98 | 0.96 | 0.73 | 0.83 | 0.87 | 0.97 | 0.85 | 0.86 |
+| DEV_ImpulseFactor  | 0.40 | 0.54 | 0.54 | 0.63 | 0.46 | 0.70 | 0.45 | 0.44 | 0.35 |
+| DESC_ImpulseFactor | 0.00 | 0.42 | 0.57 | 0.32 | 0.11 | 0.52 | 0.75 | 0.00 | 0.33 |
+
+Scores for the aligned projects with pattern I (issue-tracking;
+p=product, m=mean).
+
+The correlation of just the ground truth with all scores is in table .
+
+    ## Warning in stats::cor(ground_truth$consensus, p1_it_scores): the standard
+    ## deviation is zero
+
+| Score      |      Value | Score       |      Value | Score              |      Value |
+|:-----------|-----------:|:------------|-----------:|:-------------------|-----------:|
+| REQ_area   | -0.5187100 | DEV_arclen  |  0.0259164 | DESC_rmse          |  0.5599840 |
+| DEV_area   |  0.2119023 | DESC_arclen | -0.8739954 | REQ_RMS            |  0.1460863 |
+| DESC_area  |  0.4882235 | REQ_sd      |  0.0289615 | DEV_RMS            |  0.1058164 |
+| REQ_corr   | -0.1641480 | DEV_sd      |  0.2512036 | DESC_RMS           |  0.8152119 |
+| DEV_corr   |  0.2042772 | DESC_sd     |  0.5686608 | REQ_Kurtosis       |  0.2631592 |
+| DESC_corr  |  0.5812074 | REQ_var     |  0.1419239 | DEV_Kurtosis       | -0.3622383 |
+| REQ_jsd    | -0.1277921 | DEV_var     |  0.2840502 | DESC_Kurtosis      |  0.7484784 |
+| DEV_jsd    |  0.3730029 | DESC_var    |  0.6121042 | REQ_Peak           | -0.4799340 |
+| DESC_jsd   |  0.7200972 | REQ_mae     | -0.5187037 | DEV_Peak           |         NA |
+| REQ_kl     | -0.0827761 | DEV_mae     |  0.2119031 | DESC_Peak          |  0.5326076 |
+| DEV_kl     | -0.3500757 | DESC_mae    |  0.4882361 | REQ_ImpulseFactor  | -0.4222044 |
+| DESC_kl    | -0.7618455 | REQ_rmse    | -0.3374198 | DEV_ImpulseFactor  |  0.2564932 |
+| REQ_arclen |  0.4237075 | DEV_rmse    |  0.2219994 | DESC_ImpulseFactor |  0.3848855 |
+
+Correlation of the ground truth with all other scores for pattern I
+(issue-tracking).
+
+The correlation matrix looks as in figure .
+
+    ## Warning in stats::cor(temp): the standard deviation is zero
+
+<div class="figure" style="text-align: top">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-it-corr-mat-1.png" alt="Correlation matrix for scores using pattern I (issue-tracking)."  />
+<p class="caption">
+Correlation matrix for scores using pattern I (issue-tracking).
+</p>
+
+</div>
+
+From now on, we’ll only compute the correlation scores for each variable
+without showing intermediate results. We’ll then later build a larger
+matrix with results from all patterns.
+
+``` r
+p2a_it_signals <- list(REQ = Signal$new(name = "p2a_it_REQ", func = req_p2a, support = c(0, 
+  1), isWp = TRUE), DEV = Signal$new(name = "p2a_it_DEV", func = dev_p2a, support = c(0, 
+  1), isWp = TRUE), DESC = Signal$new(name = "p2a_it_DESC", func = desc_p2a, support = c(0, 
+  1), isWp = TRUE))
+
+p2a_it_projects <- time_warp_wrapper(pattern = p2a_it_signals, derive = FALSE)
+```
+
+``` r
+p2a_it_scores <- loadResultsOrCompute(file = "../results/p2a_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(alignment = p2a_it_projects, patternName = "p2a_it", 
+    vartypes = names(p2a_it_signals)))
+})
+```
+
+``` r
+p3_it_signals <- list(REQ = Signal$new(name = "p3_it_REQ", func = req_p3, support = c(0, 
+  1), isWp = TRUE), DEV = Signal$new(name = "p3_it_DEV", func = dev_p3, support = c(0, 
+  1), isWp = TRUE), DESC = Signal$new(name = "p3_it_DESC", func = desc_p3, support = c(0, 
+  1), isWp = TRUE))
+
+p3_it_projects <- time_warp_wrapper(pattern = p3_it_signals, derive = FALSE)
+```
+
+``` r
+p3_it_scores <- loadResultsOrCompute(file = "../results/p3_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(alignment = p3_it_projects, patternName = "p3_it", 
+    vartypes = names(p3_it_signals)))
+})
+```
+
+Let’s attempt to aggregate the correlation scores from the first three
+patterns, and show a plot.
+
+In we show now the correlation scores per variable and score against
+each of the three patterns I, II(a), and III.
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-p2a-p3-corr-scores-1.png" alt="Table with correlation scores for the first three types of patterns, calculated against each variable separately."  />
+<p class="caption">
+Table with correlation scores for the first three types of patterns,
+calculated against each variable separately.
+</p>
+
+</div>
+
+## Derivative of Pattern I, II(a), and III
+
+In the following, we’ll basically repeat calculating the correlation
+scores of against each process model, but this time we will use
+**derivative** models and processes. That is, we will compute the scores
+based on the *rate of change*.
+
+For every cumulative quantity we should apply some smoothing in order to
+get usable gradients. This applies to all projects in all comparisons,
+as well as to process model III, since its variables are weighted
+averages of such quantities.
+
+``` r
+get_smoothed_signal_d1 <- function(name, func) {
+  xvals <- seq(from = 0, to = 1, length.out = 10000)
+  func <- smooth_signal_loess(x = xvals, y = func(xvals), support = c(0, 1), family = "g", 
+    span = use_span)
+
+  temp <- Signal$new(name = name, isWp = TRUE, support = c(0, 1), func = func)
+  Signal$new(name = name, isWp = TRUE, support = c(0, 1), func = temp$get1stOrderPd())
+}
+```
+
+The derivatives of the projects I, II(a) and III look like in the
+following figure :
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p4of-p1-p2a-p3-1.png" alt="Derivative process models type I, II(a) and III, using a smoothing-span of 0.35."  />
+<p class="caption">
+Derivative process models type I, II(a) and III, using a smoothing-span
+of 0.35.
+</p>
+
+</div>
+
+Let’s compute the scores next.
+
+``` r
+# We'll use this custom range to compute scores for area and sd/var/mae/rmse
+use_yrange <- c(-1, 10)
+
+p4p1_it_scores <- loadResultsOrCompute(file = "../results/p4p1_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p1_it_projects, 
+    patternName = "p4p1_it", vartypes = names(p4p1_it_signals)))
+})
+
+p4p2a_it_scores <- loadResultsOrCompute(file = "../results/p4p2a_it_scores.rds", 
+  computeExpr = {
+    as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p2a_it_projects, 
+      patternName = "p4p2a_it", vartypes = names(p4p2a_it_signals)))
+  })
+
+p4p3_it_scores <- loadResultsOrCompute(file = "../results/p4p3_it_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p3_it_projects, 
+    patternName = "p4p3_it", vartypes = names(p4p3_it_signals)))
+})
+```
+
+``` r
+p4All_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
+
+i <- 0
+c_names <- NULL
+for (vt in var_types) {
+  for (pIdx in 1:3) {
+    p_data <- if (pIdx == 1) {
+      p4p1_it_scores
+    } else if (pIdx == 2) {
+      p4p2a_it_scores
+    } else {
+      p4p3_it_scores
+    }
+
+    p4All_it_corr[pIdx, (i * length(score_types) + 1):(i * length(score_types) + 
+      length(score_types))] <- stats::cor(x = ground_truth$consensus_score, 
+      y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
+  }
+
+  i <- i + 1
+
+  c_names <- c(c_names, paste0(vt, "_", score_types))
+}
+
+colnames(p4All_it_corr) <- c_names
+rownames(p4All_it_corr) <- paste0("Pr. ", 1:3)
+p4All_it_corr[is.na(p4All_it_corr)] <- sqrt(.Machine$double.eps)
+```
+
+In figure we show now the correlation scores per variable and score
+against each of the three patterns I, II(a), and III.
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p4of-p1-p2a-p3-corr-scores-1.png" alt="Table with correlation scores for the first three types of patterns, calculated against each variable separately."  />
+<p class="caption">
+Table with correlation scores for the first three types of patterns,
+calculated against each variable separately.
+</p>
+
+</div>
+
 # Scoring of projects (first batch)
 
 In the technical report for detecting the Fire Drill using source code
@@ -2380,10 +2758,10 @@ $$
 This can be encapsulated in a single function:
 
 ``` r
-p1_dr <- function(projName, y = c(0.8, 0.4, 0.15, 0.7, 0.15)) {
-  req <- all_signals[[projName]]$REQ$get0Function()
-  dev <- all_signals[[projName]]$DEV$get0Function()
-  desc <- all_signals[[projName]]$DESC$get0Function()
+p1_dr <- function(projName, y = c(0.8, 0.4, 0.15, 0.7, 0.15), signals = all_signals) {
+  req <- signals[[projName]]$REQ$get0Function()
+  dev <- signals[[projName]]$DEV$get0Function()
+  desc <- signals[[projName]]$DESC$get0Function()
 
   I1 <- req(t_1) < y[1] && req(t_1) > y[2]
   I2 <- dev(t_1) < y[3] && dev(t_2) < y[4]
@@ -2417,7 +2795,149 @@ intervals of pattern I.
 In table we show the results of the binary detection, which is based on
 the manually defined homogeneous confidence intervals.
 
-### Average distance to reference  (pattern type I)
+#### Manually adjusting the rule
+
+Through manual inspection, we found out that the decision rule can be
+re-calibrated in order to achieve 100% accuracy on the projects. If the
+thresholds were *y*<sub>1</sub> = 0.73 (instead of 0.8) and
+*y*<sub>4</sub> = 0.69 (instead of $0.7), not only would the detection
+results align perfectly with the ground truth assessment (eliminating
+both false positives), but also *I*<sub>1</sub> no longer be detected in
+all projects, failing in projects 2, 6 and 7.
+
+#### Automatically adjusting the rule
+
+In order to automatically adjust the thresholds, we could use a global
+search. This should work well because the problem is tiny and can be
+quickly evaluated. First, we define a function to return the accuracy
+given some thresholds. This function can then be used in the optimizer:
+
+``` r
+eval_thresholds <- (function() {
+  temp <- append(all_signals, all_signals_2nd_batch)
+  gt <- c(ground_truth$consensus >= 5, ground_truth_2nd_batch$consensus >= 5)
+  function(x) {
+    det <- sapply(X = names(temp), FUN = function(pName) {
+      p1_dr(projName = pName, signals = temp, y = x)
+    })
+    sum(det == gt)/length(gt)
+  }
+})()
+```
+
+Using the above function and the manually re-calibrated thresholds, we
+get an accuracy of `1`:
+
+``` r
+eval_thresholds(c(0.73, 0.4, 0.15, 0.69, 0.15))
+```
+
+    ## [1] 1
+
+Now let’s try to find thresholds using a global search:
+
+``` r
+set.seed(1337)
+
+x0 <- c(0.8, 0.4, 0.15, 0.7, 0.15)
+
+nloptr(
+  x0 = x0,
+  eval_f = function(x) {
+    1 - eval_thresholds(x=x)
+  },
+  lb = c(0.7, 0.3, 0.05, 0.6, 0.05),
+  ub = c(0.9, 0.5, 0.25, 0.8, 0.25),
+  opts = list(
+    stopval = 0, # any solution with accuracy=1 is optimal!
+    algorithm = "NLOPT_GN_DIRECT_L_RAND"),
+)
+```
+
+    ## 
+    ## Call:
+    ## nloptr(x0 = x0, eval_f = function(x) {    1 - eval_thresholds(x = x)
+    ## }, lb = c(0.7, 0.3, 0.05, 0.6, 0.05), ub = c(0.9, 0.5, 0.25, 
+    ##     0.8, 0.25), opts = list(stopval = 0, algorithm = "NLOPT_GN_DIRECT_L_RAND"))
+    ## 
+    ## 
+    ## 
+    ## Minimization using NLopt version 2.4.2 
+    ## 
+    ## NLopt solver status: 3 ( NLOPT_FTOL_REACHED: Optimization stopped because 
+    ## ftol_rel or ftol_abs (above) was reached. )
+    ## 
+    ## Number of Iterations....: 15 
+    ## Termination conditions:  stopval: 0 
+    ## Number of inequality constraints:  0 
+    ## Number of equality constraints:    0 
+    ## Optimal value of objective function:  0 
+    ## Optimal value of controls: 0.8 0.4 0.08333333 0.6333333 0.15
+
+Re-running this global search produces different optimal solutions, such
+as **y** = {0.8, 0.4, 0.15, 0.666, 0.15}<sup>⊤</sup>,
+**y** = {0.8, 0.4, 0.0833, 0.633, 0.15}<sup>⊤</sup>,
+**y** = {0.8, 0.333, 0.083, 0.633, 0.15}<sup>⊤</sup>, or
+**y** = {0.722, 0.1, 0.5, 0.1, 0.177}<sup>⊤</sup>.
+
+As an experiment, we could also force to find an optimal solution that
+is maximally far away from our manually found solution
+(**x**<sub>0</sub>), by adding some regularization:
+
+``` r
+res <- loadResultsOrCompute(file = "../results/p1_optim_y.rds", computeExpr = {
+  set.seed(1339)
+
+  req_max <- sqrt(sum((c(0, 1, 1, 0, 1) - x0)^2)) # ~1.7141
+  
+  res <- nloptr::nloptr(
+    x0 = x0,
+    eval_f = function(x) {
+      acc <- eval_thresholds(x=x)
+      reg <- sqrt(sum((x - x0)^2)) / req_max # the max is ~1.7131 using the bounds 0,1
+      # We want to maximize accuracy + reg (increase distance)!
+      -log(reg + 2*acc) # accuracy is twice as important!
+    },
+    lb = rep(0, 5),
+    ub = rep(1, 5),
+    opts = list(
+      maxeval = 1e4,
+      stopval = -log(3 - sqrt(.Machine$double.eps)), # ~-1.0986 but we're not gonna get there
+      algorithm = "NLOPT_GN_DIRECT_L_RAND"),
+  )
+})
+
+res
+```
+
+    ## 
+    ## Call:
+    ## nloptr::nloptr(x0 = x0, eval_f = function(x) {
+    ##     acc <- eval_thresholds(x = x)    reg <- sqrt(sum((x - x0)^2))/req_max
+    ##     -log(reg + 2 * acc)
+    ## }, lb = rep(0, 5), ub = rep(1, 5), opts = list(maxeval = 10000, 
+    ##     stopval = -log(3 - sqrt(.Machine$double.eps)), algorithm = "NLOPT_GN_DIRECT_L_RAND"))
+    ## 
+    ## 
+    ## 
+    ## Minimization using NLopt version 2.4.2 
+    ## 
+    ## NLopt solver status: 5 ( NLOPT_MAXEVAL_REACHED: Optimization stopped because 
+    ## maxeval (above) was reached. )
+    ## 
+    ## Number of Iterations....: 10000 
+    ## Termination conditions:  maxeval: 10000  stopval: -1.09861228370106 
+    ## Number of inequality constraints:  0 
+    ## Number of equality constraints:    0 
+    ## Current value of objective function:  -0.991004514452949 
+    ## Current value of controls: 1 8.379398e-16 1 2.982802e-16 0.179224
+
+So I have re-run this a couple of times, and it appears that there is a
+small solution space that is maximally far away, where the first four
+values for **y** are  ≈ {1, 0, 1, 0}, and *y*<sub>5</sub> gets pushed
+towards 0.18, but ultimately needs to be lower than that ( ≈ 0.179).
+
+### Average distance to reference (pattern type I)
 
 As a bonus, to demonstrate the versatility and robustness of this
 method, we will score the projects against the first pattern, and the
@@ -2831,7 +3351,7 @@ par(mfrow = c(1, 2))
 plot(p3_avg_lm, ask = FALSE, which = 1:2)
 ```
 
-![](fire-drill-issue-tracking-technical-report_files/figure-gfm/unnamed-chunk-75-1.png)<!-- -->
+![](fire-drill-issue-tracking-technical-report_files/figure-gfm/unnamed-chunk-95-1.png)<!-- -->
 
 Using the approximate coefficients of the linear model, we can define
 the detector as follows:
@@ -2872,6 +3392,100 @@ confidence intervals only. If we only combine the scores of the variable
 `REQ` into a model, we still achieve a correlation of  ≈ 0.88. This
 should probably be preferred to keep the degrees of freedom low,
 countering overfitting. Using four or more scores goes beyond 0.97.
+
+### Variable importance: most important scores
+
+In the report for source code data (section ), we have previously
+determined the most important features. We’ll do the same computation
+here. The results will then allow us to compare against the relative
+importances as determined by source code data.
+
+``` r
+rfe_data_it <- cbind(p3_it_scores, data.frame(gt = ground_truth$consensus))
+```
+
+``` r
+library(caret, quietly = TRUE)
+
+set.seed(1337)
+
+control <- caret::trainControl(method = "repeatedcv", number = 10, repeats = 3)
+modelFit_it_all <- caret::train(gt ~ ., data = rfe_data_it, method = "pls", trControl = control)
+
+imp_it_all <- caret::varImp(object = modelFit_it_all)
+```
+
+    ## 
+    ## Attaching package: 'pls'
+
+    ## The following object is masked from 'package:caret':
+    ## 
+    ##     R2
+
+    ## The following object is masked from 'package:stats':
+    ## 
+    ##     loadings
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/var-imp-all-features-1.png" alt="Normalized variable-importance for all features (activities) for predicting the ground truth, relative to each other and expressed in percent."  />
+<p class="caption">
+Normalized variable-importance for all features (activities) for
+predicting the ground truth, relative to each other and expressed in
+percent.
+</p>
+
+</div>
+
+The `DESC`-activity with its three most important and dominating
+features Peak, RMS, and ImpulseFactor dominates the field, which could
+be due to, e.g., the `DESC`-activity being less characteristic than the
+others, ergo we get a more coherent predictor. Also, the first three
+features are quite similar to each other. The resulting model uses **3**
+components.
+
+For issue-tracking data we do have the scores for each variable
+(activity) separately, so we will attempt to also compute importances on
+a per-activity basis. This will also allow us to compare importances
+across activities. The expectation is that different activities will
+have a different order and magnitude of importances, since each activity
+has its own characteristics.
+
+``` r
+temp <- loadResultsOrCompute(file = "../results/modelFit_it_3.rds", computeExpr = {
+  set.seed(48879)
+
+  temp <- colnames(rfe_data_it)
+  cols_req <- temp[grep(pattern = "^(req_)|(gt)", ignore.case = TRUE, x = temp)]
+  cols_dev <- temp[grep(pattern = "^(dev_)|(gt)", ignore.case = TRUE, x = temp)]
+  cols_desc <- temp[grep(pattern = "^(desc_)|(gt)", ignore.case = TRUE, x = temp)]
+
+  list(req = caret::train(gt ~ ., data = rfe_data_it[cols_req], method = "pls", 
+    trControl = control), dev = caret::train(gt ~ ., data = rfe_data_it[cols_dev], 
+    method = "pls", trControl = control), desc = caret::train(gt ~ ., data = rfe_data_it[cols_desc], 
+    method = "pls", trControl = control))
+})
+
+imp_it_req <- caret::varImp(object = temp$req)
+imp_it_dev <- caret::varImp(object = temp$dev)
+imp_it_desc <- caret::varImp(object = temp$desc)
+```
+
+When comparing figures and , we observe that the importance of features
+varies if we were to predict a ground truth on a per-activity basis. We
+also observe some features being important in all cases, such as RMS, or
+the Jensen–Shannon divergence.
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/var-imp-all-features-sep-1.png" alt="Variable-importance for all features (activities) separately for predicting the ground truth on a per-activity basis (normalized and relative)."  />
+<p class="caption">
+Variable-importance for all features (activities) separately for
+predicting the ground truth on a per-activity basis (normalized and
+relative).
+</p>
+
+</div>
 
 ### Arbitrary-interval scores computing
 
@@ -3320,9 +3934,9 @@ align_srbtaw_logratio$res$par[c("b", "e")]
     ##         b         e 
     ## 0.2492560 0.5264296
 
-As expected, the result for the RSS-based is very similar to the overall
-result as obtained by DTW (note that the mix-up of begin and end does
-not matter to srBTAW, is it regularizes this using its internal
+As expected, the RSS-based result is very similar to the overall result
+as obtained by DTW (note that the mix-up of begin and end does not
+matter to srBTAW, is it regularizes this using its internal
 representation *β*<sub>*l*</sub>, *β*<sub>*u*</sub>). The
 correlation-based loss, surprisingly, manages to discover the true begin
 of  ≈ 0.25. It is likely possible to find a combination of losses,
@@ -3687,23 +4301,29 @@ So, in order to obtain predictions, we need to do n things:
 ``` r
 ground_truth_2nd_batch <- read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";")
 ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus/10
+rownames(ground_truth_2nd_batch) <- paste0((1 + nrow(ground_truth)):(nrow(ground_truth) + 
+  nrow(ground_truth_2nd_batch)))
 ```
 
 We have ground truth available for the second batch. Again, the two
 raters assessed it independently first, and only later found a
 consensus. The a priori agreement between both raters was better this
 time, as the quadratic weighted Kappa increased substantially to a value
-of **0.929**. Table shows the ground truth for the new projects
-`[10-15]`.
+of **0.929** (correlation is **0.975**). Table shows the ground truth
+for the new projects `[10-15]`.
 
-| project    | rater.a | rater.b | consensus | rater.mean | consensus_score |
-|:-----------|--------:|--------:|----------:|-----------:|----------------:|
-| project_10 |       2 |       3 |         2 |        2.5 |             0.2 |
-| project_11 |       0 |       1 |         0 |        0.5 |             0.0 |
-| project_12 |       1 |       2 |         2 |        1.5 |             0.2 |
-| project_13 |       8 |      10 |        10 |        9.0 |             1.0 |
-| project_14 |       1 |       0 |         1 |        0.5 |             0.1 |
-| project_15 |       1 |       1 |         1 |        1.0 |             0.1 |
+For the entirety of **both batches**, the quadratic weighted Kappa is
+**0.813**, and the Pearson correlation of both raters’ assessments is
+**0.815**.
+
+|     | project    | rater.a | rater.b | consensus | rater.mean | consensus_score |
+|:----|:-----------|--------:|--------:|----------:|-----------:|----------------:|
+| 10  | project_10 |       2 |       3 |         2 |        2.5 |             0.2 |
+| 11  | project_11 |       0 |       1 |         0 |        0.5 |             0.0 |
+| 12  | project_12 |       1 |       2 |         2 |        1.5 |             0.2 |
+| 13  | project_13 |       8 |      10 |        10 |        9.0 |             1.0 |
+| 14  | project_14 |       1 |       0 |         1 |        0.5 |             0.1 |
+| 15  | project_15 |       1 |       1 |         1 |        1.0 |             0.1 |
 
 Entire ground truth as of both raters
 
@@ -3733,6 +4353,36 @@ project’s time span.
 
 The six new projects in figure look like they do in the excel, the
 import was successful.
+
+## Evaluating of the binary decision rule
+
+Here we will evaluate the existing binary decision rule to find out
+whether it can classify the second batch of projects correctly.
+
+``` r
+temp <- sapply(X = names(all_signals_2nd_batch), FUN = function(pName) {
+  p1_dr(projName = pName, signals = all_signals_2nd_batch)
+})
+p1_detect_2nd_batch <- data.frame(detect = temp, ground_truth = ground_truth_2nd_batch$consensus, 
+  correct = (temp & ground_truth_2nd_batch$consensus >= 5) | (!temp & ground_truth_2nd_batch$consensus < 
+    5))
+```
+
+The results are shown in table . The rule classifies **5** / **6** as
+correct. The precision is **0.75**, and the recall is **1**.
+
+|           | detect | ground_truth | correct |
+|:----------|:-------|-------------:|:--------|
+| Project10 | FALSE  |            2 | TRUE    |
+| Project11 | FALSE  |            0 | TRUE    |
+| Project12 | FALSE  |            2 | TRUE    |
+| Project13 | TRUE   |           10 | TRUE    |
+| Project14 | TRUE   |            1 | FALSE   |
+| Project15 | FALSE  |            1 | TRUE    |
+
+Binary detection using the previously defined decision rule based on
+homogeneous confidence intervals of pattern I, for the second batch of
+projects.
 
 ## Computing the scores
 
@@ -3903,335 +4553,61 @@ would have a great number of different features, paired with something
 like a recursive feature elimination, in order to come up with a
 regression model that has reliable generalizability. Therefore, I am
 inclined not to repeat this exercise with the source code data, as we
-will have the same problem there. I will add a section about RFE and
-cross-validation and do that instead.
+will have the same problem there.
 
-# Correlation of scores
+## Predicting using the best RFE model
 
-This is a new section in the fifth iteration of this report. Similar to
-computing the correlation of scores against all models using source code
-data, we will do this here for each and every pattern based on
-issue-tracking data. We will be using the function
-`score_variable_alignment` (cf. section ) from the technical report
-using source code data. We do not have any phases in the process models
-for issue-tracking data. Therefore, no alignment is required. However,
-we still have to wrap each PM in an alignment, and will do so by
-defining one closed interval, without warping or amplitude correction.
-
-As a preparation for the pseudo-alignment, we need to present each
-project’s signals as instances of `Signal`, as well as each pattern’s
-signals then later. This has been done at the beginning of the report,
-and is stored in `all_signals`. It only requires some slight
-modifications before we can continue.
-
-Also, for the running the projects against type-IV patterns, we’ll need
-to compute their gradients. Recall that the projects’ signals were
-created using a zero-order hold, creating a cumulative quantity that
-increases step-wise, which results in extreme gradients. In section we
-have previously examined which kind of smoothing is perhaps most
-applicable in order to obtain relatively smooth gradients. The
-recommended solution was to use LOESS smoothing with a span of `0.35`,
-and not to go lower than `0.2`. A lower span preserves more details, and
-the results below were computed with a value of `0.35`. We have
-previously run these computations with the value `0.2`, with no
-significant different results.
+We have previously computed the variable importances in section , using
+the first batch of projects. We will not attempt this for the second
+batch. Rather, we will use the best model as found by the recursive
+feature elimination and use it to make predictions on the second batch.
+Previously, we evaluated the binary decision rule on the new projects
+(cf. section ).
 
 ``` r
-use_span <- 0.35
-
-time_warp_wrapper <- function(pattern, derive = FALSE) {
-  signals <- list()
-
-  for (project in paste0("Project", rownames(ground_truth))) {
-    temp <- list()
-    if (derive) {
-      temp[["REQ"]] <- Signal$new(name = paste0(project, "_REQ"), support = c(0, 
-        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(all_signals[[project]]$data), 
-        y = cumsum(all_signals[[project]]$data$req), span = use_span, family = "g"))
-      temp[["DEV"]] <- Signal$new(name = paste0(project, "_DEV"), support = c(0, 
-        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(all_signals[[project]]$data), 
-        y = cumsum(all_signals[[project]]$data$dev), span = use_span, family = "g"))
-      temp[["DESC"]] <- Signal$new(name = paste0(project, "_DESC"), support = c(0, 
-        1), isWp = FALSE, func = smooth_signal_loess(x = 1:nrow(all_signals[[project]]$data), 
-        y = cumsum(all_signals[[project]]$data$desc), span = use_span, family = "g"))
-    } else {
-      temp[["REQ"]] <- all_signals[[project]]$REQ$clone()
-      temp$REQ$.__enclos_env__$private$name <- paste0(project, "_REQ")
-      temp[["DEV"]] <- all_signals[[project]]$DEV$clone()
-      temp$DEV$.__enclos_env__$private$name <- paste0(project, "_DEV")
-      temp[["DESC"]] <- all_signals[[project]]$DESC$clone()
-      temp$DESC$.__enclos_env__$private$name <- paste0(project, "_DESC")
-    }
-    signals[[project]] <- time_warp_project(pattern = pattern, project = temp, 
-      thetaB = c(0, 1))
-  }
-
-  signals
-}
-```
-
-## Pattern I, II(a), and III
-
-We’ll first have to assemble a list of signals that define each pattern,
-before we can wrap it in an empty alignment and calculate the various
-scores.
-
-``` r
-p1_it_signals <- list(REQ = Signal$new(name = "p1_it_REQ", func = req, support = c(0, 
-  1), isWp = TRUE), DEV = Signal$new(name = "p1_it_DEV", func = dev, support = c(0, 
-  1), isWp = TRUE), DESC = Signal$new(name = "p1_it_DESC", func = desc, support = c(0, 
-  1), isWp = TRUE))
-
-p1_it_projects <- time_warp_wrapper(pattern = p1_it_signals, derive = FALSE)
-```
-
-``` r
-p1_it_scores <- loadResultsOrCompute(file = "../results/p1_it_scores.rds", computeExpr = {
-  as.data.frame(compute_all_scores_it(alignment = p1_it_projects, patternName = "p1_it", 
-    vartypes = names(p1_it_signals)))
-})
-```
-
-Table shows the correlations for each variable. This is different to how
-we did it for source code data. Each variable is shown separately in
-order not to conceal more extreme correlations that would otherwise be
-inaccessible due to aggregation.
-
-|                    | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
-|:-------------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
-| REQ_area           | 0.96 | 0.98 | 0.93 | 0.81 | 0.86 | 0.91 | 0.96 | 0.89 | 0.87 |
-| DEV_area           | 0.70 | 0.81 | 0.83 | 0.87 | 0.75 | 0.91 | 0.76 | 0.74 | 0.64 |
-| DESC_area          | 0.95 | 0.95 | 0.95 | 0.98 | 0.96 | 0.96 | 0.98 | 0.95 | 0.97 |
-| REQ_corr           | 1.00 | 1.00 | 0.99 | 0.98 | 0.97 | 0.98 | 0.99 | 0.98 | 0.98 |
-| DEV_corr           | 0.90 | 0.94 | 0.95 | 0.97 | 0.92 | 0.97 | 0.93 | 0.93 | 0.87 |
-| DESC_corr          | 0.50 | 0.87 | 0.94 | 0.96 | 0.84 | 0.87 | 0.98 | 0.50 | 0.83 |
-| REQ_jsd            | 0.86 | 0.92 | 0.75 | 0.57 | 0.40 | 0.73 | 0.78 | 0.58 | 0.72 |
-| DEV_jsd            | 0.42 | 0.43 | 0.52 | 0.53 | 0.40 | 0.57 | 0.45 | 0.46 | 0.38 |
-| DESC_jsd           | 0.52 | 0.58 | 0.67 | 0.78 | 0.59 | 0.58 | 0.80 | 0.52 | 0.63 |
-| REQ_kl             | 0.00 | 0.00 | 0.02 | 0.06 | 0.16 | 0.02 | 0.01 | 0.06 | 0.02 |
-| DEV_kl             | 0.15 | 0.14 | 0.09 | 0.08 | 0.15 | 0.06 | 0.12 | 0.12 | 0.18 |
-| DESC_kl            | 0.08 | 0.06 | 0.03 | 0.01 | 0.06 | 0.06 | 0.01 | 0.08 | 0.04 |
-| REQ_arclen         | 0.83 | 0.84 | 0.85 | 0.84 | 0.83 | 0.82 | 0.82 | 0.80 | 0.83 |
-| DEV_arclen         | 0.98 | 0.95 | 0.94 | 0.93 | 0.95 | 0.91 | 0.92 | 0.89 | 0.94 |
-| DESC_arclen        | 0.98 | 1.00 | 0.90 | 0.81 | 0.94 | 0.99 | 0.93 | 0.98 | 0.81 |
-| REQ_sd             | 0.94 | 0.96 | 0.93 | 0.86 | 0.76 | 0.88 | 0.92 | 0.84 | 0.88 |
-| DEV_sd             | 0.67 | 0.71 | 0.81 | 0.78 | 0.68 | 0.89 | 0.71 | 0.75 | 0.66 |
-| DESC_sd            | 0.94 | 0.95 | 0.95 | 0.98 | 0.95 | 0.94 | 0.98 | 0.94 | 0.95 |
-| REQ_var            | 1.00 | 1.00 | 1.00 | 0.98 | 0.94 | 0.99 | 0.99 | 0.97 | 0.99 |
-| DEV_var            | 0.89 | 0.92 | 0.96 | 0.95 | 0.90 | 0.99 | 0.92 | 0.94 | 0.89 |
-| DESC_var           | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
-| REQ_mae            | 0.96 | 0.98 | 0.93 | 0.81 | 0.86 | 0.91 | 0.96 | 0.89 | 0.87 |
-| DEV_mae            | 0.70 | 0.81 | 0.83 | 0.87 | 0.75 | 0.91 | 0.76 | 0.74 | 0.64 |
-| DESC_mae           | 0.95 | 0.95 | 0.95 | 0.98 | 0.96 | 0.96 | 0.98 | 0.95 | 0.97 |
-| REQ_rmse           | 0.95 | 0.97 | 0.92 | 0.79 | 0.79 | 0.88 | 0.94 | 0.85 | 0.85 |
-| DEV_rmse           | 0.63 | 0.73 | 0.79 | 0.80 | 0.67 | 0.88 | 0.69 | 0.69 | 0.57 |
-| DESC_rmse          | 0.93 | 0.94 | 0.94 | 0.98 | 0.94 | 0.94 | 0.98 | 0.93 | 0.96 |
-| REQ_RMS            | 0.95 | 1.00 | 0.93 | 0.85 | 0.69 | 0.92 | 0.90 | 0.78 | 0.97 |
-| DEV_RMS            | 0.62 | 0.60 | 0.76 | 0.65 | 0.60 | 0.95 | 0.63 | 0.68 | 0.64 |
-| DESC_RMS           | 0.00 | 0.18 | 0.61 | 0.95 | 0.23 | 0.14 | 0.91 | 0.00 | 0.50 |
-| REQ_Kurtosis       | 0.89 | 0.98 | 0.99 | 0.93 | 0.63 | 0.84 | 0.73 | 0.79 | 0.73 |
-| DEV_Kurtosis       | 0.94 | 0.74 | 0.83 | 0.68 | 0.76 | 0.85 | 0.84 | 1.00 | 0.93 |
-| DESC_Kurtosis      | 0.00 | 0.01 | 0.34 | 0.47 | 0.22 | 0.00 | 0.56 | 0.00 | 0.34 |
-| REQ_Peak           | 1.00 | 1.00 | 0.95 | 1.00 | 0.99 | 1.00 | 1.00 | 1.00 | 0.95 |
-| DEV_Peak           | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 |
-| DESC_Peak          | 0.00 | 0.15 | 0.84 | 0.50 | 0.71 | 0.08 | 0.96 | 0.00 | 0.51 |
-| REQ_ImpulseFactor  | 0.95 | 0.98 | 0.96 | 0.73 | 0.83 | 0.87 | 0.97 | 0.85 | 0.86 |
-| DEV_ImpulseFactor  | 0.40 | 0.54 | 0.54 | 0.63 | 0.46 | 0.70 | 0.45 | 0.44 | 0.35 |
-| DESC_ImpulseFactor | 0.00 | 0.42 | 0.57 | 0.32 | 0.11 | 0.52 | 0.75 | 0.00 | 0.33 |
-
-Scores for the aligned projects with pattern I (issue-tracking;
-p=product, m=mean).
-
-The correlation of just the ground truth with all scores is in table .
-
-    ## Warning in stats::cor(ground_truth$consensus, p1_it_scores): the standard
-    ## deviation is zero
-
-| Score      |      Value | Score       |      Value | Score              |      Value |
-|:-----------|-----------:|:------------|-----------:|:-------------------|-----------:|
-| REQ_area   | -0.5187100 | DEV_arclen  |  0.0259164 | DESC_rmse          |  0.5599840 |
-| DEV_area   |  0.2119023 | DESC_arclen | -0.8739954 | REQ_RMS            |  0.1460863 |
-| DESC_area  |  0.4882235 | REQ_sd      |  0.0289615 | DEV_RMS            |  0.1058164 |
-| REQ_corr   | -0.1641480 | DEV_sd      |  0.2512036 | DESC_RMS           |  0.8152119 |
-| DEV_corr   |  0.2042772 | DESC_sd     |  0.5686608 | REQ_Kurtosis       |  0.2631592 |
-| DESC_corr  |  0.5812074 | REQ_var     |  0.1419239 | DEV_Kurtosis       | -0.3622383 |
-| REQ_jsd    | -0.1277921 | DEV_var     |  0.2840502 | DESC_Kurtosis      |  0.7484784 |
-| DEV_jsd    |  0.3730029 | DESC_var    |  0.6121042 | REQ_Peak           | -0.4799340 |
-| DESC_jsd   |  0.7200972 | REQ_mae     | -0.5187037 | DEV_Peak           |         NA |
-| REQ_kl     | -0.0827761 | DEV_mae     |  0.2119031 | DESC_Peak          |  0.5326076 |
-| DEV_kl     | -0.3500757 | DESC_mae    |  0.4882361 | REQ_ImpulseFactor  | -0.4222044 |
-| DESC_kl    | -0.7618455 | REQ_rmse    | -0.3374198 | DEV_ImpulseFactor  |  0.2564932 |
-| REQ_arclen |  0.4237075 | DEV_rmse    |  0.2219994 | DESC_ImpulseFactor |  0.3848855 |
-
-Correlation of the ground truth with all other scores for pattern I
-(issue-tracking).
-
-The correlation matrix looks as in figure .
-
-    ## Warning in stats::cor(temp): the standard deviation is zero
-
-<div class="figure" style="text-align: top">
-
-<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-it-corr-mat-1.png" alt="Correlation matrix for scores using pattern I (issue-tracking)."  />
-<p class="caption">
-Correlation matrix for scores using pattern I (issue-tracking).
-</p>
-
-</div>
-
-From now on, we’ll only compute the correlation scores for each variable
-without showing intermediate results. We’ll then later build a larger
-matrix with results from all patterns.
-
-``` r
-p2a_it_signals <- list(REQ = Signal$new(name = "p2a_it_REQ", func = req_p2a, support = c(0, 
-  1), isWp = TRUE), DEV = Signal$new(name = "p2a_it_DEV", func = dev_p2a, support = c(0, 
-  1), isWp = TRUE), DESC = Signal$new(name = "p2a_it_DESC", func = desc_p2a, support = c(0, 
-  1), isWp = TRUE))
-
-p2a_it_projects <- time_warp_wrapper(pattern = p2a_it_signals, derive = FALSE)
-```
-
-``` r
-p2a_it_scores <- loadResultsOrCompute(file = "../results/p2a_it_scores.rds", computeExpr = {
-  as.data.frame(compute_all_scores_it(alignment = p2a_it_projects, patternName = "p2a_it", 
-    vartypes = names(p2a_it_signals)))
-})
-```
-
-``` r
-p3_it_signals <- list(REQ = Signal$new(name = "p3_it_REQ", func = req_p3, support = c(0, 
-  1), isWp = TRUE), DEV = Signal$new(name = "p3_it_DEV", func = dev_p3, support = c(0, 
-  1), isWp = TRUE), DESC = Signal$new(name = "p3_it_DESC", func = desc_p3, support = c(0, 
-  1), isWp = TRUE))
-
-p3_it_projects <- time_warp_wrapper(pattern = p3_it_signals, derive = FALSE)
-```
-
-``` r
-p3_it_scores <- loadResultsOrCompute(file = "../results/p3_it_scores.rds", computeExpr = {
-  as.data.frame(compute_all_scores_it(alignment = p3_it_projects, patternName = "p3_it", 
-    vartypes = names(p3_it_signals)))
-})
-```
-
-Let’s attempt to aggregate the correlation scores from the first three
-patterns, and show a plot.
-
-In we show now the correlation scores per variable and score against
-each of the three patterns I, II(a), and III.
-
-<div class="figure" style="text-align: center">
-
-<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p1-p2a-p3-corr-scores-1.png" alt="Table with correlation scores for the first three types of patterns, calculated against each variable separately."  />
-<p class="caption">
-Table with correlation scores for the first three types of patterns,
-calculated against each variable separately.
-</p>
-
-</div>
-
-## Derivative of Pattern I, II(a), and III
-
-In the following, we’ll basically repeat calculating the correlation
-scores of against each process model, but this time we will use
-**derivative** models and processes. That is, we will compute the scores
-based on the *rate of change*.
-
-For every cumulative quantity we should apply some smoothing in order to
-get usable gradients. This applies to all projects in all comparisons,
-as well as to process model III, since its variables are weighted
-averages of such quantities.
-
-``` r
-get_smoothed_signal_d1 <- function(name, func) {
-  xvals <- seq(from = 0, to = 1, length.out = 10000)
-  func <- smooth_signal_loess(x = xvals, y = func(xvals), support = c(0, 1), family = "g", 
-    span = use_span)
-
-  temp <- Signal$new(name = name, isWp = TRUE, support = c(0, 1), func = func)
-  Signal$new(name = name, isWp = TRUE, support = c(0, 1), func = temp$get1stOrderPd())
-}
-```
-
-The derivatives of the projects I, II(a) and III look like in the
-following figure :
-
-<div class="figure" style="text-align: center">
-
-<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p4of-p1-p2a-p3-1.png" alt="Derivative process models type I, II(a) and III, using a smoothing-span of 0.35."  />
-<p class="caption">
-Derivative process models type I, II(a) and III, using a smoothing-span
-of 0.35.
-</p>
-
-</div>
-
-Let’s compute the scores next.
-
-``` r
-# We'll use this custom range to compute scores for area and sd/var/mae/rmse
-use_yrange <- c(-1, 10)
-
-p4p1_it_scores <- loadResultsOrCompute(file = "../results/p4p1_it_scores.rds", computeExpr = {
-  as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p1_it_projects, 
-    patternName = "p4p1_it", vartypes = names(p4p1_it_signals)))
-})
-
-p4p2a_it_scores <- loadResultsOrCompute(file = "../results/p4p2a_it_scores.rds", 
+p3_it_2nd_batch_scores <- loadResultsOrCompute(file = "../results/p3_it_2nd_batch_scores.rds", 
   computeExpr = {
-    as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p2a_it_projects, 
-      patternName = "p4p2a_it", vartypes = names(p4p2a_it_signals)))
-  })
+    p3_it_projects_2nd_batch <- time_warp_wrapper(pattern = p3_it_signals, derive = FALSE, 
+      use_signals = all_signals_2nd_batch, use_ground_truth = ground_truth_2nd_batch)
 
-p4p3_it_scores <- loadResultsOrCompute(file = "../results/p4p3_it_scores.rds", computeExpr = {
-  as.data.frame(compute_all_scores_it(useYRange = use_yrange, alignment = p4p3_it_projects, 
-    patternName = "p4p3_it", vartypes = names(p4p3_it_signals)))
-})
+    as.data.frame(compute_all_scores_it(alignment = p3_it_projects_2nd_batch, 
+      patternName = "p3_it", vartypes = names(p3_it_signals)))
+  })
 ```
 
 ``` r
-p4All_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
+# Note that these predictions are already scaled!
+p3_avg_rfe_2nd_batch_scores <- stats::predict(object = modelFit_it_all, p3_it_2nd_batch_scores)
+# Since we are attempting a regression to positive scores, we set any negative
+# predictions to 0. Same goes for >1.
+p3_avg_rfe_2nd_batch_scores[p3_avg_rfe_2nd_batch_scores < 0] <- 0
+p3_avg_rfe_2nd_batch_scores[p3_avg_rfe_2nd_batch_scores > 10] <- 10
 
-i <- 0
-c_names <- NULL
-for (vt in var_types) {
-  for (pIdx in 1:3) {
-    p_data <- if (pIdx == 1) {
-      p4p1_it_scores
-    } else if (pIdx == 2) {
-      p4p2a_it_scores
-    } else {
-      p4p3_it_scores
-    }
-
-    p4All_it_corr[pIdx, (i * length(score_types) + 1):(i * length(score_types) + 
-      length(score_types))] <- stats::cor(x = ground_truth$consensus_score, 
-      y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
-  }
-
-  i <- i + 1
-
-  c_names <- c(c_names, paste0(vt, "_", score_types))
-}
-
-colnames(p4All_it_corr) <- c_names
-rownames(p4All_it_corr) <- paste0("Pr. ", 1:3)
-p4All_it_corr[is.na(p4All_it_corr)] <- sqrt(.Machine$double.eps)
+`names<-`(round(p3_avg_rfe_2nd_batch_scores, 4), rownames(ground_truth_2nd_batch))
 ```
 
-In figure we show now the correlation scores per variable and score
-against each of the three patterns I, II(a), and III.
+    ##     10     11     12     13     14     15 
+    ## 4.1674 4.9388 1.5291 0.4735 4.0357 0.0000
 
-<div class="figure" style="text-align: center">
+``` r
+stats::cor(p3_avg_rfe_2nd_batch_scores, ground_truth_2nd_batch$consensus)
+```
 
-<img src="fire-drill-issue-tracking-technical-report_files/figure-gfm/p4of-p1-p2a-p3-corr-scores-1.png" alt="Table with correlation scores for the first three types of patterns, calculated against each variable separately."  />
-<p class="caption">
-Table with correlation scores for the first three types of patterns,
-calculated against each variable separately.
-</p>
+    ## [1] -0.5208951
 
-</div>
+These results are similarly worse to those obtained from the previous
+section, where we predicted using the linear model. The only conclusion
+we can now draw confidently is that we have insufficient training data
+in order to train a model that can generalize to new data (likely both,
+instances and feature granularity). However, the features we found to be
+most important have a good chance to be actually the most important
+ones. If we were to repeat the variable-importance experiment with a lot
+more data (projects), we might get a similar ranking and relative
+importance. It is only that currently, the amount of data does not
+suffice to generalize from the observations, even if we have a good
+selection and weighting of features.
+
+# References
 
 <div id="refs" class="references csl-bib-body hanging-indent">
 
@@ -4253,10 +4629,10 @@ and Generalized Linear Models: A Roughness Penalty Approach*. Crc Press.
 
 <div id="ref-honel_picha_2021" class="csl-entry">
 
-Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2021.
-“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects with
+Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
+“Detection of the Fire Drill Anti-Pattern: 16 Real-World Projects with
 Ground Truth, Issue-Tracking Data, Source Code Density, Models and
-Code.” Zenodo. <https://doi.org/10.5281/zenodo.4734053>.
+Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
 
 </div>
 

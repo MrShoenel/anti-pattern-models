@@ -1,3 +1,42 @@
+---
+author: Sebastian Hönel
+bibliography: ../inst/REFERENCES.bib
+date: February 08, 2022
+header-includes:
+- 
+- 
+- 
+output:
+  bookdown::pdf_document2:
+    df_print: kable
+    fig_caption: yes
+    keep_tex: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+  html_document:
+    df_print: kable
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+  md_document:
+    df_print: kable
+    toc: true
+    toc_depth: 6
+    variant: gfm
+  word_document: default
+title: "Technical Report: Self-Regularizing Boundary Time Warping and
+  Boundary Amplitude Warping"
+urlcolor: blue
+---
+
+
+
+
+
+
+
 -   [Introduction](#introduction)
 -   [Problem description](#problem-description)
     -   [Optimization goals](#optimization-goals)
@@ -114,7 +153,7 @@ time series-related problems, such as classification, motif discovery
 etc.
 
 All complementary data and results can be found at Zenodo (Hönel et al.
-2021). This notebook was written in a way that it can be run without any
+2022). This notebook was written in a way that it can be run without any
 additional efforts to reproduce the outputs (using the pre-computed
 results). This notebook has a canonical
 URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/srBTAW-technical-report.Rmd)</sup>
@@ -402,7 +441,7 @@ $$
   \\\\\[1ex\]
   e\\dots&\\;\\text{the end (absolute offset) of the last source-interval (usually}\\;1\\text{), also}\\;e>b\\text{,}
   \\\\\[1ex\]
-  \\gamma_b,\\gamma_e,\\gamma_d\\dots&\\;\\text{absolute min/max for}\\;b,e\\;\\text{and min-distance between them,}
+  \\gamma_b,\\gamma_e,\\gamma_d\\dots&\\;\\text{global min/max for}\\;b,e\\;\\text{and min-distance between them,}
   \\\\\[1ex\]
   &\\;\\text{where}\\;\\gamma_d\\geq 0\\;\\land\\;\\gamma_b+\\gamma_d\\leq\\gamma_e\\;\\text{,}
   \\\\\[1ex\]
@@ -474,10 +513,10 @@ properties:
     zero however is allowed).
 -   The first interval begins at *β*<sub>*l*</sub>, the last interval
     ends at *β*<sub>*u*</sub> (these parameters are the absolute
-    begin/end of the target-intervals, and hence apply to where onto the
-    reference the query will be mapped to). These parameters can either
-    be constant or learned during optimization, effectively allowing
-    open/closed begin- and/or -end time warping.
+    begin/end of the source-intervals, and hence apply to where onto the
+    query will be mapped to). These parameters can either be constant or
+    learned during optimization, effectively allowing open/closed begin-
+    and/or -end time warping.
 -   Each interval begins exactly after its predecessor, such that there
     are no overlaps. Intervals are seamlessly strung together.
 -   The sum of the lengths of all intervals is normalized and then
@@ -540,7 +579,7 @@ it in the notebook *“Boundary Time Warping (final, update)”*.
 It is important to once more recall the mechanics of this suggested
 model:
 
--   The reference signal is segmented into two or more intervals, each
+-   The reference signal is segmented into one or more intervals, each
     with a length  \> 0. This segmentation is done using a given vector
     of *reference-boundaries*.
     -   These intervals are constant, and never changed afterwards. For
@@ -2134,8 +2173,6 @@ stronger otherwise.
 If we divide the loss by the number of intervals, we can actually make
 apples-to-apples comparisons.
 
-<div class="kable-table">
-
 | Type               | ob  | oe  | b_init | e_init |     b |     e | loss     | meanLoss | optFn | optGr |
 |:-------------------|:----|:----|-------:|-------:|------:|------:|:---------|:---------|------:|------:|
 | eq-20              | \-  | \-  |  0.000 |  1.000 | 0.000 | 1.000 | 0.00e+00 | 0.00e+00 |    21 |    21 |
@@ -2149,7 +2186,7 @@ apples-to-apples comparisons.
 | eq_ob_oe-20        | Y   | Y   |  0.225 |  0.700 | 0.002 | 0.091 | 5.78e+00 | 2.89e-01 |    99 |    99 |
 | beta_1\_2_ob_oe-40 | Y   | Y   |  0.289 |  0.533 | 0.339 | 0.744 | 5.69e+00 | 1.42e-01 |    97 |    97 |
 
-</div>
+Overview of incurred alignment losses over various setups.
 
 The type in above table reveals some details: ‘eq’ means starting
 lengths of equal length, ‘unif’ mean they wer uniformly sampled from
@@ -2323,12 +2360,13 @@ function (per interval). But at this point it is not required so we will
 not make that extra effort.
 
 It is important to notice that in Boundary Time/Amplitude Warping, we
-cannot (should not) make any assumptions about the signal within an
+cannot (must not) make any assumptions about the signal within an
 interval. For example, we cannot know its interval-global minimum or
 maximum. At the same time, we want to enforce box-bounds on the warped
 signal. The solution is to enforce these only after the warped signal
 has been computed. That means, that we need to wrap the warping
-function.
+function. We do this below by wrapping *n*<sub>*q*</sub>(…) into the
+min /max  expression *n*<sub>*q*</sub><sup>*c*</sup>(…).
 
 $$
 \\begin{aligned}
@@ -2346,11 +2384,9 @@ $$
 
 ### Gradient of the sub-model
 
-We need to pay attention when defining the gradient, for cases when
-*ι*<sub>*q*</sub> and/or *ρ*<sub>*q*</sub> are parameters of the model
-that are learned and not constant. In our case, where we *wrap* sr-BTW,
-*ι*<sub>*q*</sub> = *l*<sub>*q*</sub><sup>(*c*)</sup>, *ρ*<sub>*q*</sub> = *ϕ*<sub>*q*</sub>,
-and *l*<sub>*q*</sub><sup>(*c*)</sup> depends on
+We need to pay attention when defining the gradient, for cases when some
+parameters depend on parameters of the underlying model. For example,
+*l*<sub>*q*</sub><sup>(*c*)</sup> depends on
 ∀ *l* ∈ **ϑ**<sup>(*l*)</sup> as well as *b*, *e* (if open begin and/or
 end), while *ϕ*<sub>*q*</sub> depends on
 ∀ *l*<sub>*i*</sub><sup>(*c*)</sup>, *i* \< *q*. If we derive w.r.t. any
@@ -2939,10 +2975,10 @@ Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. 2014.
 
 <div id="ref-honel_picha_2021" class="csl-entry">
 
-Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2021.
-“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects with
+Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
+“Detection of the Fire Drill Anti-Pattern: 16 Real-World Projects with
 Ground Truth, Issue-Tracking Data, Source Code Density, Models and
-Code.” Zenodo. <https://doi.org/10.5281/zenodo.4734053>.
+Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
 
 </div>
 

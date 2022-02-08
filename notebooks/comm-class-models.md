@@ -1,3 +1,30 @@
+---
+author: Sebastian Hönel
+bibliography: ../inst/REFERENCES.bib
+date: February 08, 2022
+output:
+  html_document:
+    df_print: kable
+    number_sections: true
+    toc: true
+    toc_depth: 6
+    toc_float: true
+  md_document:
+    df_print: kable
+    toc: true
+    toc_depth: 6
+    variant: gfm
+  pdf_document:
+    df_print: kable
+    number_sections: true
+    toc: true
+    toc_depth: 6
+  word_document: default
+title: "Technical Report: Commit Classification models based on Keywords
+  and Source Code Density"
+urlcolor: blue
+---
+
 -   [Introduction](#introduction)
 -   [Stateless model](#stateless-model)
     -   [Load and prepare the data](#load-and-prepare-the-data)
@@ -48,7 +75,7 @@ will also be using all data. Using many folds and repeats, we make sure
 that overfitting is not a problem.
 
 All complementary data and results can be found at Zenodo (Hönel et al.
-2021). This notebook was written in a way that it can be run without any
+2022). This notebook was written in a way that it can be run without any
 additional efforts to reproduce the outputs (using the pre-computed
 results). This notebook has a canonical
 URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd)</sup>
@@ -189,9 +216,8 @@ results_sl <- loadResultsOrCompute("../results/sl.rds", computeExpr = {
 
 The following will give us a correlation matrix of the models’
 predictions. The goal is to find models with high performance and
-unrelated predictions, so that they can be combined.
-
-<div class="kable-table">
+unrelated predictions, so that they can be combined. The correlations
+are shown in tables and .
 
 |             |     gbm | LogitBoost |    C5.0 |      rf |  ranger | naive_bayes |     mlp |
 |:------------|--------:|-----------:|--------:|--------:|--------:|------------:|--------:|
@@ -210,9 +236,7 @@ unrelated predictions, so that they can be combined.
 | xgbLinear   |  0.0560 |    -0.2253 |  0.0391 |  0.2076 | -0.2322 |     -0.1731 | -0.0618 |
 | null        |      NA |         NA |      NA |      NA |      NA |          NA |      NA |
 
-</div>
-
-<div class="kable-table">
+Correlations of models’ predictions (part 1).
 
 |             |    nnet | svmPoly | svmRadial | xgbTree | xgbDART | xgbLinear | null |
 |:------------|--------:|--------:|----------:|--------:|--------:|----------:|-----:|
@@ -231,7 +255,7 @@ unrelated predictions, so that they can be combined.
 | xgbLinear   | -0.0691 |  0.0248 |    0.1629 | -0.0954 | -0.3693 |    1.0000 |   NA |
 | null        |      NA |      NA |        NA |      NA |      NA |        NA |    1 |
 
-</div>
+Correlations of models’ predictions (part 2).
 
 Show for each model the performance during training, and also predict on
 our validation data to get an idea of their goodness.
@@ -264,26 +288,22 @@ fit to the entire training data.
 generateModelOverview(results_sl, models_sl, validationData = valid_sl)
 ```
 
-<div class="kable-table">
-
-| model       | train_acc | train_Kappa | predNA | valid_acc_witNA | valid_Kappa_withNA | valid_acc | valid_Kappa |
-|:------------|----------:|------------:|:-------|----------------:|-------------------:|----------:|------------:|
-| gbm         | 0.8030769 |   0.7046154 | FALSE  |       0.8059701 |          0.6971488 | 0.8059701 |   0.6971488 |
-| LogitBoost  | 0.8219242 |   0.7282709 | TRUE   |       0.7611940 |          0.6199929 | 0.8666667 |   0.7906977 |
-| C5.0        | 0.8035897 |   0.7053846 | FALSE  |       0.7761194 |          0.6479860 | 0.7761194 |   0.6479860 |
-| rf          | 0.8023077 |   0.7034615 | FALSE  |       0.7462687 |          0.6057459 | 0.7462687 |   0.6057459 |
-| ranger      | 0.8184615 |   0.7276923 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
-| naive_bayes | 0.5038462 |   0.2557692 | FALSE  |       0.5671642 |          0.3075552 | 0.5671642 |   0.3075552 |
-| mlp         | 0.7646154 |   0.6469231 | FALSE  |       0.7462687 |          0.6062910 | 0.7462687 |   0.6062910 |
-| nnet        | 0.7584615 |   0.6376923 | FALSE  |       0.7164179 |          0.5541156 | 0.7164179 |   0.5541156 |
-| svmPoly     | 0.7619231 |   0.6428846 | FALSE  |       0.7462687 |          0.6097979 | 0.7462687 |   0.6097979 |
-| svmRadial   | 0.7496154 |   0.6244231 | FALSE  |       0.6716418 |          0.4897889 | 0.6716418 |   0.4897889 |
-| xgbTree     | 0.8201282 |   0.7301923 | FALSE  |       0.7164179 |          0.5545836 | 0.7164179 |   0.5545836 |
-| xgbDART     | 0.8160256 |   0.7240385 | FALSE  |       0.7164179 |          0.5506530 | 0.7164179 |   0.5506530 |
-| xgbLinear   | 0.8169231 |   0.7253846 | FALSE  |       0.7014925 |          0.5273369 | 0.7014925 |   0.5273369 |
-| null        | 0.3333333 |   0.0000000 | FALSE  |       0.2089552 |          0.0000000 | 0.2089552 |   0.0000000 |
-
-</div>
+| model       |  trAcc |  trKap | predNA | valAcc_withNA | valKap_withNA | valAcc | valKap |
+|:------------|-------:|-------:|:-------|--------------:|--------------:|-------:|-------:|
+| gbm         | 0.8031 | 0.7046 | FALSE  |        0.8060 |        0.6971 | 0.8060 | 0.6971 |
+| LogitBoost  | 0.8219 | 0.7283 | TRUE   |        0.7612 |        0.6200 | 0.8667 | 0.7907 |
+| C5.0        | 0.8036 | 0.7054 | FALSE  |        0.7761 |        0.6480 | 0.7761 | 0.6480 |
+| rf          | 0.8023 | 0.7035 | FALSE  |        0.7463 |        0.6057 | 0.7463 | 0.6057 |
+| ranger      | 0.8185 | 0.7277 | FALSE  |        0.8209 |        0.7217 | 0.8209 | 0.7217 |
+| naive_bayes | 0.5038 | 0.2558 | FALSE  |        0.5672 |        0.3076 | 0.5672 | 0.3076 |
+| mlp         | 0.7646 | 0.6469 | FALSE  |        0.7463 |        0.6063 | 0.7463 | 0.6063 |
+| nnet        | 0.7585 | 0.6377 | FALSE  |        0.7164 |        0.5541 | 0.7164 | 0.5541 |
+| svmPoly     | 0.7619 | 0.6429 | FALSE  |        0.7463 |        0.6098 | 0.7463 | 0.6098 |
+| svmRadial   | 0.7496 | 0.6244 | FALSE  |        0.6716 |        0.4898 | 0.6716 | 0.4898 |
+| xgbTree     | 0.8201 | 0.7302 | FALSE  |        0.7164 |        0.5546 | 0.7164 | 0.5546 |
+| xgbDART     | 0.8160 | 0.7240 | FALSE  |        0.7164 |        0.5507 | 0.7164 | 0.5507 |
+| xgbLinear   | 0.8169 | 0.7254 | FALSE  |        0.7015 |        0.5273 | 0.7015 | 0.5273 |
+| null        | 0.3333 | 0.0000 | FALSE  |        0.2090 |        0.0000 | 0.2090 | 0.0000 |
 
 # Manual stacking of models
 
@@ -357,7 +377,7 @@ The network has the following structure:
 plot(nnet, rep = "best")
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-14-1.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->
 
 ``` r
 nnet_pred <- predict(nnet, data_stack_valid_sl)
@@ -416,52 +436,41 @@ Now show the overview:
 generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
 ```
 
-<div class="kable-table">
-
-| model      | train_acc | train_Kappa | predNA | valid_acc_witNA | valid_Kappa_withNA | valid_acc | valid_Kappa |
-|:-----------|----------:|------------:|:-------|----------------:|-------------------:|----------:|------------:|
-| gbm        | 0.9928205 |   0.9892308 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
-| LogitBoost | 0.9930732 |   0.9896098 | FALSE  |       0.7910448 |          0.6767746 | 0.7910448 |   0.6767746 |
-| ranger     | 0.9929487 |   0.9894231 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
-| mlp        | 0.9932051 |   0.9898077 | FALSE  |       0.8358209 |          0.7448944 | 0.8358209 |   0.7448944 |
-| nnet       | 0.9930769 |   0.9896154 | FALSE  |       0.8358209 |          0.7448944 | 0.8358209 |   0.7448944 |
-| svmRadial  | 0.9939744 |   0.9909615 | FALSE  |       0.7611940 |          0.6288089 | 0.7611940 |   0.6288089 |
-
-</div>
+| model      |  trAcc |  trKap | predNA | valAcc_withNA | valKap_withNA | valAcc | valKap |
+|:-----------|-------:|-------:|:-------|--------------:|--------------:|-------:|-------:|
+| gbm        | 0.9928 | 0.9892 | FALSE  |        0.8209 |        0.7217 | 0.8209 | 0.7217 |
+| LogitBoost | 0.9931 | 0.9896 | FALSE  |        0.7910 |        0.6768 | 0.7910 | 0.6768 |
+| ranger     | 0.9929 | 0.9894 | FALSE  |        0.8209 |        0.7217 | 0.8209 | 0.7217 |
+| mlp        | 0.9932 | 0.9898 | FALSE  |        0.8358 |        0.7449 | 0.8358 | 0.7449 |
+| nnet       | 0.9931 | 0.9896 | FALSE  |        0.8358 |        0.7449 | 0.8358 | 0.7449 |
+| svmRadial  | 0.9940 | 0.9910 | FALSE  |        0.7612 |        0.6288 | 0.7612 | 0.6288 |
 
 The overview for all models, using oversampled training data, was this:
 
 ``` r
 results_ms_all <- readRDS("../results/ms_all.rds")
 models_ms_all <- readRDS("../results/models_ms_all.rds")
+```
 
+``` r
 generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
 ```
 
-<div class="kable-table">
-
-| model       | train_acc | train_Kappa | predNA | valid_acc_witNA | valid_Kappa_withNA | valid_acc | valid_Kappa |
-|:------------|----------:|------------:|:-------|----------------:|-------------------:|----------:|------------:|
-| gbm         | 0.9932051 |   0.9898077 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
-| LogitBoost  | 0.9930732 |   0.9896098 | FALSE  |       0.7910448 |          0.6767746 | 0.7910448 |   0.6767746 |
-| C5.0        | 0.9921795 |   0.9882692 | FALSE  |       0.8059701 |          0.6997587 | 0.8059701 |   0.6997587 |
-| ranger      | 0.9932051 |   0.9898077 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
-| rf          | 0.9932051 |   0.9898077 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
-| naive_bayes | 0.9908974 |   0.9863462 | FALSE  |       0.8059701 |          0.6972541 | 0.8059701 |   0.6972541 |
-| mlp         | 0.9929487 |   0.9894231 | FALSE  |       0.7910448 |          0.6749827 | 0.7910448 |   0.6749827 |
-| nnet        | 0.9929487 |   0.9894231 | FALSE  |       0.8358209 |          0.7448944 | 0.8358209 |   0.7448944 |
-| svmPoly     | 0.9942308 |   0.9913462 | FALSE  |       0.8059701 |          0.6998622 | 0.8059701 |   0.6998622 |
-| svmRadial   | 0.9941026 |   0.9911538 | FALSE  |       0.7761194 |          0.6534483 | 0.7761194 |   0.6534483 |
-| xgbTree     | 0.9930769 |   0.9896154 | FALSE  |       0.8059701 |          0.6972541 | 0.8059701 |   0.6972541 |
-| xgbDART     | 0.9937179 |   0.9905769 | FALSE  |       0.8059701 |          0.6972541 | 0.8059701 |   0.6972541 |
-| xgbLinear   | 0.9929487 |   0.9894231 | FALSE  |       0.8208955 |          0.7217030 | 0.8208955 |   0.7217030 |
-
-</div>
-
-``` r
-results_ms_all <- NULL
-models_ms_all <- NULL
-```
+| model       |  trAcc |  trKap | predNA | valAcc_withNA | valKap_withNA | valAcc | valKap |
+|:------------|-------:|-------:|:-------|--------------:|--------------:|-------:|-------:|
+| gbm         | 0.9932 | 0.9898 | FALSE  |        0.8209 |        0.7217 | 0.8209 | 0.7217 |
+| LogitBoost  | 0.9931 | 0.9896 | FALSE  |        0.7910 |        0.6768 | 0.7910 | 0.6768 |
+| C5.0        | 0.9922 | 0.9883 | FALSE  |        0.8060 |        0.6998 | 0.8060 | 0.6998 |
+| ranger      | 0.9932 | 0.9898 | FALSE  |        0.8209 |        0.7217 | 0.8209 | 0.7217 |
+| rf          | 0.9932 | 0.9898 | FALSE  |        0.8209 |        0.7217 | 0.8209 | 0.7217 |
+| naive_bayes | 0.9909 | 0.9863 | FALSE  |        0.8060 |        0.6973 | 0.8060 | 0.6973 |
+| mlp         | 0.9929 | 0.9894 | FALSE  |        0.7910 |        0.6750 | 0.7910 | 0.6750 |
+| nnet        | 0.9929 | 0.9894 | FALSE  |        0.8358 |        0.7449 | 0.8358 | 0.7449 |
+| svmPoly     | 0.9942 | 0.9913 | FALSE  |        0.8060 |        0.6999 | 0.8060 | 0.6999 |
+| svmRadial   | 0.9941 | 0.9912 | FALSE  |        0.7761 |        0.6534 | 0.7761 | 0.6534 |
+| xgbTree     | 0.9931 | 0.9896 | FALSE  |        0.8060 |        0.6973 | 0.8060 | 0.6973 |
+| xgbDART     | 0.9937 | 0.9906 | FALSE  |        0.8060 |        0.6973 | 0.8060 | 0.6973 |
+| xgbLinear   | 0.9929 | 0.9894 | FALSE  |        0.8209 |        0.7217 | 0.8209 | 0.7217 |
 
 It appears that the manual stacking was slightly useful, and we decide
 to use the `nnet` meta-model, that is based on the single models
@@ -693,7 +702,7 @@ ggplot2::ggplot(
   ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-27-1.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-34-1.png)<!-- -->
 
 ``` r
 ggplot2::ggplot(
@@ -704,7 +713,7 @@ ggplot2::ggplot(
   ggplot2::geom_density(size = 1, alpha = 0.5)#, position = "fill")
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-27-2.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-34-2.png)<!-- -->
 
 It appears that the activities after 2019-11-01 are much more balanced.
 Let’s look at a much smaller window:
@@ -717,25 +726,25 @@ temp <- ggplot2::ggplot(data = angular[angular$AuthorTimeObj > as.POSIXct("2020-
 temp + ggplot2::geom_density(size = 1, alpha = 0.4)
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-28-1.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-35-1.png)<!-- -->
 
 ``` r
 temp + ggplot2::geom_density(size = 1, alpha = 0.4, position = "fill")
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-28-2.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-35-2.png)<!-- -->
 
 ``` r
 temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular")
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-28-3.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-35-3.png)<!-- -->
 
 ``` r
 temp + ggplot2::geom_density(size = 1, alpha = 0.4, kernel = "rectangular", position = "fill")
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-28-4.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-35-4.png)<!-- -->
 
 The above plot is a 3-week snapshot, with weeks starting at Monday,
 00:00, and ending at Sunday, 23:59. It appears that each week starts
@@ -755,7 +764,7 @@ legend(1950, 600, col = c("black", "blue", "red"), legend = c("Raw", "SMA 5", "S
   lty = 1, cex = 0.8)
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-29-1.png)<!-- -->
+![](comm-class-models_files/figure-gfm/unnamed-chunk-36-1.png)<!-- -->
 
 ``` r
 data <- angular[angular$AuthorTimeObj > as.POSIXct("2020-02-03") & angular$AuthorTimeObj <= as.POSIXct("2020-02-23"),]
@@ -765,15 +774,10 @@ plot(list(
   x = 1:nrow(data),
   y = data$prob_a
 ))
-#lines(rollmean(data$prob_c, 5), col='red')
 lines(rollmean(data$prob_c, 10), col='blue')
 ```
 
-![](comm-class-models_files/figure-gfm/unnamed-chunk-30-1.png)<!-- -->
-
-``` r
-#plot(rollmean(data$prob_a, 5))
-```
+![](comm-class-models_files/figure-gfm/unnamed-chunk-37-1.png)<!-- -->
 
 # References
 
@@ -806,10 +810,10 @@ Software*, 110673.
 
 <div id="ref-honel_picha_2021" class="csl-entry">
 
-Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2021.
-“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects with
+Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
+“Detection of the Fire Drill Anti-Pattern: 16 Real-World Projects with
 Ground Truth, Issue-Tracking Data, Source Code Density, Models and
-Code.” Zenodo. <https://doi.org/10.5281/zenodo.4734053>.
+Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
 
 </div>
 

@@ -1,3 +1,42 @@
+---
+author: Sebastian Hönel
+bibliography: ../inst/REFERENCES.bib
+date: February 08, 2022
+header-includes:
+- 
+- 
+- 
+output:
+  bookdown::pdf_document2:
+    df_print: kable
+    fig_caption: yes
+    keep_tex: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+  html_document:
+    df_print: kable
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+  md_document:
+    df_print: kable
+    toc: yes
+    toc_depth: 6
+    variant: gfm
+  word_document: default
+title: "Technical Report: Detecting the Fire Drill anti-pattern using
+  Source Code"
+urlcolor: blue
+---
+
+
+
+
+
+
+
 -   [Introduction](#introduction)
 -   [Fire Drill - anti-pattern](#fire-drill---anti-pattern)
     -   [Prerequisites](#prerequisites)
@@ -39,6 +78,10 @@
         alignment)](#pattern-iii-average-no-alignment)
         -   [Linear combination of
             scores](#linear-combination-of-scores)
+        -   [Finding the most important
+            scores](#finding-the-most-important-scores)
+        -   [Pattern as confidence
+            surface](#pattern-as-confidence-surface)
     -   [Pattern III (b)](#pattern-iii-b)
         -   [Linear combination of
             scores](#linear-combination-of-scores-1)
@@ -56,7 +99,7 @@ anti-pattern (AP), the goal is evaluate these patterns and their
 aptitude for detecting the AP in concordance with the ground truth.
 
 All complementary data and results can be found at Zenodo (Hönel et al.
-2021). This notebook was written in a way that it can be run without any
+2022). This notebook was written in a way that it can be run without any
 additional efforts to reproduce the outputs (using the pre-computed
 results). This notebook has a canonical
 URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)</sup>
@@ -415,7 +458,7 @@ Seven of these were implemented simultaneously between March and June
 student_projects <- read.csv(file = "../data/student-projects.csv", sep = ";")
 ```
 
-We have a total of:
+In the first batch, we have a total of:
 
 -   Nine projects,
 -   37 authors that authored 1219 commits total which are of type
@@ -588,9 +631,9 @@ Let’s plot all the projects:
 
 <div class="figure" style="text-align: top">
 
-<img src="fire-drill-technical-report_files/figure-gfm/project-vars-1.png" alt="All variables over each project's time span"  />
+<img src="fire-drill-technical-report_files/figure-gfm/project-vars-1.png" alt="All variables over each project's time span (first batch of projects)."  />
 <p class="caption">
-All variables over each project’s time span
+All variables over each project’s time span (first batch of projects).
 </p>
 
 </div>
@@ -1170,14 +1213,14 @@ their mean or consensus (default).
 
 ``` r
 gt_weighted_avg <- function(vartype, wtype = c("consensus", "rater.a", "rater.b", 
-  "rater.mean")) {
+  "rater.mean"), use_signals = project_signals, use_ground_truth = ground_truth) {
   wtype <- match.arg(wtype)
-  gt <- ground_truth[ground_truth[[wtype]] > 0, ]
+  gt <- use_ground_truth[use_ground_truth[[wtype]] > 0, ]
   wTotal <- sum(gt[[wtype]])
   proj <- gt$project
   weights <- `names<-`(gt[[wtype]], gt$project)
 
-  funcs <- lapply(project_signals, function(ps) ps[[vartype]]$get0Function())
+  funcs <- lapply(use_signals, function(ps) ps[[vartype]]$get0Function())
 
   Vectorize(function(x) {
     val <- 0
@@ -1713,53 +1756,7 @@ entire signals, i.e., over all intervals. Once aligned, computing scores
 is cheap, so we will try a variety of scores and see what works best.
 
 ``` r
-score_variable_alignment <- function(alignment, patternName, projectName, use = c("area", 
-  "corr", "jsd", "kl", "arclen", "sd", "var", "mae", "rmse", "RMS", "Kurtosis", 
-  "Peak", "ImpulseFactor")) {
-  use <- match.arg(use)
-  sigs <- alignment$getAllSignals()
-  vartypes <- names(weight_vartype)
-
-  scores <- c()
-  for (vartype in vartypes) {
-    inst <- alignment$getInstance(wpName = paste0(patternName, "_", vartype), 
-      wcName = paste0(projectName, "_", vartype))
-    supp <- c(inst$getTb_q(q = 1), inst$getTe_q(q = max(inst$getQ())))
-    stopifnot(supp[1] == 0 && supp[2] == 1)
-    # Now the two functions/signals: The first is the unchanged WP, the second is the
-    # warped M function of the SRBTW/SRBTWBAW!
-    f1 <- inst$getWP()
-    f2 <- Vectorize(inst$M)
-    temp <- NA_real_
-
-    if (use == "area") {
-      temp <- area_diff_2_functions_score()(f1 = f1, f2 = f2)
-    } else if (use == "corr") {
-      tempsd <- stat_diff_2_functions(f1 = f1, f2 = f2)
-      temp <- stats::cor(x = tempsd$dataF1, y = tempsd$dataF2)
-      if (is.na(temp)) {
-        temp <- 0
-      }
-      temp <- (temp + 1)/2  # move from [-1,1] \to [0,1]
-    } else if (use == "jsd") {
-      temp <- stat_diff_2_functions_symmetric_JSD_score()(f1 = f1, f2 = f2)
-    } else if (use == "kl") {
-      temp <- stat_diff_2_functions_symmetric_KL_sampled(f1 = f1, f2 = f2)
-      temp <- stat_diff_2_functions_mutual_information_score(sensitivityExponent = 5)(f1 = f1, 
-        f2 = f2)$value
-    } else if (use == "arclen") {
-      temp <- stat_diff_2_functions_arclen_score()(f1 = f1, f2 = f2)
-    } else if (use %in% c("RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
-      temp <- stat_diff_2_functions_signals_score(use = use)(f1 = f1, f2 = f2)
-    } else if (use %in% c("sd", "var", "mae", "rmse")) {
-      temp <- stat_diff_2_functions_sd_var_mae_rmse_score(use = use)(f1 = f1, 
-        f2 = f2)
-    } else stop(paste0("Don't know score ", use))
-
-    scores <- c(scores, `names<-`(c(temp), vartype))
-  }
-  scores
-}
+# Function score_variable_alignment(..) has been moved to common-funcs.R!
 ```
 
 We define a parallelized function to compute all scores of a project:
@@ -1769,8 +1766,7 @@ compute_all_scores <- function(alignment, patternName) {
   useScores <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae", "rmse", 
     "RMS", "Kurtosis", "Peak", "ImpulseFactor")
 
-  # `rownames<-`(
-  doWithParallelCluster(numCores = length(alignment), expr = {
+  `rownames<-`(doWithParallelCluster(numCores = length(alignment), expr = {
     foreach::foreach(projectName = names(alignment), .inorder = TRUE, .combine = rbind, 
       .export = c("score_variable_alignment", "weight_vartype")) %dopar% {
       source("./common-funcs.R")
@@ -1786,53 +1782,14 @@ compute_all_scores <- function(alignment, patternName) {
       }
       `colnames<-`(matrix(data = scores, nrow = 1), names(scores))
     }
-  })  #, sort(names(alignment)))
+  }), sort(names(alignment)))
 }
 ```
 
 We also need to define a function for warping a project to the pattern:
 
 ``` r
-#' This function creates a new instance of \code{srBTAW} and adds all
-#' the signals of pattern 1 and the given project to it. Then it creates
-#' a single RSS-loss per variable pair and adds it to the model and a
-#' linear scalarizer that is used as objective.
-time_warp_project <- function(pattern, project, thetaB = c(0, fd_data_boundaries, 1)) {
-  stopifnot(is.logical(all.equal(names(pattern), names(project))))
-  numInt <- length(thetaB) - 1
-  
-  obj <- srBTAW_LossLinearScalarizer$new(
-    computeParallel = TRUE, gradientParallel = TRUE, returnRaw = FALSE)
-  
-  inst <- srBTAW$new(
-    theta_b = thetaB,
-    gamma_bed = c(0, 1, sqrt(.Machine$double.eps)),
-    lambda = rep(sqrt(.Machine$double.eps), numInt),
-    begin = 0, end = 1, openBegin = FALSE, openEnd = FALSE,
-    useAmplitudeWarping = FALSE)
-  inst$setParams(params = `names<-`(rep(1/numInt, numInt), inst$getParamNames()))
-  
-  for (vartype in names(pattern)) {
-    inst$setSignal(signal = pattern[[vartype]])
-    inst$setSignal(signal = project[[vartype]])
-    
-    loss <- srBTAW_Loss_Rss$new(
-      intervals = seq_len(length.out = numInt), returnRaw = TRUE, # NOT logarithmic!
-      wpName = pattern[[vartype]]$getName(), wcName = project[[vartype]]$getName(),
-      weight = 1, continuous = FALSE, numSamples = rep(1e3, numInt))
-    inst$addLoss(loss = loss)
-    obj$setObjective(name = paste("rss", vartype, sep = "_"), obj = loss)
-  }
-  
-  # Add a time-warp regularizer:
-  reg <- TimeWarpRegularization$new(
-    weight = 1/2, use = "exint2", wpName = pattern$A$getName(), wcName = project$A$getName(),
-    returnRaw = TRUE, intervals = seq_len(length.out = length(names(project))))
-  inst$addLoss(loss = reg)
-  obj$setObjective(name = "reg_exint2", obj = reg)
-
-  inst$setObjective(obj = obj)
-}
+# Function time_warp_project(..) has been moved to common-funcs.R!
 ```
 
 ## Pattern I
@@ -1874,55 +1831,39 @@ Recall that we are obtaining scores for each interval. To aggregate them
 we build the product and the mean in the following table, there is no
 weighing applied.
 
-|                 |   pr_1 |      pr_2 |  pr_3 |  pr_4 |   pr_5 |     pr_6 |     pr_7 |  pr_8 |  pr_9 |
-|:----------------|-------:|----------:|------:|------:|-------:|---------:|---------:|------:|------:|
-| area_m          |   0.80 |      0.81 |  0.89 |  0.89 |   0.83 |     0.83 |     0.77 |  0.84 |  0.82 |
-| area_p          |   0.40 |      0.42 |  0.63 |  0.63 |   0.48 |     0.48 |     0.34 |  0.50 |  0.45 |
-| corr_m          |   0.50 |      0.64 |  0.67 |  0.58 |   0.59 |     0.52 |     0.55 |  0.54 |  0.54 |
-| corr_p          |   0.05 |      0.15 |  0.19 |  0.11 |   0.10 |     0.03 |     0.07 |  0.08 |  0.06 |
-| jsd_m           |   0.28 |      0.34 |  0.46 |  0.43 |   0.40 |     0.37 |     0.29 |  0.34 |  0.32 |
-| jsd_p           |   0.00 |      0.01 |  0.03 |  0.02 |   0.02 |     0.01 |     0.00 |  0.01 |  0.01 |
-| kl_m            |   5.74 |     85.40 |  4.19 |  4.35 |   6.22 |   233.32 |    37.26 |  3.32 |  3.95 |
-| kl_p            | 107.94 | 169731.21 | 62.15 | 74.76 | 203.24 | 35022.00 | 10435.03 | 38.18 | 14.37 |
-| arclen_m        |   0.47 |      0.52 |  0.43 |  0.51 |   0.57 |     0.85 |     0.54 |  0.53 |  0.50 |
-| arclen_p        |   0.04 |      0.07 |  0.03 |  0.06 |   0.10 |     0.50 |     0.06 |  0.08 |  0.06 |
-| sd_m            |   0.65 |      0.70 |  0.77 |  0.74 |   0.76 |     0.75 |     0.69 |  0.70 |  0.68 |
-| sd_p            |   0.18 |      0.24 |  0.34 |  0.30 |   0.32 |     0.30 |     0.21 |  0.23 |  0.21 |
-| var_m           |   0.87 |      0.91 |  0.94 |  0.93 |   0.94 |     0.93 |     0.89 |  0.90 |  0.89 |
-| var_p           |   0.58 |      0.67 |  0.79 |  0.75 |   0.77 |     0.75 |     0.63 |  0.66 |  0.64 |
-| mae_m           |   0.80 |      0.81 |  0.89 |  0.89 |   0.83 |     0.83 |     0.77 |  0.84 |  0.82 |
-| mae_p           |   0.40 |      0.42 |  0.62 |  0.63 |   0.48 |     0.48 |     0.34 |  0.50 |  0.45 |
-| rmse_m          |   0.74 |      0.76 |  0.83 |  0.81 |   0.78 |     0.80 |     0.71 |  0.76 |  0.76 |
-| rmse_p          |   0.30 |      0.33 |  0.48 |  0.43 |   0.37 |     0.40 |     0.24 |  0.33 |  0.32 |
-| RMS_m           |   0.66 |      0.73 |  0.50 |  0.60 |   0.52 |     0.76 |     0.58 |  0.69 |  0.50 |
-| RMS_p           |   0.14 |      0.24 |  0.03 |  0.06 |   0.04 |     0.28 |     0.06 |  0.18 |  0.04 |
-| Kurtosis_m      |   0.40 |      0.49 |  0.39 |  0.31 |   0.24 |     0.39 |     0.35 |  0.35 |  0.13 |
-| Kurtosis_p      |   0.00 |      0.00 |  0.00 |  0.00 |   0.00 |     0.00 |     0.00 |  0.00 |  0.00 |
-| Peak_m          |   0.62 |      0.62 |  0.53 |  0.63 |   0.65 |     0.61 |     0.61 |  0.63 |  0.44 |
-| Peak_p          |   0.09 |      0.10 |  0.04 |  0.06 |   0.12 |     0.09 |     0.06 |  0.09 |  0.03 |
-| ImpulseFactor_m |   0.60 |      0.59 |  0.54 |  0.66 |   0.48 |     0.61 |     0.57 |  0.54 |  0.64 |
-| ImpulseFactor_p |   0.11 |      0.11 |  0.05 |  0.11 |   0.05 |     0.08 |     0.06 |  0.06 |  0.16 |
+|                 | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
+|:----------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| area_m          | 0.80 | 0.81 | 0.89 | 0.89 | 0.83 | 0.83 | 0.77 | 0.84 | 0.82 |
+| area_p          | 0.40 | 0.42 | 0.63 | 0.63 | 0.48 | 0.48 | 0.34 | 0.50 | 0.45 |
+| corr_m          | 0.50 | 0.64 | 0.67 | 0.58 | 0.59 | 0.52 | 0.55 | 0.54 | 0.54 |
+| corr_p          | 0.05 | 0.15 | 0.19 | 0.11 | 0.10 | 0.03 | 0.07 | 0.08 | 0.06 |
+| jsd_m           | 0.28 | 0.34 | 0.46 | 0.43 | 0.40 | 0.37 | 0.29 | 0.34 | 0.32 |
+| jsd_p           | 0.00 | 0.01 | 0.03 | 0.02 | 0.02 | 0.01 | 0.00 | 0.01 | 0.01 |
+| kl_m            | 0.44 | 0.31 | 0.16 | 0.19 | 0.20 | 0.26 | 0.49 | 0.36 | 0.35 |
+| kl_p            | 0.01 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 |
+| arclen_m        | 0.47 | 0.52 | 0.43 | 0.51 | 0.57 | 0.85 | 0.54 | 0.53 | 0.50 |
+| arclen_p        | 0.04 | 0.07 | 0.03 | 0.06 | 0.10 | 0.50 | 0.06 | 0.08 | 0.06 |
+| sd_m            | 0.65 | 0.70 | 0.77 | 0.74 | 0.76 | 0.75 | 0.69 | 0.70 | 0.68 |
+| sd_p            | 0.18 | 0.24 | 0.34 | 0.30 | 0.32 | 0.30 | 0.21 | 0.23 | 0.21 |
+| var_m           | 0.87 | 0.91 | 0.94 | 0.93 | 0.94 | 0.93 | 0.89 | 0.90 | 0.89 |
+| var_p           | 0.58 | 0.67 | 0.79 | 0.75 | 0.77 | 0.75 | 0.63 | 0.66 | 0.64 |
+| mae_m           | 0.80 | 0.81 | 0.89 | 0.89 | 0.83 | 0.83 | 0.77 | 0.84 | 0.82 |
+| mae_p           | 0.40 | 0.42 | 0.62 | 0.63 | 0.48 | 0.48 | 0.34 | 0.50 | 0.45 |
+| rmse_m          | 0.74 | 0.76 | 0.83 | 0.81 | 0.78 | 0.80 | 0.71 | 0.76 | 0.76 |
+| rmse_p          | 0.30 | 0.33 | 0.48 | 0.43 | 0.37 | 0.40 | 0.24 | 0.33 | 0.32 |
+| RMS_m           | 0.66 | 0.73 | 0.50 | 0.60 | 0.52 | 0.76 | 0.58 | 0.69 | 0.50 |
+| RMS_p           | 0.14 | 0.24 | 0.03 | 0.06 | 0.04 | 0.28 | 0.06 | 0.18 | 0.04 |
+| Kurtosis_m      | 0.40 | 0.49 | 0.39 | 0.31 | 0.24 | 0.39 | 0.35 | 0.35 | 0.13 |
+| Kurtosis_p      | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Peak_m          | 0.62 | 0.62 | 0.53 | 0.63 | 0.65 | 0.61 | 0.61 | 0.63 | 0.44 |
+| Peak_p          | 0.09 | 0.10 | 0.04 | 0.06 | 0.12 | 0.09 | 0.06 | 0.09 | 0.03 |
+| ImpulseFactor_m | 0.60 | 0.59 | 0.54 | 0.66 | 0.48 | 0.61 | 0.57 | 0.54 | 0.64 |
+| ImpulseFactor_p | 0.11 | 0.11 | 0.05 | 0.11 | 0.05 | 0.08 | 0.06 | 0.06 | 0.16 |
 
 Scores for the aligned projects with pattern I (p=product, m=mean).
 
-``` r
-corr <- stats::cor(ground_truth$consensus, p1_scores)[1, ]
-
-if (interactive()) {
-  corr
-} else {
-  perCol <- ceiling(length(corr)/3)
-  temp <- data.frame(matrix(ncol = 6, nrow = perCol))
-  for (idx in 1:3) {
-    off <- (idx - 1) * perCol
-    temp[, idx * 2 - 1] <- names(corr)[(1 + off):(perCol + off)]
-    temp[, idx * 2] <- corr[(1 + off):(perCol + off)]
-  }
-  colnames(temp) <- rep(c("Score", "Value"), 2)
-  knitr::kable(x = temp, booktabs = TRUE, caption = "Correlation of the ground truth with all other scores for pattern I.", 
-    label = "p1-corr")
-}
-```
+In table the correlations of the scores with the ground truth as
+computed against the first pattern are shown.
 
 | Score    |      Value | Score    |      Value | NA              |         NA |
 |:---------|-----------:|:---------|-----------:|:----------------|-----------:|
@@ -1932,8 +1873,8 @@ if (interactive()) {
 | corr_p   |  0.2605112 | var_m    |  0.3842355 | Kurtosis_p      | -0.6263601 |
 | jsd_m    |  0.5388574 | var_p    |  0.3900069 | Peak_m          | -0.4524193 |
 | jsd_p    |  0.5938024 | mae_m    |  0.6101791 | Peak_p          | -0.7678158 |
-| kl_m     | -0.2513813 | mae_p    |  0.6423594 | ImpulseFactor_m |  0.4717221 |
-| kl_p     | -0.4087868 | rmse_m   |  0.4837649 | ImpulseFactor_p |  0.2300525 |
+| kl_m     | -0.4227976 | mae_p    |  0.6423594 | ImpulseFactor_m |  0.4717221 |
+| kl_p     | -0.2931612 | rmse_m   |  0.4837649 | ImpulseFactor_p |  0.2300525 |
 | arclen_m | -0.2546068 | rmse_p   |  0.5246423 | NA              |         NA |
 
 Correlation of the ground truth with all other scores for pattern I.
@@ -2011,40 +1952,38 @@ p2_align <- loadResultsOrCompute(file = "../results/p2_align.rds", computeExpr =
 
 ``` r
 p2_scores <- loadResultsOrCompute(file = "../results/p2_scores.rds", computeExpr = {
-  # as.data.frame(
-  compute_all_scores(alignment = p2_align, patternName = "p2")
-  # )
+  as.data.frame(compute_all_scores(alignment = p2_align, patternName = "p2"))
 })
 ```
 
-|                 |      pr_1 |       pr_2 |    pr_3 |         pr_4 |      pr_5 |  pr_6 |   pr_7 |      pr_8 |     pr_9 |
-|:----------------|----------:|-----------:|--------:|-------------:|----------:|------:|-------:|----------:|---------:|
-| area_m          |      0.92 |       0.92 |    0.90 | 9.000000e-01 |      0.89 |  0.87 |   0.86 |      0.90 |     0.91 |
-| area_p          |      0.72 |       0.71 |    0.65 | 6.400000e-01 |      0.61 |  0.56 |   0.55 |      0.65 |     0.68 |
-| corr_m          |      0.69 |       0.61 |    0.55 | 6.800000e-01 |      0.58 |  0.52 |   0.59 |      0.69 |     0.58 |
-| corr_p          |      0.22 |       0.13 |    0.09 | 2.100000e-01 |      0.10 |  0.05 |   0.12 |      0.21 |     0.11 |
-| jsd_m           |      0.48 |       0.42 |    0.36 | 4.100000e-01 |      0.35 |  0.29 |   0.34 |      0.34 |     0.38 |
-| jsd_p           |      0.05 |       0.03 |    0.02 | 2.000000e-02 |      0.01 |  0.00 |   0.01 |      0.01 |     0.02 |
-| kl_m            |     47.29 |     126.99 |    9.78 | 1.064208e+05 |     55.98 | 20.30 |   4.75 |     91.93 |    52.51 |
-| kl_p            | 152516.09 | 4876412.13 | 1607.26 | 5.664986e+10 | 425504.55 |  9.55 | 188.76 | 185115.00 | 30601.09 |
-| arclen_m        |      0.53 |       0.54 |    0.48 | 5.700000e-01 |      0.59 |  0.73 |   0.51 |      0.58 |     0.57 |
-| arclen_p        |      0.05 |       0.07 |    0.04 | 6.000000e-02 |      0.11 |  0.24 |   0.04 |      0.09 |     0.08 |
-| sd_m            |      0.86 |       0.83 |    0.81 | 8.400000e-01 |      0.81 |  0.76 |   0.76 |      0.80 |     0.82 |
-| sd_p            |      0.54 |       0.48 |    0.44 | 5.000000e-01 |      0.43 |  0.31 |   0.32 |      0.42 |     0.45 |
-| var_m           |      0.98 |       0.97 |    0.96 | 9.700000e-01 |      0.96 |  0.93 |   0.94 |      0.96 |     0.97 |
-| var_p           |      0.92 |       0.89 |    0.86 | 9.000000e-01 |      0.85 |  0.75 |   0.76 |      0.85 |     0.87 |
-| mae_m           |      0.92 |       0.92 |    0.90 | 9.000000e-01 |      0.89 |  0.87 |   0.86 |      0.90 |     0.91 |
-| mae_p           |      0.72 |       0.71 |    0.64 | 6.400000e-01 |      0.61 |  0.56 |   0.55 |      0.65 |     0.68 |
-| rmse_m          |      0.89 |       0.88 |    0.86 | 8.600000e-01 |      0.85 |  0.81 |   0.81 |      0.85 |     0.87 |
-| rmse_p          |      0.62 |       0.59 |    0.55 | 5.600000e-01 |      0.53 |  0.42 |   0.42 |      0.53 |     0.57 |
-| RMS_m           |      0.62 |       0.66 |    0.71 | 6.500000e-01 |      0.83 |  0.62 |   0.58 |      0.64 |     0.83 |
-| RMS_p           |      0.11 |       0.14 |    0.21 | 1.500000e-01 |      0.45 |  0.14 |   0.11 |      0.13 |     0.46 |
-| Kurtosis_m      |      0.42 |       0.29 |    0.22 | 3.000000e-01 |      0.33 |  0.11 |   0.30 |      0.39 |     0.37 |
-| Kurtosis_p      |      0.01 |       0.00 |    0.00 | 0.000000e+00 |      0.01 |  0.00 |   0.00 |      0.00 |     0.00 |
-| Peak_m          |      0.66 |       0.52 |    0.54 | 5.300000e-01 |      0.70 |  0.53 |   0.64 |      0.66 |     0.60 |
-| Peak_p          |      0.15 |       0.06 |    0.07 | 6.000000e-02 |      0.23 |  0.07 |   0.14 |      0.14 |     0.11 |
-| ImpulseFactor_m |      0.66 |       0.63 |    0.57 | 5.100000e-01 |      0.62 |  0.61 |   0.77 |      0.55 |     0.55 |
-| ImpulseFactor_p |      0.17 |       0.13 |    0.07 | 2.000000e-02 |      0.09 |  0.08 |   0.34 |      0.06 |     0.06 |
+|                 | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
+|:----------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| area_m          | 0.92 | 0.92 | 0.90 | 0.90 | 0.89 | 0.87 | 0.86 | 0.90 | 0.91 |
+| area_p          | 0.72 | 0.71 | 0.65 | 0.64 | 0.61 | 0.56 | 0.55 | 0.65 | 0.68 |
+| corr_m          | 0.69 | 0.61 | 0.55 | 0.68 | 0.58 | 0.52 | 0.59 | 0.69 | 0.58 |
+| corr_p          | 0.22 | 0.13 | 0.09 | 0.21 | 0.10 | 0.05 | 0.12 | 0.21 | 0.11 |
+| jsd_m           | 0.48 | 0.42 | 0.36 | 0.41 | 0.35 | 0.29 | 0.34 | 0.34 | 0.38 |
+| jsd_p           | 0.05 | 0.03 | 0.02 | 0.02 | 0.01 | 0.00 | 0.01 | 0.01 | 0.02 |
+| kl_m            | 0.13 | 0.17 | 0.20 | 0.20 | 0.26 | 0.47 | 0.25 | 0.24 | 0.22 |
+| kl_p            | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.00 |
+| arclen_m        | 0.53 | 0.54 | 0.48 | 0.57 | 0.59 | 0.73 | 0.51 | 0.58 | 0.57 |
+| arclen_p        | 0.05 | 0.07 | 0.04 | 0.06 | 0.11 | 0.24 | 0.04 | 0.09 | 0.08 |
+| sd_m            | 0.86 | 0.83 | 0.81 | 0.84 | 0.81 | 0.76 | 0.76 | 0.80 | 0.82 |
+| sd_p            | 0.54 | 0.48 | 0.44 | 0.50 | 0.43 | 0.31 | 0.32 | 0.42 | 0.45 |
+| var_m           | 0.98 | 0.97 | 0.96 | 0.97 | 0.96 | 0.93 | 0.94 | 0.96 | 0.97 |
+| var_p           | 0.92 | 0.89 | 0.86 | 0.90 | 0.85 | 0.75 | 0.76 | 0.85 | 0.87 |
+| mae_m           | 0.92 | 0.92 | 0.90 | 0.90 | 0.89 | 0.87 | 0.86 | 0.90 | 0.91 |
+| mae_p           | 0.72 | 0.71 | 0.64 | 0.64 | 0.61 | 0.56 | 0.55 | 0.65 | 0.68 |
+| rmse_m          | 0.89 | 0.88 | 0.86 | 0.86 | 0.85 | 0.81 | 0.81 | 0.85 | 0.87 |
+| rmse_p          | 0.62 | 0.59 | 0.55 | 0.56 | 0.53 | 0.42 | 0.42 | 0.53 | 0.57 |
+| RMS_m           | 0.62 | 0.66 | 0.71 | 0.65 | 0.83 | 0.62 | 0.58 | 0.64 | 0.83 |
+| RMS_p           | 0.11 | 0.14 | 0.21 | 0.15 | 0.45 | 0.14 | 0.11 | 0.13 | 0.46 |
+| Kurtosis_m      | 0.42 | 0.29 | 0.22 | 0.30 | 0.33 | 0.11 | 0.30 | 0.39 | 0.37 |
+| Kurtosis_p      | 0.01 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Peak_m          | 0.66 | 0.52 | 0.54 | 0.53 | 0.70 | 0.53 | 0.64 | 0.66 | 0.60 |
+| Peak_p          | 0.15 | 0.06 | 0.07 | 0.06 | 0.23 | 0.07 | 0.14 | 0.14 | 0.11 |
+| ImpulseFactor_m | 0.66 | 0.63 | 0.57 | 0.51 | 0.62 | 0.61 | 0.77 | 0.55 | 0.55 |
+| ImpulseFactor_p | 0.17 | 0.13 | 0.07 | 0.02 | 0.09 | 0.08 | 0.34 | 0.06 | 0.06 |
 
 Scores for the aligned projects with pattern II (p=product, m=mean).
 
@@ -2058,8 +1997,8 @@ The correlation of just the ground truth with all scores is in table .
 | corr_p   | -0.0362952 | var_m    |  0.1332358 | Kurtosis_p      | -0.3601837 |
 | jsd_m    |  0.0077401 | var_p    |  0.1339373 | Peak_m          | -0.4622136 |
 | jsd_p    | -0.1128088 | mae_m    | -0.0908586 | Peak_p          | -0.4417711 |
-| kl_m     |  0.6724389 | mae_p    | -0.1087002 | ImpulseFactor_m | -0.4271623 |
-| kl_p     |  0.6729587 | rmse_m   |  0.0336848 | ImpulseFactor_p | -0.2815468 |
+| kl_m     | -0.0882289 | mae_p    | -0.1087002 | ImpulseFactor_m | -0.4271623 |
+| kl_p     | -0.1733968 | rmse_m   |  0.0336848 | ImpulseFactor_p | -0.2815468 |
 | arclen_m | -0.1780968 | rmse_p   |  0.0189570 | NA              |         NA |
 
 Correlation of the ground truth with all other scores for pattern II.
@@ -2108,34 +2047,34 @@ p2_no_scores <- loadResultsOrCompute(file = "../results/p2_no_scores.rds", compu
 })
 ```
 
-|                 |    pr_1 |     pr_2 |      pr_3 |          pr_4 |   pr_5 |       pr_6 |     pr_7 |   pr_8 |     pr_9 |
-|:----------------|--------:|---------:|----------:|--------------:|-------:|-----------:|---------:|-------:|---------:|
-| area_m          |    0.78 |     0.88 |      0.89 |          0.88 |   0.85 |       0.86 |     0.89 |   0.83 |     0.90 |
-| area_p          |    0.36 |     0.61 |      0.63 |          0.59 |   0.52 |       0.53 |     0.62 |   0.48 |     0.64 |
-| corr_m          |    0.57 |     0.68 |      0.60 |          0.61 |   0.55 |       0.44 |     0.55 |   0.62 |     0.62 |
-| corr_p          |    0.10 |     0.21 |      0.10 |          0.13 |   0.09 |       0.03 |     0.08 |   0.13 |     0.14 |
-| jsd_m           |    0.32 |     0.42 |      0.36 |          0.33 |   0.31 |       0.26 |     0.31 |   0.35 |     0.37 |
-| jsd_p           |    0.01 |     0.02 |      0.01 |          0.01 |   0.01 |       0.00 |     0.01 |   0.01 |     0.02 |
-| kl_m            |   14.64 |    23.24 |    112.70 |        764.58 |   4.29 |     597.19 |    30.19 |   5.43 |    21.92 |
-| kl_p            | 2924.94 | 10622.94 | 363270.85 | 480249909\.36 | 139.32 | 2771576.46 | 49009.42 | 249.27 | 13800.41 |
-| arclen_m        |    0.76 |     0.55 |      0.55 |          0.58 |   0.51 |       0.57 |     0.47 |   0.55 |     0.60 |
-| arclen_p        |    0.31 |     0.07 |      0.08 |          0.06 |   0.04 |       0.08 |     0.04 |   0.08 |     0.12 |
-| sd_m            |    0.73 |     0.79 |      0.78 |          0.79 |   0.73 |       0.75 |     0.79 |   0.78 |     0.81 |
-| sd_p            |    0.27 |     0.37 |      0.37 |          0.39 |   0.28 |       0.30 |     0.38 |   0.35 |     0.43 |
-| var_m           |    0.92 |     0.95 |      0.95 |          0.95 |   0.92 |       0.93 |     0.95 |   0.94 |     0.96 |
-| var_p           |    0.71 |     0.80 |      0.81 |          0.82 |   0.71 |       0.74 |     0.81 |   0.79 |     0.86 |
-| mae_m           |    0.78 |     0.88 |      0.89 |          0.88 |   0.85 |       0.86 |     0.89 |   0.83 |     0.90 |
-| mae_p           |    0.36 |     0.61 |      0.63 |          0.59 |   0.52 |       0.53 |     0.62 |   0.48 |     0.64 |
-| rmse_m          |    0.72 |     0.83 |      0.84 |          0.84 |   0.79 |       0.81 |     0.85 |   0.79 |     0.86 |
-| rmse_p          |    0.26 |     0.47 |      0.50 |          0.49 |   0.38 |       0.42 |     0.51 |   0.38 |     0.55 |
-| RMS_m           |    0.49 |     0.63 |      0.59 |          0.60 |   0.54 |       0.63 |     0.65 |   0.64 |     0.75 |
-| RMS_p           |    0.06 |     0.14 |      0.09 |          0.10 |   0.08 |       0.15 |     0.16 |   0.13 |     0.32 |
-| Kurtosis_m      |    0.13 |     0.35 |      0.21 |          0.17 |   0.23 |       0.23 |     0.17 |   0.39 |     0.33 |
-| Kurtosis_p      |    0.00 |     0.00 |      0.00 |          0.00 |   0.00 |       0.00 |     0.00 |   0.00 |     0.00 |
-| Peak_m          |    0.53 |     0.66 |      0.52 |          0.53 |   0.64 |       0.60 |     0.54 |   0.66 |     0.70 |
-| Peak_p          |    0.07 |     0.15 |      0.06 |          0.06 |   0.14 |       0.11 |     0.07 |   0.14 |     0.23 |
-| ImpulseFactor_m |    0.64 |     0.82 |      0.65 |          0.49 |   0.75 |       0.51 |     0.57 |   0.60 |     0.64 |
-| ImpulseFactor_p |    0.13 |     0.44 |      0.16 |          0.04 |   0.30 |       0.04 |     0.08 |   0.11 |     0.14 |
+|                 | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
+|:----------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| area_m          | 0.78 | 0.88 | 0.89 | 0.88 | 0.85 | 0.86 | 0.89 | 0.83 | 0.90 |
+| area_p          | 0.36 | 0.61 | 0.63 | 0.59 | 0.52 | 0.53 | 0.62 | 0.48 | 0.64 |
+| corr_m          | 0.57 | 0.68 | 0.60 | 0.61 | 0.55 | 0.44 | 0.55 | 0.62 | 0.62 |
+| corr_p          | 0.10 | 0.21 | 0.10 | 0.13 | 0.09 | 0.03 | 0.08 | 0.13 | 0.14 |
+| jsd_m           | 0.32 | 0.42 | 0.36 | 0.33 | 0.31 | 0.26 | 0.31 | 0.35 | 0.37 |
+| jsd_p           | 0.01 | 0.02 | 0.01 | 0.01 | 0.01 | 0.00 | 0.01 | 0.01 | 0.02 |
+| kl_m            | 0.29 | 0.19 | 0.25 | 0.31 | 0.29 | 0.47 | 0.27 | 0.22 | 0.20 |
+| kl_p            | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 | 0.00 | 0.00 |
+| arclen_m        | 0.76 | 0.55 | 0.55 | 0.58 | 0.51 | 0.57 | 0.47 | 0.55 | 0.60 |
+| arclen_p        | 0.31 | 0.07 | 0.08 | 0.06 | 0.04 | 0.08 | 0.04 | 0.08 | 0.12 |
+| sd_m            | 0.73 | 0.79 | 0.78 | 0.79 | 0.73 | 0.75 | 0.79 | 0.78 | 0.81 |
+| sd_p            | 0.27 | 0.37 | 0.37 | 0.39 | 0.28 | 0.30 | 0.38 | 0.35 | 0.43 |
+| var_m           | 0.92 | 0.95 | 0.95 | 0.95 | 0.92 | 0.93 | 0.95 | 0.94 | 0.96 |
+| var_p           | 0.71 | 0.80 | 0.81 | 0.82 | 0.71 | 0.74 | 0.81 | 0.79 | 0.86 |
+| mae_m           | 0.78 | 0.88 | 0.89 | 0.88 | 0.85 | 0.86 | 0.89 | 0.83 | 0.90 |
+| mae_p           | 0.36 | 0.61 | 0.63 | 0.59 | 0.52 | 0.53 | 0.62 | 0.48 | 0.64 |
+| rmse_m          | 0.72 | 0.83 | 0.84 | 0.84 | 0.79 | 0.81 | 0.85 | 0.79 | 0.86 |
+| rmse_p          | 0.26 | 0.47 | 0.50 | 0.49 | 0.38 | 0.42 | 0.51 | 0.38 | 0.55 |
+| RMS_m           | 0.49 | 0.63 | 0.59 | 0.60 | 0.54 | 0.63 | 0.65 | 0.64 | 0.75 |
+| RMS_p           | 0.06 | 0.14 | 0.09 | 0.10 | 0.08 | 0.15 | 0.16 | 0.13 | 0.32 |
+| Kurtosis_m      | 0.13 | 0.35 | 0.21 | 0.17 | 0.23 | 0.23 | 0.17 | 0.39 | 0.33 |
+| Kurtosis_p      | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Peak_m          | 0.53 | 0.66 | 0.52 | 0.53 | 0.64 | 0.60 | 0.54 | 0.66 | 0.70 |
+| Peak_p          | 0.07 | 0.15 | 0.06 | 0.06 | 0.14 | 0.11 | 0.07 | 0.14 | 0.23 |
+| ImpulseFactor_m | 0.64 | 0.82 | 0.65 | 0.49 | 0.75 | 0.51 | 0.57 | 0.60 | 0.64 |
+| ImpulseFactor_p | 0.13 | 0.44 | 0.16 | 0.04 | 0.30 | 0.04 | 0.08 | 0.11 | 0.14 |
 
 Scores for the non-aligned projects with pattern II (p=product, m=mean).
 
@@ -2149,8 +2088,8 @@ The correlation of just the ground truth with all scores is in table .
 | corr_p   | -0.0668462 | var_m    |  0.5762125 | Kurtosis_p      | -0.1080604 |
 | jsd_m    | -0.0154419 | var_p    |  0.5825667 | Peak_m          | -0.4191859 |
 | jsd_p    | -0.1826259 | mae_m    |  0.5186601 | Peak_p          | -0.2512678 |
-| kl_m     |  0.5504755 | mae_p    |  0.5321362 | ImpulseFactor_m | -0.5075726 |
-| kl_p     |  0.6731723 | rmse_m   |  0.5857615 | ImpulseFactor_p | -0.4730530 |
+| kl_m     |  0.0640951 | mae_p    |  0.5321362 | ImpulseFactor_m | -0.5075726 |
+| kl_p     | -0.1618328 | rmse_m   |  0.5857615 | ImpulseFactor_p | -0.4730530 |
 | arclen_m | -0.0765462 | rmse_p   |  0.6123484 | NA              |         NA |
 
 Correlation of the ground truth with all other non-aligned scores for
@@ -2219,34 +2158,34 @@ p3_avg_scores <- loadResultsOrCompute(file = "../results/p3_avg_scores.rds", com
 })
 ```
 
-|                 |     pr_1 |     pr_2 |   pr_3 |     pr_4 |        pr_5 |          pr_6 |        pr_7 |    pr_8 |        pr_9 |
-|:----------------|---------:|---------:|-------:|---------:|------------:|--------------:|------------:|--------:|------------:|
-| area_m          |     0.93 |     0.90 |   0.88 |     0.94 |        0.94 |          0.93 |        0.89 |    0.93 |        0.92 |
-| area_p          |     0.73 |     0.66 |   0.60 |     0.77 |        0.79 |          0.74 |        0.62 |    0.75 |        0.71 |
-| corr_m          |     0.61 |     0.65 |   0.53 |     0.73 |        0.76 |          0.86 |        0.70 |    0.78 |        0.73 |
-| corr_p          |     0.13 |     0.14 |   0.07 |     0.28 |        0.32 |          0.55 |        0.22 |    0.37 |        0.27 |
-| jsd_m           |     0.45 |     0.43 |   0.38 |     0.56 |        0.52 |          0.54 |        0.39 |    0.53 |        0.48 |
-| jsd_p           |     0.04 |     0.03 |   0.02 |     0.08 |        0.07 |          0.06 |        0.02 |    0.07 |        0.04 |
-| kl_m            |    46.44 |    23.01 |   4.43 |    38.29 |     1023.40 |       4098.55 |     6731.77 |   10.23 |     2921.25 |
-| kl_p            | 28603.90 | 10875.90 | 190.61 | 29987.58 | 12752649.76 | 323943591\.52 | 57623738.67 | 1627.21 | 26054558.68 |
-| arclen_m        |     0.57 |     0.68 |   0.53 |     0.66 |        0.63 |          0.65 |        0.80 |    0.74 |        0.60 |
-| arclen_p        |     0.10 |     0.19 |   0.07 |     0.17 |        0.12 |          0.14 |        0.31 |    0.26 |        0.13 |
-| sd_m            |     0.83 |     0.84 |   0.79 |     0.86 |        0.89 |          0.88 |        0.83 |    0.87 |        0.86 |
-| sd_p            |     0.48 |     0.50 |   0.38 |     0.54 |        0.61 |          0.60 |        0.47 |    0.58 |        0.55 |
-| var_m           |     0.97 |     0.97 |   0.95 |     0.98 |        0.98 |          0.98 |        0.97 |    0.98 |        0.98 |
-| var_p           |     0.88 |     0.90 |   0.81 |     0.90 |        0.94 |          0.93 |        0.88 |    0.93 |        0.91 |
-| mae_m           |     0.93 |     0.90 |   0.88 |     0.94 |        0.94 |          0.93 |        0.89 |    0.93 |        0.92 |
-| mae_p           |     0.73 |     0.66 |   0.60 |     0.77 |        0.79 |          0.74 |        0.62 |    0.75 |        0.71 |
-| rmse_m          |     0.88 |     0.87 |   0.84 |     0.90 |        0.92 |          0.91 |        0.85 |    0.90 |        0.89 |
-| rmse_p          |     0.59 |     0.58 |   0.50 |     0.65 |        0.70 |          0.67 |        0.51 |    0.67 |        0.62 |
-| RMS_m           |     0.54 |     0.50 |   0.48 |     0.67 |        0.64 |          0.55 |        0.50 |    0.58 |        0.62 |
-| RMS_p           |     0.07 |     0.05 |   0.04 |     0.19 |        0.16 |          0.09 |        0.04 |    0.09 |        0.13 |
-| Kurtosis_m      |     0.13 |     0.37 |   0.18 |     0.28 |        0.26 |          0.16 |        0.20 |    0.43 |        0.19 |
-| Kurtosis_p      |     0.00 |     0.00 |   0.00 |     0.00 |        0.00 |          0.00 |        0.00 |    0.01 |        0.00 |
-| Peak_m          |     0.53 |     0.71 |   0.57 |     0.60 |        0.68 |          0.58 |        0.47 |    0.72 |        0.54 |
-| Peak_p          |     0.07 |     0.20 |   0.10 |     0.13 |        0.20 |          0.11 |        0.03 |    0.21 |        0.08 |
-| ImpulseFactor_m |     0.61 |     0.74 |   0.69 |     0.62 |        0.67 |          0.44 |        0.49 |    0.70 |        0.42 |
-| ImpulseFactor_p |     0.12 |     0.28 |   0.21 |     0.14 |        0.18 |          0.03 |        0.02 |    0.22 |        0.03 |
+|                 | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
+|:----------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| area_m          | 0.93 | 0.90 | 0.88 | 0.94 | 0.94 | 0.93 | 0.89 | 0.93 | 0.92 |
+| area_p          | 0.73 | 0.66 | 0.60 | 0.77 | 0.79 | 0.74 | 0.62 | 0.75 | 0.71 |
+| corr_m          | 0.61 | 0.65 | 0.53 | 0.73 | 0.76 | 0.86 | 0.70 | 0.78 | 0.73 |
+| corr_p          | 0.13 | 0.14 | 0.07 | 0.28 | 0.32 | 0.55 | 0.22 | 0.37 | 0.27 |
+| jsd_m           | 0.45 | 0.43 | 0.38 | 0.56 | 0.52 | 0.54 | 0.39 | 0.53 | 0.48 |
+| jsd_p           | 0.04 | 0.03 | 0.02 | 0.08 | 0.07 | 0.06 | 0.02 | 0.07 | 0.04 |
+| kl_m            | 0.14 | 0.16 | 0.19 | 0.10 | 0.09 | 0.12 | 0.18 | 0.09 | 0.16 |
+| kl_p            | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| arclen_m        | 0.57 | 0.68 | 0.53 | 0.66 | 0.63 | 0.65 | 0.80 | 0.74 | 0.60 |
+| arclen_p        | 0.10 | 0.19 | 0.07 | 0.17 | 0.12 | 0.14 | 0.31 | 0.26 | 0.13 |
+| sd_m            | 0.83 | 0.84 | 0.79 | 0.86 | 0.89 | 0.88 | 0.83 | 0.87 | 0.86 |
+| sd_p            | 0.48 | 0.50 | 0.38 | 0.54 | 0.61 | 0.60 | 0.47 | 0.58 | 0.55 |
+| var_m           | 0.97 | 0.97 | 0.95 | 0.98 | 0.98 | 0.98 | 0.97 | 0.98 | 0.98 |
+| var_p           | 0.88 | 0.90 | 0.81 | 0.90 | 0.94 | 0.93 | 0.88 | 0.93 | 0.91 |
+| mae_m           | 0.93 | 0.90 | 0.88 | 0.94 | 0.94 | 0.93 | 0.89 | 0.93 | 0.92 |
+| mae_p           | 0.73 | 0.66 | 0.60 | 0.77 | 0.79 | 0.74 | 0.62 | 0.75 | 0.71 |
+| rmse_m          | 0.88 | 0.87 | 0.84 | 0.90 | 0.92 | 0.91 | 0.85 | 0.90 | 0.89 |
+| rmse_p          | 0.59 | 0.58 | 0.50 | 0.65 | 0.70 | 0.67 | 0.51 | 0.67 | 0.62 |
+| RMS_m           | 0.54 | 0.50 | 0.48 | 0.67 | 0.64 | 0.55 | 0.50 | 0.58 | 0.62 |
+| RMS_p           | 0.07 | 0.05 | 0.04 | 0.19 | 0.16 | 0.09 | 0.04 | 0.09 | 0.13 |
+| Kurtosis_m      | 0.13 | 0.37 | 0.18 | 0.28 | 0.26 | 0.16 | 0.20 | 0.43 | 0.19 |
+| Kurtosis_p      | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.00 |
+| Peak_m          | 0.53 | 0.71 | 0.57 | 0.60 | 0.68 | 0.58 | 0.47 | 0.72 | 0.54 |
+| Peak_p          | 0.07 | 0.20 | 0.10 | 0.13 | 0.20 | 0.11 | 0.03 | 0.21 | 0.08 |
+| ImpulseFactor_m | 0.61 | 0.74 | 0.69 | 0.62 | 0.67 | 0.44 | 0.49 | 0.70 | 0.42 |
+| ImpulseFactor_p | 0.12 | 0.28 | 0.21 | 0.14 | 0.18 | 0.03 | 0.02 | 0.22 | 0.03 |
 
 Scores for the aligned projects with pattern III (average ground truth).
 
@@ -2260,8 +2199,8 @@ The correlation of just the ground truth with all scores is in table .
 | corr_p   | -0.1652319 | var_m    | -0.4254858 | Kurtosis_p      | -0.4821234 |
 | jsd_m    |  0.0300469 | var_p    | -0.4289845 | Peak_m          | -0.4520734 |
 | jsd_p    | -0.0243270 | mae_m    | -0.1309105 | Peak_p          | -0.4502977 |
-| kl_m     |  0.0246984 | mae_p    | -0.1296077 | ImpulseFactor_m | -0.2753840 |
-| kl_p     | -0.1039983 | rmse_m   | -0.2254399 | ImpulseFactor_p | -0.2790409 |
+| kl_m     |  0.2310304 | mae_p    | -0.1296077 | ImpulseFactor_m | -0.2753840 |
+| kl_p     |  0.2108042 | rmse_m   | -0.2254399 | ImpulseFactor_p | -0.2790409 |
 | arclen_m | -0.2946963 | rmse_p   | -0.2372254 | NA              |         NA |
 
 Correlation of the ground truth with all other scores for pattern II.
@@ -2308,51 +2247,51 @@ p3_avg_no_scores <- loadResultsOrCompute(file = "../results/p3_avg_no_scores.rds
   })
 ```
 
-|                 |   pr_1 |    pr_2 |     pr_3 |         pr_4 |    pr_5 |        pr_6 |      pr_7 |   pr_8 |     pr_9 |
-|:----------------|-------:|--------:|---------:|-------------:|--------:|------------:|----------:|-------:|---------:|
-| area_m          |   0.80 |    0.88 |     0.91 | 9.000000e-01 |    0.86 |        0.88 |      0.91 |   0.84 |     0.91 |
-| area_p          |   0.39 |    0.59 |     0.69 | 6.600000e-01 |    0.55 |        0.60 |      0.67 |   0.50 |     0.69 |
-| corr_m          |   0.66 |    0.50 |     0.71 | 8.200000e-01 |    0.49 |        0.58 |      0.73 |   0.59 |     0.77 |
-| corr_p          |   0.19 |    0.06 |     0.22 | 4.400000e-01 |    0.05 |        0.11 |      0.27 |   0.08 |     0.34 |
-| jsd_m           |   0.36 |    0.37 |     0.49 | 4.900000e-01 |    0.33 |        0.36 |      0.46 |   0.39 |     0.46 |
-| jsd_p           |   0.01 |    0.01 |     0.04 | 4.000000e-02 |    0.01 |        0.01 |      0.03 |   0.02 |     0.03 |
-| kl_m            |   7.33 |   17.22 |    60.96 | 5.231730e+03 |    8.73 |      290.40 |     95.40 |   4.92 |    19.84 |
-| kl_p            | 604.15 | 7730.05 | 57459.29 | 6.591741e+09 | 1016.03 | 11895835.33 | 105525.86 | 386.95 | 18235.65 |
-| arclen_m        |   0.75 |    0.61 |     0.71 | 6.700000e-01 |    0.58 |        0.63 |      0.65 |   0.71 |     0.76 |
-| arclen_p        |   0.26 |    0.13 |     0.23 | 1.600000e-01 |    0.10 |        0.15 |      0.15 |   0.21 |     0.29 |
-| sd_m            |   0.75 |    0.77 |     0.83 | 8.700000e-01 |    0.75 |        0.80 |      0.84 |   0.80 |     0.84 |
-| sd_p            |   0.30 |    0.34 |     0.45 | 5.600000e-01 |    0.31 |        0.40 |      0.48 |   0.40 |     0.50 |
-| var_m           |   0.93 |    0.94 |     0.96 | 9.800000e-01 |    0.93 |        0.95 |      0.96 |   0.95 |     0.97 |
-| var_p           |   0.73 |    0.77 |     0.85 | 9.100000e-01 |    0.74 |        0.82 |      0.86 |   0.82 |     0.89 |
-| mae_m           |   0.80 |    0.88 |     0.91 | 9.000000e-01 |    0.86 |        0.88 |      0.91 |   0.84 |     0.91 |
-| mae_p           |   0.39 |    0.59 |     0.69 | 6.600000e-01 |    0.55 |        0.60 |      0.67 |   0.50 |     0.69 |
-| rmse_m          |   0.73 |    0.82 |     0.87 | 8.900000e-01 |    0.80 |        0.84 |      0.88 |   0.80 |     0.88 |
-| rmse_p          |   0.27 |    0.45 |     0.57 | 6.100000e-01 |    0.41 |        0.50 |      0.58 |   0.40 |     0.60 |
-| RMS_m           |   0.46 |    0.43 |     0.50 | 5.500000e-01 |    0.39 |        0.48 |      0.56 |   0.47 |     0.54 |
-| RMS_p           |   0.02 |    0.03 |     0.06 | 9.000000e-02 |    0.02 |        0.05 |      0.09 |   0.03 |     0.07 |
-| Kurtosis_m      |   0.14 |    0.11 |     0.21 | 1.200000e-01 |    0.12 |        0.10 |      0.32 |   0.37 |     0.37 |
-| Kurtosis_p      |   0.00 |    0.00 |     0.00 | 0.000000e+00 |    0.00 |        0.00 |      0.00 |   0.00 |     0.00 |
-| Peak_m          |   0.47 |    0.53 |     0.60 | 5.800000e-01 |    0.57 |        0.54 |      0.68 |   0.71 |     0.72 |
-| Peak_p          |   0.03 |    0.07 |     0.13 | 1.100000e-01 |    0.10 |        0.08 |      0.20 |   0.20 |     0.21 |
-| ImpulseFactor_m |   0.49 |    0.71 |     0.69 | 3.700000e-01 |    0.78 |        0.37 |      0.74 |   0.76 |     0.69 |
-| ImpulseFactor_p |   0.05 |    0.17 |     0.22 | 1.000000e-02 |    0.34 |        0.01 |      0.29 |   0.30 |     0.20 |
+|                 | pr_1 | pr_2 | pr_3 | pr_4 | pr_5 | pr_6 | pr_7 | pr_8 | pr_9 |
+|:----------------|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
+| area_m          | 0.80 | 0.88 | 0.91 | 0.90 | 0.86 | 0.88 | 0.91 | 0.84 | 0.91 |
+| area_p          | 0.39 | 0.59 | 0.69 | 0.66 | 0.55 | 0.60 | 0.67 | 0.50 | 0.69 |
+| corr_m          | 0.66 | 0.50 | 0.71 | 0.82 | 0.49 | 0.58 | 0.73 | 0.59 | 0.77 |
+| corr_p          | 0.19 | 0.06 | 0.22 | 0.44 | 0.05 | 0.11 | 0.27 | 0.08 | 0.34 |
+| jsd_m           | 0.36 | 0.37 | 0.49 | 0.49 | 0.33 | 0.36 | 0.46 | 0.39 | 0.46 |
+| jsd_p           | 0.01 | 0.01 | 0.04 | 0.04 | 0.01 | 0.01 | 0.03 | 0.02 | 0.03 |
+| kl_m            | 0.23 | 0.27 | 0.16 | 0.16 | 0.26 | 0.32 | 0.18 | 0.20 | 0.15 |
+| kl_p            | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| arclen_m        | 0.75 | 0.61 | 0.71 | 0.67 | 0.58 | 0.63 | 0.65 | 0.71 | 0.76 |
+| arclen_p        | 0.26 | 0.13 | 0.23 | 0.16 | 0.10 | 0.15 | 0.15 | 0.21 | 0.29 |
+| sd_m            | 0.75 | 0.77 | 0.83 | 0.87 | 0.75 | 0.80 | 0.84 | 0.80 | 0.84 |
+| sd_p            | 0.30 | 0.34 | 0.45 | 0.56 | 0.31 | 0.40 | 0.48 | 0.40 | 0.50 |
+| var_m           | 0.93 | 0.94 | 0.96 | 0.98 | 0.93 | 0.95 | 0.96 | 0.95 | 0.97 |
+| var_p           | 0.73 | 0.77 | 0.85 | 0.91 | 0.74 | 0.82 | 0.86 | 0.82 | 0.89 |
+| mae_m           | 0.80 | 0.88 | 0.91 | 0.90 | 0.86 | 0.88 | 0.91 | 0.84 | 0.91 |
+| mae_p           | 0.39 | 0.59 | 0.69 | 0.66 | 0.55 | 0.60 | 0.67 | 0.50 | 0.69 |
+| rmse_m          | 0.73 | 0.82 | 0.87 | 0.89 | 0.80 | 0.84 | 0.88 | 0.80 | 0.88 |
+| rmse_p          | 0.27 | 0.45 | 0.57 | 0.61 | 0.41 | 0.50 | 0.58 | 0.40 | 0.60 |
+| RMS_m           | 0.46 | 0.43 | 0.50 | 0.55 | 0.39 | 0.48 | 0.56 | 0.47 | 0.54 |
+| RMS_p           | 0.02 | 0.03 | 0.06 | 0.09 | 0.02 | 0.05 | 0.09 | 0.03 | 0.07 |
+| Kurtosis_m      | 0.14 | 0.11 | 0.21 | 0.12 | 0.12 | 0.10 | 0.32 | 0.37 | 0.37 |
+| Kurtosis_p      | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Peak_m          | 0.47 | 0.53 | 0.60 | 0.58 | 0.57 | 0.54 | 0.68 | 0.71 | 0.72 |
+| Peak_p          | 0.03 | 0.07 | 0.13 | 0.11 | 0.10 | 0.08 | 0.20 | 0.20 | 0.21 |
+| ImpulseFactor_m | 0.49 | 0.71 | 0.69 | 0.37 | 0.78 | 0.37 | 0.74 | 0.76 | 0.69 |
+| ImpulseFactor_p | 0.05 | 0.17 | 0.22 | 0.01 | 0.34 | 0.01 | 0.29 | 0.30 | 0.20 |
 
 Scores for the non-aligned projects with pattern III (average ground
 truth).
 
 The correlation of just the ground truth with all scores is in table .
 
-| Score    |     Value | Score    |     Value | Score           |      Value |
-|:---------|----------:|:---------|----------:|:----------------|-----------:|
-| area_m   | 0.6670842 | arclen_p | 0.2514802 | RMS_m           |  0.7467092 |
-| area_p   | 0.6894208 | sd_m     | 0.8218241 | RMS_p           |  0.7740284 |
-| corr_m   | 0.8412487 | sd_p     | 0.8436768 | Kurtosis_m      |  0.0543283 |
-| corr_p   | 0.8835587 | var_m    | 0.7916103 | Kurtosis_p      |  0.0289034 |
-| jsd_m    | 0.8823326 | var_p    | 0.8025434 | Peak_m          |  0.1879883 |
-| jsd_p    | 0.8724026 | mae_m    | 0.6670619 | Peak_p          |  0.1986320 |
-| kl_m     | 0.6774499 | mae_p    | 0.6893942 | ImpulseFactor_m | -0.3763130 |
-| kl_p     | 0.6729326 | rmse_m   | 0.7436967 | ImpulseFactor_p | -0.3217380 |
-| arclen_m | 0.2914946 | rmse_p   | 0.7784040 | NA              |         NA |
+| Score    |      Value | Score    |     Value | Score           |      Value |
+|:---------|-----------:|:---------|----------:|:----------------|-----------:|
+| area_m   |  0.6670842 | arclen_p | 0.2514802 | RMS_m           |  0.7467092 |
+| area_p   |  0.6894208 | sd_m     | 0.8218241 | RMS_p           |  0.7740284 |
+| corr_m   |  0.8412487 | sd_p     | 0.8436768 | Kurtosis_m      |  0.0543283 |
+| corr_p   |  0.8835587 | var_m    | 0.7916103 | Kurtosis_p      |  0.0289034 |
+| jsd_m    |  0.8823326 | var_p    | 0.8025434 | Peak_m          |  0.1879883 |
+| jsd_p    |  0.8724026 | mae_m    | 0.6670619 | Peak_p          |  0.1986320 |
+| kl_m     | -0.6623665 | mae_p    | 0.6893942 | ImpulseFactor_m | -0.3763130 |
+| kl_p     | -0.7161612 | rmse_m   | 0.7436967 | ImpulseFactor_p | -0.3217380 |
+| arclen_m |  0.2914946 | rmse_p   | 0.7784040 | NA              |         NA |
 
 Correlation of the ground truth with all other scores for pattern II.
 
@@ -2399,7 +2338,7 @@ stats::coef(p3_avg_lm)
 plot(p3_avg_lm, ask = FALSE, which = 1:2)
 ```
 
-![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-56-1.png)<!-- -->![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-56-2.png)<!-- -->
+![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-57-1.png)<!-- -->![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-57-2.png)<!-- -->
 
 Of course, this model should not be used to predict on the training
 data, but what we wanted to learn here is simply how to linearly combine
@@ -2423,6 +2362,345 @@ stats::cor(p3_avg_lm_scores, ground_truth$consensus_score)
     ## [1] 0.9485156
 
 This also increased the correlation to 0.949.
+
+### Finding the most important scores
+
+Previously, we have combined some hand-picked scores into a linear
+model, in order to mainly scale and translate them, in order to be able
+to obtain predictions in the range of the actual ground truth. However,
+this approach is not suitable for a model that shall generalize.
+
+We have shown in figure that most scores capture different properties of
+the alignment. It therefore makes sense to choose scores for a
+regression that, once combined, have the most predictive power in terms
+of accuracy (precision), and generalizability. There are quite many
+techniques and approaches to *feature selection*. Here, we will attempt
+a **recursive feature elimination** (RFE), that uses partial least
+squares as estimator, a measure of **variable importance**, and using
+bootstrapped data (for example, Darst, Malecki, and Engelman (2018)).
+
+Before we start, a few things are of importance. First, a feature
+selection should be done whenever a new model with prediction and
+generalization capabilities is to be trained, i.e., it is specific to
+the case (here process model and observed processes). Therefore, the
+features we select here are only a valid selection for a model that is
+to make predictions on scores as obtained from the pattern type III
+(average, no align). Secondly, the amount of data we have only suffices
+for running the suggested RFE, but the data is too scarce to obtain a
+robust model. Therefore, the results we will obtain here are practically
+only usable for giving an indication as to the relative importance of
+features (here: scores), but we must not deduce a genuine truth from
+them, nor can we conclude an absolute ordering that will hold for future
+runs of this approach, given different data. Thirdly, and that is
+specific to our case, we have separate scores for each interval
+(previously aggregated once using the mean, and once using the product),
+but the score is an aggregation across all variables (activities).
+Having one score represent the deviation over only one contiguous,
+aggregated interval, should be avoided in a real-world setting, and
+scores should be localized to each interval, to become their own
+feature. However, that requires even more data. Also, one would probably
+not aggregate scores across variables. We will examine this scenario
+more closely for issue-tracking data.
+
+Let’s start, we’ll use the scores from `p3_avg_no_scores`:
+
+``` r
+rfe_data <- cbind(p3_avg_no_scores, data.frame(gt = ground_truth$consensus))
+```
+
+The RFE is done via caret, with 3-times repeated, 10-fold cross
+validation as outer resampling method[2].
+
+``` r
+library(caret, quietly = TRUE)
+
+set.seed(1337)
+
+control <- caret::trainControl(method = "repeatedcv", number = 10, repeats = 3)
+modelFit <- caret::train(gt ~ ., data = rfe_data, method = "pls", trControl = control)
+
+imp <- caret::varImp(object = modelFit)
+```
+
+    ## 
+    ## Attaching package: 'pls'
+
+    ## The following object is masked from 'package:caret':
+    ## 
+    ##     R2
+
+    ## The following object is masked from 'package:stats':
+    ## 
+    ##     loadings
+
+<div class="figure" style="text-align: top">
+
+<img src="fire-drill-technical-report_files/figure-gfm/p3-avg-no-var-imp-plot-1.png" alt="Plot of the relative variable importances of scores as computed against pattern III (average)."  />
+<p class="caption">
+Plot of the relative variable importances of scores as computed against
+pattern III (average).
+</p>
+
+</div>
+
+The relative variable importances are shown in table . Unsurprisingly,
+correlation is the most important feature (score), as it expresses the
+degree to which two curves resemble each other (regardless of their
+absolute difference). This is then captured by the next most important
+score, the RMSE, closely followed by the standard deviation and area
+between curves. Note that area, RMSE, sd and variance are all highly
+correlated, so this does not come as a surprise. The next two places is
+the Impulsefactor and Jenson–Shannon divergence. We observe a somewhat
+healthy mix between mean- and product-measures. For values that tend to
+be comparatively tiny, such as the JSD or KL divergence, the product
+reduces variance too extreme (should have used log-sums), such that the
+score forfeits too much of its importance.
+
+|                 |     Overall |
+|:----------------|------------:|
+| corr_p          | 100.0000000 |
+| corr_m          |  82.4997038 |
+| rmse_p          |  74.7951625 |
+| sd_p            |  62.7139275 |
+| area_p          |  58.3954015 |
+| mae_p           |  58.3812807 |
+| ImpulseFactor_m |  52.2749729 |
+| jsd_m           |  46.5783897 |
+| var_p           |  43.0166540 |
+| RMS_m           |  35.8758915 |
+| ImpulseFactor_p |  34.0850404 |
+| kl_m            |  33.1660758 |
+| rmse_m          |  31.5078958 |
+| sd_m            |  29.0562651 |
+| area_m          |  21.5288693 |
+| mae_m           |  21.5241949 |
+| RMS_p           |  17.7170483 |
+| arclen_m        |  14.9978964 |
+| Peak_m          |  14.8411897 |
+| arclen_p        |  13.7074530 |
+| var_m           |  12.1239044 |
+| Peak_p          |  11.7125090 |
+| jsd_p           |   9.1980319 |
+| Kurtosis_m      |   7.0437781 |
+| kl_p            |   0.4299751 |
+| Kurtosis_p      |   0.0000000 |
+
+Relative variable importances of scores as computed from all projects
+against pattern type III (average, no align).
+
+The final model as selected by the RFE approach has these properties:
+
+``` r
+modelFit
+```
+
+    ## Partial Least Squares 
+    ## 
+    ##  9 samples
+    ## 26 predictors
+    ## 
+    ## No pre-processing
+    ## Resampling: Cross-Validated (10 fold, repeated 3 times) 
+    ## Summary of sample sizes: 8, 8, 8, 8, 8, 8, ... 
+    ## Resampling results across tuning parameters:
+    ## 
+    ##   ncomp  RMSE      Rsquared  MAE     
+    ##   1      1.515697  NaN       1.515697
+    ##   2      1.317217  NaN       1.317217
+    ##   3      1.497372  NaN       1.497372
+    ## 
+    ## RMSE was used to select the optimal model using the smallest value.
+    ## The final value used for the model was ncomp = 2.
+
+Now if we were to make predictions with this model, the results would be
+these:
+
+``` r
+temp <- predict(object = modelFit, newdata = p3_avg_no_scores)
+round(x = temp, digits = 2)
+```
+
+    ## [1]  1.17  0.90  4.31  7.69 -0.47  3.14  3.96  0.20  5.11
+
+``` r
+ground_truth$consensus
+```
+
+    ## [1] 1 0 6 8 1 2 3 0 5
+
+The correlation with the ground truth would then be:
+
+``` r
+cor.test(ground_truth$consensus, temp)
+```
+
+    ## 
+    ##  Pearson's product-moment correlation
+    ## 
+    ## data:  ground_truth$consensus and temp
+    ## t = 6.9369, df = 7, p-value = 0.0002238
+    ## alternative hypothesis: true correlation is not equal to 0
+    ## 95 percent confidence interval:
+    ##  0.7120974 0.9863926
+    ## sample estimates:
+    ##       cor 
+    ## 0.9343479
+
+### Pattern as confidence surface
+
+Exactly how it was done for issue-tracking data (refer for details to
+subsection , as here we will only create and show the resulting
+pattern), we can produce a data-only pattern that features the weighted
+average for each variable, but also a confidence surface that takes the
+ground truth into account. Note that as the time of adding this section,
+we have access to a second batch of projects, including a ground truth.
+We will therefore include those here, as data-only patterns become
+better with each observation.
+
+``` r
+ground_truth_2nd_batch <- read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";")
+ground_truth_2nd_batch$consensus_score <- ground_truth_2nd_batch$consensus/10
+rownames(ground_truth_2nd_batch) <- paste0((1 + nrow(ground_truth)):(nrow(ground_truth) + 
+  nrow(ground_truth_2nd_batch)))
+
+temp <- rbind(ground_truth, ground_truth_2nd_batch)
+omega <- temp$consensus_score
+names(omega) <- paste0("Project", 1:length(omega))
+```
+
+The weighted averaged signals are stored in `p3_avg_signals`, so we need
+to compute two things: first, we need functions to delineate the
+confidence surface (CI<sub>upper</sub>(*x*) and
+CI<sub>upper</sub>(*x*)), and second, we need a function that produces
+the gradated surface within those bounds (CI (*x*,*y*)). This is very
+similar to how it was done for issue-tracking, so most of the code is
+not shown here (check the source code for this notebook).
+
+Let’s load the new batch and do some required preprocessing:
+
+``` r
+student_projects_2nd_batch <- read.csv(file = "../data/student-projects_2nd-batch.csv", 
+  sep = ";")
+student_projects_2nd_batch$label <- as.factor(student_projects_2nd_batch$label)
+student_projects_2nd_batch$project <- as.factor(student_projects_2nd_batch$project)
+student_projects_2nd_batch$AuthorTimeNormalized <- NA_real_
+
+for (pId in levels(student_projects_2nd_batch$project)) {
+  student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeNormalized <- (student_projects_2nd_batch[student_projects_2nd_batch$project == 
+    pId, ]$AuthorTimeUnixEpochMilliSecs - min(student_projects_2nd_batch[student_projects_2nd_batch$project == 
+    pId, ]$AuthorTimeUnixEpochMilliSecs))
+  student_projects_2nd_batch[student_projects_2nd_batch$project == pId, ]$AuthorTimeNormalized <- (student_projects_2nd_batch[student_projects_2nd_batch$project == 
+    pId, ]$AuthorTimeNormalized/max(student_projects_2nd_batch[student_projects_2nd_batch$project == 
+    pId, ]$AuthorTimeNormalized))
+}
+```
+
+Below, we show the amount of commits in each project:
+
+``` r
+table(student_projects_2nd_batch$project)
+```
+
+    ## 
+    ## project_10 project_11 project_12 project_13 project_14 project_15 
+    ##        158        542        136        192         62         66
+
+The second batch of projects and their variables are shown in figure .
+
+<div class="figure" style="text-align: top">
+
+<img src="fire-drill-technical-report_files/figure-gfm/project-vars-2nd-batch-1.png" alt="All variables over each project's time span (second batch of projects)."  />
+<p class="caption">
+All variables over each project’s time span (second batch of projects).
+</p>
+
+</div>
+
+We will need to produce the weighted average for each variable, as we
+have done it previously for creating pattern type III. It needs to be
+redone, because we want to include the new projects.
+
+``` r
+p3_avg_signals_all <- list()
+
+for (vartype in names(weight_vartype)) {
+  p3_avg_signals_all[[vartype]] <- Signal$new(name = paste0("p3_avg_", vartype), 
+    support = c(0, 1), isWp = TRUE, func = gt_weighted_avg(vartype = vartype, 
+      use_signals = append(project_signals, project_signals_2nd_batch), use_ground_truth = rbind(ground_truth, 
+        ground_truth_2nd_batch)))
+}
+```
+
+Next, we’ll produce the lower and upper bounds vor each variable:
+
+``` r
+a_ci_upper_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_A, omega = omega, 
+  upper = TRUE)
+a_ci_lower_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_A, omega = omega, 
+  upper = FALSE)
+
+cp_ci_upper_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_CP, omega = omega, 
+  upper = TRUE)
+cp_ci_lower_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_CP, omega = omega, 
+  upper = FALSE)
+
+freq_ci_upper_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_FREQ, 
+  omega = omega, upper = TRUE)
+freq_ci_lower_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_FREQ, 
+  omega = omega, upper = FALSE)
+
+scd_ci_upper_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_SCD, 
+  omega = omega, upper = TRUE)
+scd_ci_lower_p3avg <- function(x) CI_bound_p3avg(x = x, funclist = funclist_SCD, 
+  omega = omega, upper = FALSE)
+```
+
+``` r
+CI_a_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_A, f_ci_upper = a_ci_upper_p3avg, 
+  f_ci_lower = a_ci_lower_p3avg, gbar = p3_avg_signals_all$A$get0Function(), omega = omega)
+CI_cp_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_CP, f_ci_upper = cp_ci_upper_p3avg, 
+  f_ci_lower = cp_ci_lower_p3avg, gbar = p3_avg_signals_all$CP$get0Function(), 
+  omega = omega)
+CI_freq_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_FREQ, 
+  f_ci_upper = freq_ci_upper_p3avg, f_ci_lower = freq_ci_lower_p3avg, gbar = p3_avg_signals_all$FREQ$get0Function(), 
+  omega = omega)
+CI_scd_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_SCD, f_ci_upper = scd_ci_upper_p3avg, 
+  f_ci_lower = scd_ci_lower_p3avg, gbar = p3_avg_signals_all$SCD$get0Function(), 
+  omega = omega)
+
+saveRDS(object = list(CI_a_p3avg = CI_a_p3avg, CI_cp_p3avg = CI_cp_p3avg, CI_freq_p3avg = CI_freq_p3avg, 
+  CI_scd_p3avg = CI_scd_p3avg), file = "../data/CI_p3avg_funcs_SC.rds")
+```
+
+``` r
+z_a <- loadResultsOrCompute(file = "../results/ci_p3avg_z_a.rds", computeExpr = {
+  compute_z_p3avg(varname = "A", x = x, y = y)
+})
+z_cp <- loadResultsOrCompute(file = "../results/ci_p3avg_z_cp.rds", computeExpr = {
+  compute_z_p3avg(varname = "CP", x = x, y = y)
+})
+z_freq <- loadResultsOrCompute(file = "../results/ci_p3avg_z_freq.rds", computeExpr = {
+  compute_z_p3avg(varname = "FREQ", x = x, y = y)
+})
+z_scd <- loadResultsOrCompute(file = "../results/ci_p3avg_z_scd.rds", computeExpr = {
+  compute_z_p3avg(varname = "SCD", x = x, y = y)
+})
+```
+
+In figure we finally show the empirical confidence surfaces for all four
+variables, as computed over the first two batches of projects.
+
+<div class="figure" style="text-align: center">
+
+<img src="fire-drill-technical-report_files/figure-gfm/p3-emp-cis-sc-1.png" alt="The empirical confidence intervals for the four variables as mined from the source code of all projects. Higher saturation of the color correlates with higher confidence. Projects with zero weight contribute to the CIs' boundaries, but not to the hyperplane."  />
+<p class="caption">
+The empirical confidence intervals for the four variables as mined from
+the source code of all projects. Higher saturation of the color
+correlates with higher confidence. Projects with zero weight contribute
+to the CIs’ boundaries, but not to the hyperplane.
+</p>
+
+</div>
 
 ## Pattern III (b)
 
@@ -2592,7 +2870,7 @@ stats::coef(p3b_lm)
 plot(p3b_lm, ask = FALSE, which = 1:2)
 ```
 
-![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-61-1.png)<!-- -->![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-61-2.png)<!-- -->
+![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-80-1.png)<!-- -->![](fire-drill-technical-report_files/figure-gfm/unnamed-chunk-80-2.png)<!-- -->
 
 ``` r
 p3b_lm_scores <- stats::predict(p3b_lm, temp)
@@ -2640,6 +2918,15 @@ for Scaled Disagreement or Partial Credit.” *Psychological Bulletin* 70
 
 </div>
 
+<div id="ref-darst_using_2018" class="csl-entry">
+
+Darst, Burcu F., Kristen C. Malecki, and Corinne D. Engelman. 2018.
+“Using Recursive Feature Elimination in Random Forest to Account for
+Correlated Variables in High Dimensional Data.” *BMC Genetics* 19 (1):
+65. <https://doi.org/10.1186/s12863-018-0633-8>.
+
+</div>
+
 <div id="ref-honel2020gitdens" class="csl-entry">
 
 Hönel, Sebastian. 2020. “Git Density 2020.2: Analyze Git Repositories to
@@ -2659,10 +2946,10 @@ Software*, 110673.
 
 <div id="ref-honel_picha_2021" class="csl-entry">
 
-Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2021.
-“Detection of the Fire Drill Anti-Pattern: Nine Real-World Projects with
+Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
+“Detection of the Fire Drill Anti-Pattern: 16 Real-World Projects with
 Ground Truth, Issue-Tracking Data, Source Code Density, Models and
-Code.” Zenodo. <https://doi.org/10.5281/zenodo.4734053>.
+Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
 
 </div>
 
@@ -2694,3 +2981,5 @@ Diagnostics Based on Pattern Recognition of Statistical Parameters.”
 </div>
 
 [1] <https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd>
+
+[2] <https://web.archive.org/web/20211120164401/https://topepo.github.io/caret/recursive-feature-elimination.html>
