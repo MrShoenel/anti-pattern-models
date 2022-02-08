@@ -1,47 +1,17 @@
----
-author: Sebastian Hönel
-bibliography: ../inst/REFERENCES.bib
-date: February 08, 2022
-output:
-  html_document:
-    df_print: kable
-    number_sections: true
-    toc: true
-    toc_depth: 6
-    toc_float: true
-  md_document:
-    df_print: kable
-    toc: true
-    toc_depth: 6
-    variant: gfm
-  pdf_document:
-    df_print: kable
-    number_sections: true
-    toc: true
-    toc_depth: 6
-  word_document: default
-title: "Technical Report: Commit Classification models based on Keywords
-  and Source Code Density"
-urlcolor: blue
----
-
--   [Introduction](#introduction)
--   [Stateless model](#stateless-model)
-    -   [Load and prepare the data](#load-and-prepare-the-data)
-    -   [Define how the training works](#define-how-the-training-works)
-    -   [Tuning of several models](#tuning-of-several-models)
-        -   [Several models: correlation and
-            performance](#several-models-correlation-and-performance)
-        -   [Several models: train
-            candidates](#several-models-train-candidates)
--   [Manual stacking of models](#manual-stacking-of-models)
-    -   [Manual neural network](#manual-neural-network)
-    -   [Manual stack (ms) using caret](#manual-stack-ms-using-caret)
-    -   [Creating an ensemble (es) using
-        caretEnsemble](#creating-an-ensemble-es-using-caretensemble)
-        -   [Create a linear ensemble](#create-a-linear-ensemble)
--   [Some tests using Angular](#some-tests-using-angular)
--   [References](#references)
+- [Introduction](#introduction)
+- [Stateless model](#stateless-model)
+  - [Load and prepare the data](#load-and-prepare-the-data)
+  - [Define how the training works](#define-how-the-training-works)
+  - [Tuning of several models](#tuning-of-several-models)
+    - [Several models: correlation and performance](#several-models-correlation-and-performance)
+    - [Several models: train candidates](#several-models-train-candidates)
+- [Manual stacking of models](#manual-stacking-of-models)
+  - [Manual neural network](#manual-neural-network)
+  - [Manual stack (ms) using caret](#manual-stack-ms-using-caret)
+  - [Creating an ensemble (es) using caretEnsemble](#creating-an-ensemble-es-using-caretensemble)
+    - [Create a linear ensemble](#create-a-linear-ensemble)
+- [Some tests using Angular](#some-tests-using-angular)
+- [References](#references)
 
 # Introduction
 
