@@ -1,0 +1,196 @@
+---
+title: "Reproduction Material for article ``Machine-aided operationalization of continuous software processes''"
+author: "Sebastian Hönel"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
+output:
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
+  md_document:
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    variant: gfm
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+    df_print: kable
+  word_document: default
+header-includes:
+- \usepackage{bm}
+- \usepackage{mathtools}
+- \usepackage{xurl}
+---
+
+\newcommand*\mean[1]{\overline{#1}}
+\newcommand{\norm}[1]{\left\lvert#1\right\rvert}
+\newcommand{\infdiv}[2]{#1\;\|\;#2}
+
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+library(ggplot2)
+library(ggpubr)
+library(formatR)
+```
+
+
+
+# Overview
+
+This notebook represents the entire reproduction material required to reproduce and replicate the presented results, tables, and figures as used in the paper "Machine-aided operationalization of continuous software processes".
+
+Please refer to the full technical report [@honel2021technical] for all technical details, code, and data.
+
+
+```{r}
+if (!endsWith(getwd(), "notebooks")) {
+  stop("Must be in the notebooks working directory.")
+}
+```
+
+
+# Research Questions
+
+```{r}
+ground_truth <- read.csv(file = "../data/ground-truth.csv", sep = ";")
+ground_truth$consensus_score <- ground_truth$consensus / 10
+```
+
+## RQ1(a)
+
+Here, we will produce some plots that show the correlation between computed scores.
+
+```{r}
+p3_it_scores <- loadResultsOrCompute(file = "../results/p3_it_scores.rds", computeExpr = {
+  as.data.frame(
+    compute_all_scores_it(
+      alignment = p3_it_projects, patternName = "p3_it", vartypes = names(p3_it_signals)))
+})
+```
+
+
+```{r fig.height=10, fig.width=10}
+temp <- stats::cor(cbind(data.frame(gt_consensus = ground_truth$consensus_score), p3_it_scores[,]))
+temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
+
+corrplot::corrplot(corr = temp, type = "upper",# order = "hclust",
+                   tl.col = "black", tl.srt = 90)
+```
+
+For issue-tracking data, we have the correlation of scores on a per-variable basis, but not for source code. So next, we will aggregate the scores using the mean across scores. For example, we will produce the average of all `area`-scores.
+
+```{r}
+scores <- unique(gsub(pattern = "^(REQ|DEV|DESC)_", replacement = "", x = colnames(p3_it_scores)))
+# Remove mean absolute error (mae), as it's the same as area in our case, since the segment length equaled 1.
+scores <- scores[!(scores %in% "mae")]
+scores
+```
+
+```{r}
+p3_it_scores_mean <- data.frame(row.names = rownames(p3_it_scores))
+
+for (name in scores) {
+  temp <- cbind(p3_it_scores[, paste0("REQ_", name)], p3_it_scores[, paste0("DEV_", name)], p3_it_scores[, paste0("DESC_", name)])
+  temp.mean <- as.vector(apply(X = temp, MARGIN = 1, FUN = mean))
+  p3_it_scores_mean <- cbind(p3_it_scores_mean, `colnames<-`(matrix(data = temp.mean, ncol = 1), name))
+}
+
+p3_it_scores_mean
+```
+
+Now with this data, we can show a correlation plot:
+
+```{r}
+plotexpr <- expression({
+  temp <- stats::cor(cbind(data.frame(GroundTruth = ground_truth$consensus_score), p3_it_scores_mean[,]))
+  temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
+  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90)
+})
+
+eval(plotexpr)
+```
+
+```{r}
+png(filename = "../figures/reproduction/rq1_corr_it.png", width = 400, height = 400)
+eval(plotexpr)
+invisible(dev.off())
+```
+
+
+Let's load the scores for Source code. Note that these were previously aggregated once using the mean (suffix `_m`) and once using the product (`_p`) across __all__ variables. We will keep the mean for now, and then rename the columns.
+
+```{r}
+# P3("avg, no align"actually)
+p3_sc_scores <- loadResultsOrCompute(file = "../results/p3_avg_no_scores.rds", computeExpr = {
+  as.data.frame(compute_all_scores(alignment = p3_avg_no_align, patternName = "p3_avg"))
+})
+
+temp <- NULL
+for (name in scores) {
+  temp.scores <- `colnames<-`(data.frame(x = p3_sc_scores[, paste0(name, "_m")]), name)
+  temp <- if (is.null(temp)) temp.scores else cbind(temp, temp.scores)
+}
+
+p3_sc_scores <- temp
+p3_sc_scores
+```
+
+```{r}
+plotexpr <- expression({
+  temp <- stats::cor(cbind(data.frame("GroundTruth" = ground_truth$consensus_score), p3_sc_scores[,]))
+  temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
+  
+  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90)
+})
+
+eval(plotexpr)
+```
+
+```{r}
+png(filename = "../figures/reproduction/rq1_corr_sc.png", width = 400, height = 400)
+eval(plotexpr)
+invisible(dev.off())
+```
+
+
+Since obviously, the metrics have a different correlation between the two types of data, we should compute the pairwise correlations between each score of source code and issue-tracking:
+
+```{r}
+temp <- matrix(nrow = 1, ncol = 0)
+for (name in scores) {
+  temp <- cbind(temp, stats::cor(p3_it_scores_mean[, name], p3_sc_scores[, name]))
+}
+colnames(temp) <- scores
+temp
+```
+
+Next, we can examine the correlations between activities. We will do this for issue-tracking data.
+
+```{r}
+p3_it_scores
+```
+
+
+
+
+# References {-}
+
+<div id="refs"></div>
+
