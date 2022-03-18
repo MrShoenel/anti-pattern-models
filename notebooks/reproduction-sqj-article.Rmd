@@ -28,11 +28,19 @@ header-includes:
 - \usepackage{bm}
 - \usepackage{mathtools}
 - \usepackage{xurl}
+- \usepackage[nottoc]{tocbibind}
 ---
 
 \newcommand*\mean[1]{\overline{#1}}
 \newcommand{\norm}[1]{\left\lvert#1\right\rvert}
 \newcommand{\infdiv}[2]{#1\;\|\;#2}
+
+
+\listoffigures
+
+\listoftables
+
+
 
 ```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
 library(knitr)
@@ -66,6 +74,76 @@ if (!endsWith(getwd(), "notebooks")) {
 ```
 
 
+```{r}
+# Available width in inch in the article's template
+FIG_WIDTH <- 4.6859
+
+# Common style for all ggplot2 plots
+gg2_style <- function(facets = FALSE) {
+  sty <- theme_minimal(base_size = 10) + theme(
+    text = element_text(family = "serif"),
+    axis.title.x.bottom = element_text(margin = margin(t = 8)),
+    axis.title.y.left = element_text(margin = margin(r = 8)))
+  
+  if (facets) {
+    sty <- sty + theme(
+      text = element_text(family = "LM Roman 10"),
+      panel.spacing = unit(1, "mm"),
+      panel.border = element_rect(color = "#d8d8d8", fill = NA, size = .1),
+      strip.background = element_rect(fill="#f2f2f2", color = "#d8d8d8"),
+      strip.text.x = element_text(color="black", margin = margin(t = 2, b = 2)),
+      strip.text.y = element_text(color="black", margin = margin(l = 4, r = 2)))
+  }
+  sty
+}
+```
+
+
+# Figures
+
+
+
+```{r cont-example-pm, fig.cap="Example of a continuous PM and an observed process."}
+plotexpr <- expression({
+  set.seed(3)
+  
+  par(mgp=c(.5,.5,0), mar=c(2,.5,.5,2))
+
+  x <- seq(0, 1, length.out=8)
+  l <- loess.smooth(x = x, y = c(1,2.4,3,4,3,3.3,6,5) + rnorm(8, sd=0.3))
+  
+  
+  plot(l$x, l$y - 1, type="l", xlab = NA,
+       ylab = NA, xaxt = "n", yaxt = "n", lwd = 4)
+  mtext("Time", 1, line = .25, cex=0.8)
+  mtext("Amount of activity", side=4, line=.25, cex=0.8)
+  grid()
+  
+  f <- function(x) 2.05+2.2*x - .2*(x+1)^1.7
+  l <- loess.smooth(x = x, y = f(x) + rnorm(length(x)))
+  lines(l$x, l$y)
+  
+  legend(0.01, 4.3, legend = c("Process model", "Observed process"), lwd = c(4,1), y.intersp = 1, cex = .7, bg = "white")
+})
+
+eval(plotexpr)
+```
+
+
+```{r eval=interactive(), echo=FALSE}
+tikzDevice::tikz("../figures/reproduction/cont-example-PM.tex", width = 0.5 * 0.97 * FIG_WIDTH, height = 2)
+eval(plotexpr)
+dev.off()
+```
+```{r eval=interactive(), echo=FALSE}
+png(filename = "../figures/reproduction/cont-example-PM.png", width = 400, height = 400)
+eval(plotexpr)
+dev.off()
+```
+
+
+
+
 # Research Questions
 
 ```{r}
@@ -73,7 +151,7 @@ ground_truth <- read.csv(file = "../data/ground-truth.csv", sep = ";")
 ground_truth$consensus_score <- ground_truth$consensus / 10
 ```
 
-## RQ1(a)
+## RQ1(b)
 
 Here, we will produce some plots that show the correlation between computed scores.
 
@@ -86,7 +164,7 @@ p3_it_scores <- loadResultsOrCompute(file = "../results/p3_it_scores.rds", compu
 ```
 
 
-```{r fig.height=10, fig.width=10}
+```{r per-var-corr-it, fig.cap="Per-variable correlations of computed scores, using issue-tracking data.", fig.height=10, fig.width=10}
 temp <- stats::cor(cbind(data.frame(gt_consensus = ground_truth$consensus_score), p3_it_scores[,]))
 temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
 
@@ -112,22 +190,32 @@ for (name in scores) {
   p3_it_scores_mean <- cbind(p3_it_scores_mean, `colnames<-`(matrix(data = temp.mean, ncol = 1), name))
 }
 
-p3_it_scores_mean
+
+if (interactive()) {
+  p3_it_scores_mean
+} else {
+  knitr::kable(
+    x = p3_it_scores_mean,
+    booktabs = TRUE,
+    caption = "Averaged scores for pattern type 3 (average) for issue-tracking data.",
+    label = "p3-it-scores-mean")
+}
 ```
 
 Now with this data, we can show a correlation plot:
 
-```{r}
+```{r corr-it, fig.cap="Correlation of scores using process model type 3 and issue-tracking data."}
 plotexpr <- expression({
   temp <- stats::cor(cbind(data.frame(GroundTruth = ground_truth$consensus_score), p3_it_scores_mean[,]))
   temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
-  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90)
+  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90,
+                     col = colorRampPalette(c("#0037AA", "#eeeeee", "#AA0037"))(100))
 })
 
 eval(plotexpr)
 ```
 
-```{r}
+```{r eval=interactive(), echo=FALSE}
 png(filename = "../figures/reproduction/rq1_corr_it.png", width = 400, height = 400)
 eval(plotexpr)
 invisible(dev.off())
@@ -149,21 +237,31 @@ for (name in scores) {
 }
 
 p3_sc_scores <- temp
-p3_sc_scores
+
+if (interactive()) {
+  p3_sc_scores
+} else {
+  knitr::kable(
+    x = p3_sc_scores,
+    booktabs = TRUE,
+    caption = "Scores for pattern type 3 (avg, no align) using source code data.",
+    label = "p3-sc-scores")
+}
 ```
 
-```{r}
+```{r corr-sc, fig.cap="Correlation of scores using process model type 3 (avg, no align) and source code data."}
 plotexpr <- expression({
   temp <- stats::cor(cbind(data.frame("GroundTruth" = ground_truth$consensus_score), p3_sc_scores[,]))
   temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
   
-  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90)
+  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90,
+                     col = colorRampPalette(c("#0037AA", "#eeeeee", "#AA0037"))(100))
 })
 
 eval(plotexpr)
 ```
 
-```{r}
+```{r eval=interactive(), echo=FALSE}
 png(filename = "../figures/reproduction/rq1_corr_sc.png", width = 400, height = 400)
 eval(plotexpr)
 invisible(dev.off())
@@ -184,9 +282,170 @@ temp
 Next, we can examine the correlations between activities. We will do this for issue-tracking data.
 
 ```{r}
-p3_it_scores
+if (interactive()) {
+  p3_it_scores
+} else {
+  knitr::kable(
+    x = p3_it_scores,
+    booktabs = TRUE,
+    caption = "Per-variable scores for pattern type 3 (average) for issue-tracking data.",
+    label = "p3-it-scores")
+}
 ```
 
+
+## RQ1(c)
+
+We want to produce one large, common correlation-table (not a matrix) using process models 1-3 and 4(1-3).
+
+```{r}
+p1_it_signals <- readRDS(file = "../data/p1_it_signals.rds")
+p1_it_scores <- readRDS(file = "../results/p1_it_scores.rds")
+p2a_it_scores <- readRDS(file = "../results/p2a_it_scores.rds")
+p3_it_scores <- readRDS(file = "../results/p3_it_scores.rds")
+```
+
+
+```{r warning=FALSE}
+score_types <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+var_types <- names(p1_it_signals)
+
+pAll_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
+
+
+i <- 0
+c_names <- NULL
+for (vt in var_types) {
+  for (pIdx in 1:3) {
+    p_data <- if (pIdx == 1) {
+      p1_it_scores } else if (pIdx == 2) {
+        p2a_it_scores } else { p3_it_scores }
+  
+    pAll_it_corr[pIdx, (i*length(score_types)+1):(i*length(score_types)+length(score_types))] <-
+      stats::cor(
+        x = ground_truth$consensus_score,
+        y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
+  }
+  
+  i <- i + 1
+  
+  c_names <- c(c_names, paste0(vt, "_", score_types))
+}
+
+colnames(pAll_it_corr) <- c_names
+rownames(pAll_it_corr) <- paste0("PM ", c("I", "II", "III"))
+pAll_it_corr[is.na(pAll_it_corr)] <- sqrt(.Machine$double.eps)
+```
+
+The average absolute correlation in the table `pAll_it_corr` is __`r round(sum(abs(pAll_it_corr)) / (nrow(pAll_it_corr) * ncol(pAll_it_corr)), 3)`__.
+
+The average absolute correlation per process model is:
+
+```{r}
+temp <- apply(pAll_it_corr, 1, function(row) sum(abs(row)) / ncol(pAll_it_corr))
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "The mean absolute correlation per process model (types I--III).",
+    label = "mean-abs-corr-pm1-3")
+}
+```
+
+
+```{r}
+p4p1_it_scores <- readRDS(file = "../results/p4p1_it_scores.rds")
+p4p2a_it_scores <- readRDS(file = "../results/p4p2a_it_scores.rds")
+p4p3_it_scores <- readRDS(file = "../results/p4p3_it_scores.rds")
+```
+
+
+```{r}
+p4All_it_corr <- matrix(nrow = 3, ncol = length(var_types) * length(score_types))
+
+i <- 0
+c_names <- NULL
+for (vt in var_types) {
+  for (pIdx in 1:3) {
+    p_data <- if (pIdx == 1) {
+      p4p1_it_scores } else if (pIdx == 2) {
+        p4p2a_it_scores } else { p4p3_it_scores }
+  
+    p4All_it_corr[pIdx, (i*length(score_types)+1):(i*length(score_types)+length(score_types))] <-
+      stats::cor(
+        x = ground_truth$consensus_score,
+        y = p_data[, grepl(pattern = paste0("^", vt), x = colnames(p_data))])
+  }
+  
+  i <- i + 1
+  
+  c_names <- c(c_names, paste0(vt, "_", score_types))
+}
+
+colnames(p4All_it_corr) <- c_names
+rownames(p4All_it_corr) <- paste0("PM IV(", 1:3, ")")
+p4All_it_corr[is.na(p4All_it_corr)] <- sqrt(.Machine$double.eps)
+```
+
+The average absolute correlation in the table `p4All_it_corr` is __`r round(sum(abs(p4All_it_corr)) / (nrow(p4All_it_corr) * ncol(p4All_it_corr)), 3)``__.
+
+The average absolute correlation per process model is:
+
+```{r}
+temp <- apply(p4All_it_corr, 1, function(row) sum(abs(row)) / ncol(p4All_it_corr))
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "The mean absolute correlation per derivative process model (types IV(I--III)).",
+    label = "mean-abs-corr-pm1-3")
+}
+```
+
+```{r corr-all-it, fig.cap="Per-variable and per-process model correlations of scoresusing issue-tracking data.", message=FALSE}
+plotexpr <- expression({
+  temp <- t(rbind(
+    `rownames<-`(x = pAll_it_corr, value = c("I", "II", "III")),
+    `rownames<-`(x = p4All_it_corr, value = c("*I", "*II", "*III"))
+  ))
+  temp <- temp[, rev(colnames(temp))]
+  
+  rownames(temp) <- sapply(X = rownames(temp), function(n) {
+    sp <- strsplit(x = n, split = "_")[[1]]
+    paste0("$\\mathsf{", sp[1], "}_{\\mathrm{", sp[2], "}}$")
+  })
+  
+  
+  ggcorrplot::ggcorrplot(corr = temp, ggtheme = gg2_style() + theme(
+      axis.text.x.top = element_text(angle = 90, vjust = 1/3, hjust = 0, size = 8),
+      axis.text.y.left = element_text(size = 8),
+      legend.position = "bottom",
+      legend.text = element_text(vjust = 0),
+      legend.title = element_text(margin = margin(r = 10, b = 3)),
+      legend.key.width = unit(20, 'pt'),
+      legend.key.height = unit(8, 'pt'),
+      axis.title.y.left = element_blank())) +
+  scale_x_discrete(position = "top") +
+  scale_fill_gradient2(
+    low = "#0037AA", mid = "#eeeeee", high = "#AA0037", guide = "colorbar",
+    limits = c(-1,1), breaks = seq(-1, 1, by = .5)) +
+  labs(fill = "Pearson sample correlation")
+})
+
+eval(plotexpr)
+```
+```{r eval=interactive(), echo=FALSE}
+tikzDevice::tikz("../figures/reproduction/rq1_corr_all.tex", width = FIG_WIDTH, height = 2.3)
+eval(plotexpr)
+dev.off()
+```
 
 
 
