@@ -1,0 +1,324 @@
+---
+title: "R Notebook"
+author: "Sebastian Hönel"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+bibliography: ../inst/REFERENCES.bib
+urlcolor: blue
+output:
+  md_document:
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    variant: gfm
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    df_print: kable
+    keep_tex: yes
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+    df_print: kable
+  word_document: default
+header-includes:
+- \usepackage{bm}
+- \usepackage{mathtools}
+- \usepackage{xurl}
+- \usepackage[nottoc]{tocbibind}
+---
+
+
+\listoffigures
+
+\listoftables
+
+
+```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+source(file = "../helpers.R")
+source(file = "./common-funcs.R")
+source(file = "../models/modelsR6.R")
+source(file = "../models/SRBTW-R6.R")
+
+library(ggplot2)
+library(ggpubr)
+library(formatR)
+```
+
+
+# Overview
+
+In this notebook, we will pick an exemplary process model, and then simulate random processes and their score with the PM, in order to learn an empirical distribution.
+Then using this ePDF/eCDF, we will attempt to properly translate and scale scores to have a uniform distribution over the interval $[0,1]$.
+
+
+# The process model
+
+We pick some linear function over the unit square as PM, and as score we will later compute the area between the PM and each simulated random process. The PM is shown in figure \ref{fig:example-pm}.
+
+```{r example-pm, fig.cap="The exemplary process model, which is just a linear function in the unit square."}
+PM <- function(x) .2 + .2*x
+
+curve(expr = PM, from = 0, to = 1, ylim = c(0,1))
+```
+
+## Min/max areas between
+
+From that PM we can directly observe the minimum and maximum possible areas between. While the minimum is $0$, the maximum is the area above, or $1$ minus the area below. The area below is $1\times0.2 + 1\times0.2\div2=0.3$:
+
+```{r}
+cubature::cubintegrate(f = PM, lower = 0, upper = 1)$integral
+```
+
+Therefore, the maximum distance is $0.7$.
+
+
+# The random processes
+
+The distribution of the scores in an actual model once it is set up depends on the available degrees of freedom of the model, the constant PM itself, and the other objectives.
+For this experiment, we have no such DOFs, so we will simulate processes by smoothing out some curve in the unit squre.
+
+## Function to get smoothed random process
+
+Using random (but sorted) points in the unit square, we will approximate a smooth line through these, which will become a random process.
+
+```{r}
+get_smoothed_curve <- function(seed = NA, npoints = 15) {
+  if (!is.na(seed)) {
+    set.seed(seed = seed)
+  }
+  
+  x <- sort(c(0, 1, runif(npoints - 2)))
+  y <- runif(length(x))
+  temp <- loess.smooth(x = x, y = y, span = 0.35, family = "g", evaluation = 1000)
+  appr <- stats::approxfun(
+    x = ((temp$x - min(temp$x)) / (max(temp$x) - min(temp$x))),
+    y = temp$y / (max(temp$x) - min(temp$x)),
+    yleft = utils::head(temp$y, 1),
+    yright = utils::tail(temp$y, 1))
+  
+  tempf <- Vectorize(function(x) {
+    # Limit the resulting function to the bounding box of [0,1]
+    min(1, max(0, appr(x)))
+  })
+  
+  `attributes<-`(tempf, list(
+    x = x,
+    y = y
+  ))
+}
+```
+
+
+## Test of random process
+
+Let's make a test, showing the PM, the random points (grey), and the smoothed curve (red) (figure \ref{fig:pm-and-observation-test}):
+
+```{r pm-and-observation-test, fig.cap="A random process as a smooth approximation of some randomly picked points."}
+test <- get_smoothed_curve(seed = 1337)
+
+curve(PM, from = 0, to = 1, ylim = c(0, 1), lwd = 2)
+lines(attr(test, "x"), attr(test, "y"), type = "l", col = "#888888")
+curve2(test, from = 0, to = 1, add = TRUE, col = "red")
+```
+
+Now the area between the two processes is:
+
+```{r}
+area_diff_2_functions_score(numSamples = 1000, useYRange = c(0,1))(PM, test)
+area_diff_2_functions(f1 = PM, f2 = test)
+```
+
+## Simulation of scores
+
+Now it's time to compute some random scores using random processes. The more we compute, the better the approximation of the score's real distribution, given the degrees of freedom.
+
+```{r}
+scores <- loadResultsOrCompute(file = "../results/rectify_scores.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    library(foreach)
+    foreach::foreach(
+      seed = seq(from = 0, to = 1e4),
+      .combine = rbind,
+      .inorder = FALSE
+    ) %dopar% {
+      proc = get_smoothed_curve(seed = seed)
+      matrix(nrow = 1, ncol = 2, data = c(
+        seed, area_diff_2_functions_score(numSamples = 1000, useYRange = c(0,1))(f1 = PM, f2 = proc)))
+    }
+  })
+})
+```
+
+
+## Examine scores
+
+Let's look at the distribution of scores and some other properties.
+The min/max are:
+
+```{r}
+scores.minmax <- c(min(scores[, 2]), max(scores[, 2]))
+scores.minmax
+```
+
+That means, that smallest and largest areas observed between PM and some process were:
+
+```{r}
+1 - scores.minmax
+```
+
+
+Let's show the best (blue) and worst (red) processes (figure \ref{fig:empirical-best-worst}):
+
+```{r empirical-best-worst, fig.cap="The best and worst processes found by our empirical simulation."}
+curve(expr = PM, from = 0, to = 1, ylim = c(0, 1), lwd = 2)
+p_best <- get_smoothed_curve(seed = scores[which.max(scores[, 2]), 1])
+curve2(func = p_best, from = 0, to = 1, col = "blue", add = TRUE)
+p_worst <- get_smoothed_curve(seed = scores[which.min(scores[, 2]), 1])
+curve2(func = p_worst, from = 0, to = 1, col = "red", add = TRUE)
+```
+
+The empirical distributions for the scores are shown in figure \ref{fig:scores-epdf-ecdf}:
+
+```{r scores-epdf-ecdf, fig.cap="The empirical probability density and cumulative probability densities of the simulated scores."}
+par(mfrow = c(1, 2))
+
+plot(stats::density(scores[, 2]))
+plot(stats::ecdf(scores[, 2]))
+```
+
+The mode of the ePDF is at $\approx0.745$ with a value of $\approx5.369$:
+
+```{r}
+temp <- stats::density(scores[, 2])
+c(temp$x[which.max(temp$y)], temp$y[which.max(temp$y)])
+```
+
+That means, that the relative most likely scores is $\approx0.745$. Both, ePDF and eCDF reveal that the distribution does not follow a uniform distribution.
+
+The exact quantiles are:
+
+```{r}
+quantile(scores[, 2])
+```
+
+
+
+# Transformation of scores
+
+We have now collected some data that indicates that the scores of our little experiment are not uniformly distributed. Also, they do not start at $0$ and do not end at $1$. The most likely score tells us that the most likely area between both processes is $\approx0.255$.
+Since the scores are not uniformly scaled, a score just $0.1$ larger than the most likely of $\approx0.75$ must be considered significantly better than just $0.1$, since it is much less likely:
+
+```{r}
+scores.epdf <- stats::approxfun(x = temp$x, y = temp$y, yleft = 0, yright = 0)
+scores.epdf(c(0.75, 0.85))
+```
+
+Obviously, we cannot just linearly transform the scores, as it is a non-linear relationship, see figure \ref{fig:ecdf-vs-uniform}. However, we can simply plug in each raw score into the eCDF to obtain a non-linear mapping to a uniformly distributed score.
+In order to change the distribution of scores to a uniform distribution _within_ the observed range, one would define the scaling function as "min(range) + ecdf(x) * extent(range)". However in our case, we want to obtain a score in the range $[0,1]$. So the minimum of the target range is $0$, and the extend is $1$. So the scaling will just be ecdf(x).
+Any eCDF is a monotonically increasing function (often even strictly monotonically increasing), which means that it will preserve the order between scores. So in the worst case, two raw scores might end up closer or farther from each other, but their order will not switch. With each additional observed value, the eCDF will increase precision.
+
+```{r ecdf-vs-uniform, fig.cap="The empirical CDF and uniform CDF. The scores' eCDF is clearly non-linear."}
+scores.ecdf <- stats::ecdf(scores[, 2])
+curve2(func = scores.ecdf, from = 0, to = 1, lwd = 2)
+tempf.lin <- function(x) x
+curve2(func = tempf.lin, from = 0, to = 1, col = "red", add = TRUE)
+```
+
+The red curve is the eCDF of a uniform distribution, and the the ePDF of our scores deviates from that significantly. First of all, there are no scores approximately less than $0.5$ or larger than roughly $0.95$.
+The most common score of $0.75$ should be mapped to an __actual__ score of $0.5$. The eCDF correctly maps it to __`r scores.ecdf(quantile(scores[, 2])["50%"])`__.
+We then observe an intersection of both CDFs at approximately $0.8$. Before that, the scores' CDF is less than the uniform CDF, after that it is larger. That means that scores below $0.75$ are less good than they actually are (which is true), and above that they're better.
+
+
+## Empirical proof
+
+We can actually prove that the scores' eCDF creates a uniformly scaled score in range $[0,1]$, by uniformly sampling from the _probability integral transform_ of the scores' eCDF.
+There is no built-in way in `R` for obtaining the inverse CDF (sometimes called "percent point function" or PPF) of an empirical distribution, so we have to approximate our own. For that, we'll sample from eCDF, then invert `x` and `y`, and approximate a function using these vectors (figure \ref{fig:inv-cdf}):
+
+
+```{r inv-cdf, fig.cap="Inverse CDF (PPF) of the empirical scores.", warning=FALSE}
+temp.inv <- sapply(X = seq(min(scores[, 2]), max(scores[, 2]), length.out=1e5), FUN = scores.ecdf)
+temp.inv <- (temp.inv - min(temp.inv)) / (max(temp.inv) - min(temp.inv))
+tempf.inv <- stats::approxfun(x = temp.inv, y = seq(min(scores[, 2]), max(scores[, 2]), length.out=1e5))
+curve2(tempf.inv, 0, 1)
+```
+
+In the following plot, we should observe an approximately uniform distribution (figure \ref{fig:reconstructed-pdf-uniform-cdf}):
+
+```{r reconstructed-pdf-uniform-cdf, fig.cap="'Reconstituted' ePDF and uniform CDF of the transformed scores."}
+# Sampling uniformly from above PPF:
+data <- tempf.inv(runif(5e5))
+
+par(mfrow = c(1, 2))
+# First show a "re-constituted" ePDF, i.e., no non-linear mapping:
+plot(stats::density(data, cut = TRUE))
+# Now plug these samples into the scores' eCDF and show the distribution:
+plot(stats::density(scores.ecdf(data), cut = TRUE))
+```
+
+Indeed, it works. Also in the left plot, we'll see how the probability integral transform nicely recreates a distribution very similar to the scores' original ePDF.
+
+Let's show in table \ref{tab:scores-raw-vs-transformed} where we sample from the scores' actual range, and how each raw score maps to a rectified score:
+
+```{r}
+scores.raw <- seq(from = floor(scores.minmax[1] * 100) / 100, to = ceiling(scores.minmax[2] * 100) / 100, by = 0.01)
+temp <- `colnames<-`(matrix(ncol = 2, nrow = length(scores.raw), byrow = FALSE, data = c(scores.raw, scores.ecdf(scores.raw))), c("Raw Score", "Transformed Score"))
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Raw vs. transformed scores, using the scores' eCDF.",
+    label = "scores-raw-vs-transformed")
+}
+```
+
+In the first column with the raw score, we use equally long increments of $0.01$. In the right column, the increments do not linearly correspond to that.
+
+
+## Visual verification
+
+Let's generate some more random processes and show their raw and calibrated area-in-between scores (figure \ref{fig:visual-verify}).
+
+```{r visual-verify, fig.height=7, fig.cap="Some random processes, their raw and calibrated scores. Also shown is the area in between."}
+par(mfrow = c(3, 3))
+
+for (i in 1:9) {
+  P <- get_smoothed_curve(seed = 6e5 + i)
+  score_raw <- area_diff_2_functions_score(useYRange = c(0, 1))(f1 = PM, f2 = P)
+  score_cal <- scores.ecdf(score_raw)
+  curve2(func = PM, from = 0, to = 1, lwd = 2, ylim = c(0, 1), xlab = "", ylab = "", main = paste0(i), sub = paste0(
+    "raw=",  format(score_raw, nsmall = 3, digits=3), "; ",
+    "cal=",  format(score_cal, nsmall = 3, digits=3), "; ",
+    "area=", format(1-score_raw, nsmall = 3, digits=3)
+  ))
+  curve2(func = P, from = 0, to = 1, col = "red", add = TRUE)
+}
+```
+
+The random processes of figure \ref{fig:visual-verify} reflect almost the entire spectrum of all previously observed raw scores, we almost see the lowest lows and highest highs.
+Recall that the score computed is $1$ minus the area in between processes (which can maximally be $0.7$). Looking at examples 1, 5, 6, and 7 we observe a rather large area, and while the raw scores do not look so bad, the calibrated scores reveal the bad fit of PM/P.
+
+
+
+
+
+
+
+
+
+
+
+
