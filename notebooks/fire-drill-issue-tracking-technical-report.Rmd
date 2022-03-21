@@ -2698,6 +2698,33 @@ if (interactive()) {
 In table \ref{tab:p1-bin-detect} we show the results of the binary detection, which is based on the manually defined homogeneous confidence intervals.
 
 
+#### Calculating scoring rules
+
+The decision rule is not a probabilistic classifier, and hence does not output class probabilities. By definition, indicators are of binary nature.
+Scoring rules are applicable to tasks in which predictions must assign probabilities to a set of mutually exclusive discrete outcomes or classes.
+The set of possible outcomes can be either binary or categorical in nature, and the probabilities assigned to this set of outcomes must sum to one (where each individual probability is in the range of 0 to 1).
+We can apply scoring rules if we inverse the relation classifier and ground truth. In our case, the classifier outputs binary predictions (probabilities $0,1$), and the ground truth (the consensus score) is of probabilistic nature.
+
+In the following, we will compute two scoring rules:
+
+* Brier score [@brier1950verification]: This is equivalent to the MSE: $\frac{1}{n}\sum_{i=1}^{N}\,\left(f_i-o_i\right)^2$, where $f_i$ is the probability of the ground truth, and $o_i$ is the classification result (either $0$ or $1$). A Brier score of $0$ would hence be a perfect result, and $1$ the worst possible.
+* Logarithmic score: $\frac{1}{N}\sum_{i=1}^{N}\,-\log{\left(1-\left|f_i-o_i\right|\right)}$. Like the Brier score, $0$ would be perfect, but there is no limit, so $+\infty$ is possible.
+
+```{r}
+temp <- p1_detect[,]
+temp$ground_truth <- temp$ground_truth / 10
+temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
+
+`names<-`(c(
+  mean(scoring::brierscore(object = detect_prob ~ ground_truth, data = temp)),
+  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp))
+), c("Brier score", "Log score"))
+```
+
+These results indicate that the binary decision rule does not have perfect scores.
+
+
+
 #### Manually adjusting the rule
 
 Through manual inspection, we found out that the decision rule can be re-calibrated in order to achieve 100% accuracy on the projects. If the thresholds were $y_1=0.73$ (instead of $0.8$) and $y_4=0.69$ (instead of $0.7), not only would the detection results align perfectly with the ground truth assessment (eliminating both false positives), but also $I_1$ no longer be detected in all projects, failing in projects 2, 6 and 7.
@@ -4250,6 +4277,37 @@ if (interactive()) {
   )
 }
 ```
+
+### Calculating scoring rules
+
+Also, let's calculate the Brier- and Log-scoring rules for the second batch, and all projects together.
+
+
+```{r}
+temp <- p1_detect_2nd_batch[,]
+temp$ground_truth <- temp$ground_truth / 10
+temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
+
+`names<-`(c(
+  mean(scoring::brierscore(object = detect_prob ~ ground_truth, data = temp)),
+  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp))
+), c("Brier score", "Log score"))
+```
+
+These results are a little worse than for the first batch ($\approx0.133$ and $\approx0.4$). Let's compute the scoring rules for all projects together, the results should be somewhere in between:
+
+```{r}
+temp <- rbind(p1_detect, p1_detect_2nd_batch)
+temp$ground_truth <- temp$ground_truth / 10
+temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
+
+`names<-`(c(
+  mean(scoring::brierscore(object = detect_prob ~ ground_truth, data = temp)),
+  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp))
+), c("Brier score", "Log score"))
+```
+
+We can use these results later for comparing against scores as computed by the continuous process models.
 
 
 
