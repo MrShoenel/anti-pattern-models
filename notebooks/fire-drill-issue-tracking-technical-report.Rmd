@@ -2286,10 +2286,12 @@ time_warp_wrapper <- function(pattern, derive = FALSE, use_signals = all_signals
 We'll first have to assemble a list of signals that define each pattern, before we can wrap it in an empty alignment and calculate the various scores.
 
 ```{r}
-p1_it_signals <- list(
-  "REQ"  = Signal$new(name = "p1_it_REQ",  func = req,  support = c(0,1), isWp = TRUE),
-  "DEV"  = Signal$new(name = "p1_it_DEV",  func = dev,  support = c(0,1), isWp = TRUE),
-  "DESC" = Signal$new(name = "p1_it_DESC", func = desc, support = c(0,1), isWp = TRUE))
+p1_it_signals <- loadResultsOrCompute(file = "../data/p1_it_signals.rds", computeExpr = {
+  list(
+    "REQ"  = Signal$new(name = "p1_it_REQ",  func = req,  support = c(0,1), isWp = TRUE),
+    "DEV"  = Signal$new(name = "p1_it_DEV",  func = dev,  support = c(0,1), isWp = TRUE),
+    "DESC" = Signal$new(name = "p1_it_DESC", func = desc, support = c(0,1), isWp = TRUE))
+}) 
 
 p1_it_projects <- time_warp_wrapper(pattern = p1_it_signals, derive = FALSE)
 ```
