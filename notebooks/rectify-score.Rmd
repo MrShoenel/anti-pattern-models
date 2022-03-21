@@ -146,7 +146,7 @@ scores <- loadResultsOrCompute(file = "../results/rectify_scores.rds", computeEx
   doWithParallelCluster(expr = {
     library(foreach)
     foreach::foreach(
-      seed = seq(from = 0, to = 1e4),
+      seed = seq(from = 0, to = 1e5),
       .combine = rbind,
       .inorder = FALSE
     ) %dopar% {
@@ -224,7 +224,7 @@ scores.epdf(c(0.75, 0.85))
 
 Obviously, we cannot just linearly transform the scores, as it is a non-linear relationship, see figure \ref{fig:ecdf-vs-uniform}. However, we can simply plug in each raw score into the eCDF to obtain a non-linear mapping to a uniformly distributed score.
 In order to change the distribution of scores to a uniform distribution _within_ the observed range, one would define the scaling function as "min(range) + ecdf(x) * extent(range)". However in our case, we want to obtain a score in the range $[0,1]$. So the minimum of the target range is $0$, and the extend is $1$. So the scaling will just be ecdf(x).
-Any eCDF is a monotonically increasing function (often even strictly monotonically increasing), which means that it will preserve the order between scores. So in the worst case, two raw scores might end up closer or farther from each other, but their order will not switch. With each additional observed value, the eCDF will increase precision.
+Any eCDF is a monotonically increasing function (often even strictly monotonically increasing), which means that it will preserve the order between scores (the eCDF is what is called a __monotonic__ transform that preserves the order between the two sets it transforms). So in the worst case, two raw scores might end up closer or farther from each other, but their order will not switch. With each additional observed value, the eCDF will increase precision.
 
 ```{r ecdf-vs-uniform, fig.cap="The empirical CDF and uniform CDF. The scores' eCDF is clearly non-linear."}
 scores.ecdf <- stats::ecdf(scores[, 2])
