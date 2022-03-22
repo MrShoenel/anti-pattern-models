@@ -562,6 +562,13 @@
       "Repository": "CRAN",
       "Hash": "417af4bf86b11fdc8737a28905a35136"
     },
+    "filelock": {
+      "Package": "filelock",
+      "Version": "1.0.2",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "38ec653c2613bed60052ba3787bd8a2c"
+    },
     "forcats": {
       "Package": "forcats",
       "Version": "0.5.0",
@@ -1352,6 +1359,13 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "6f76f71042411426ec8df6c54f34e6dd"
+    },
+    "scoring": {
+      "Package": "scoring",
+      "Version": "0.6",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "b275da55925977a0c83f8364ab65b69a"
     },
     "shiny": {
       "Package": "shiny",
