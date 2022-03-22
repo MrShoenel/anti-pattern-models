@@ -2657,10 +2657,9 @@ Let's define the grid of parameters, which will eventually be concatenated with 
 
 ```{r}
 ac_grid <- expand.grid(list(
-  PM = c("I", "II", "III(avg)", "III(b,11)")[1],
-  Var = names(weight_vartype)[1],
-  Seed = seq(from = 1, length.out = 2),#1e4),
-  Seg_idx = 1:10))
+  PM = c("I", "II", "III(avg)", "III(b,11)"),
+  Var = names(weight_vartype),
+  Seed = seq(from = 1, length.out = 1e4)))
 
 nrow(ac_grid)
 ```
@@ -2695,8 +2694,16 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
       
       p_var <- get_smoothed_curve_buffered(seed = params$Seed, include_deriv = FALSE)$f0
       
-      # Important so we can correctly concatenate the results with the grid parameters!
-      `rownames<-`(ac_worker(PM = pm_var, P = p_var, seg_idx = params$Seg_idx), grid_idx)
+      df <- NULL
+      for (seg_idx in 1:10) {
+        # Important so we can correctly concatenate the results with the grid parameters!
+        res <- `rownames<-`(as.data.frame(
+          ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10)), grid_idx)
+        res$seg_idx <- seg_idx
+        res$grid_idx <- grid_idx
+        df <- if (is.null(df)) res else rbind(df, res)
+      }
+      df
     }
   })
 })
