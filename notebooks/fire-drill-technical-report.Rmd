@@ -2466,6 +2466,257 @@ With this linear model, we can report a high correlation with the consensus, too
 
 
 
+# Automatic calibration of the continuous process models
+
+This is a new section in the seventh iteration of this report.
+"Automatic calibration" refers to a new approach of gauging a continuous PM, so that it can compute true scores for any process, also scores that are __comparable__ across PMs, given the same configuration (segments, objectives, regularizers) was used.
+This approach is based on the idea of __rectification of scores__[^3]. The goal is to learn for every objective a __uniform__ score, where uniform refers to both, a uniform distribution _and_ a codomain of $[0,1]$. With such scores, a linear scalarizer will produce a score with the __same__ properties, and that means we will be able to compare the continuous process models we formulated so far! Even beyond that, we can interpret this score as a probabilistic measure of how well a process matches the PM, so in our case we can translate this information into the degree to which a Fire Drill is present in a project, according to the process model in question. We will also be able to compute the Brier- and Logarithmic scoring rules, and compare against the results that we got using the binary decision rule.
+
+[^3]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/rectify-score.md
+
+The plan for this new section is to demonstrate the following:
+
+1. Computation of available metrics/scores for all types of PMs (I, II, III (average), and III (b, numInt=11)).
+2. Computation for each variable (e.g., FREQ), using a large number of random processes ($\approx$ 1k--100k). Also, computing for each segment (we will be subdividing each PM into $10$ equally long segments).
+3. Scalarization of the scores, with and without weights (we will be able to choose a weight for each segment or score).
+4. Perhaps make an attempt at using only the most important scores, or some automatic approach (e.g., RFE) to find the most important scores.
+5. Computing the Brier- and Log-scoring rules so that we can compare to the binary decision rule's results.
+
+
+The reason for using segments is simple. First, the longer a segment is, the less explainability a score/metric has, as it captures too much of the characteristics. Second, we will be able to introduce weights for segments. Since it is difficult to choose weights a priori, we will only use two weighting schemes. In the first one, all weights are equal (calculate mean). In the second we will use a scheme to gradually (e.g., linearly or slightly exponentially) increase the weights towards the end of the project. This is simply based on the assumption that newer data is more important.
+
+Example: In source code data, we have four variables. Using all $13$ scores and ten segments requires to compute $520$ single scores, __per__ random process. Times four (for each kind of PM) equals $2080$ computations. If we simulate $10$k random processes, we're looking at $20.8$m computations. This needs to be scaled reasonably so we get sufficiently well approximated results quickly.
+
+
+## Prerequisites
+
+Before we can start, we should prepare this expensive task well. First is a function that takes a PM+P, a segment specification, and the name of the score to compute.
+
+```{r}
+segment_unit_transform <- function(func, from, to) {
+  ext <- to - from
+  
+  function(x) {
+    # func has a support of [0, 1], and the returned function
+    # has a support of [from, to].
+    func(from + (x * ext))
+  }
+}
+
+compute_segment_metric <- function(
+  PM, P, segment, numSamples = 1e3,
+  use = c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+          "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
+  
+  # We'll have to make this transform as all the scores we compute
+  # assume a support of [0,1] and compute over that.
+  f1 <- segment_unit_transform(PM, from = segment[1], to = segment[2])
+  f2 <- segment_unit_transform(P, from = segment[1], to = segment[2])
+  
+  # Some metrics will require scaling after the segment-unit-transform
+  ext <- segment[2] - segment[1]
+  
+  diff <- NA_real_
+  if (use == "area") {
+    # This is integration and susceptible to scaling!
+    diff <- ext * area_diff_2_functions(f1 = f1, f2 = f2)$value
+  } else if (use == "corr") {
+    # Returns a correlation in range [-1,1], but we want a difference,
+    # so we'll subtract it from 1 -> [0,2]
+    diff <- 1 - stat_diff_2_functions_cor_score(requiredSign = 0, numSamples = numSamples)(f1 = f1, f2 = f2)
+  } else if (use == "jsd") {
+    diff <- stat_diff_2_functions_symmetric_JSD_sampled(f1 = f1, f2 = f2, numSamples = numSamples)$value
+  } else if (use == "kl") {
+    diff <- stat_diff_2_functions_symmetric_KL_sampled(f1 = f1, f2 = f2, numSamples = numSamples)$value
+  } else if (use == "arclen") {
+    # Returns a ration min/max -> (0,1], where 1 is ideal.
+    # We should inverse that because we are returning a difference.
+    diff <- 1 - stat_diff_2_functions_arclen_score(requiredSign = 0, numSamples = numSamples)(f1 = f1, f2 = f2)
+  } else if (use %in% c("sd", "var", "mae", "rmse")) {
+    temp <- switch (use,
+      "sd"   = stat_diff_2_functions_sd(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      "var"  = stat_diff_2_functions_var(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      "mae"  = ext * stat_diff_2_functions_mae(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      "rmse" = ext * stat_diff_2_functions_rmse(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      {
+        stop(paste0("Don't know ", use, "."))
+      })
+    diff <- temp
+  } else if (use %in% c("RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
+    # Returns a ratio min/max -> (0,1], where 1 is ideal.
+    diff <- 1 - stat_diff_2_functions_signals_score(use = use, requiredSign = 0, numSamples = numSamples)(f1 = f1, f2 = f2)
+  }
+  
+  diff
+}
+```
+
+
+We have previously used a function to get a smooth random process. We will be slightly adapting this function here to also include the process' derivative. We will not be working with derivative PMs in this notebook, but the very next when we use issue-tracking data.
+
+```{r}
+get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
+  if (!is.na(seed)) {
+    set.seed(seed = seed)
+  }
+  
+  x <- sort(c(0, 1, runif(npoints - 2)))
+  y <- runif(length(x))
+  temp <- loess.smooth(x = x, y = y, span = 0.35, family = "g", evaluation = 1000)
+  appr <- stats::approxfun(
+    x = ((temp$x - min(temp$x)) / (max(temp$x) - min(temp$x))),
+    y = temp$y / (max(temp$x) - min(temp$x)),
+    yleft = utils::head(temp$y, 1),
+    yright = utils::tail(temp$y, 1))
+  
+  tempf <- Vectorize(function(x) {
+    # Limit the resulting function to the bounding box of [0,1]
+    min(1, max(0, appr(x)))
+  })
+  
+  f1 <- NULL
+  if (include_deriv) {
+    tempf1 <- Vectorize(function(x) {
+      ltol <- x < sqrt(.Machine$double.eps)
+      rtol <- x > 1 - sqrt(.Machine$double.eps)
+      pracma::fderiv(f = tempf, x = x, method = if (ltol) "forward" else if (rtol) "backward" else "central")
+    })
+    x <- seq(from = 0, to = 1, length.out = 1e4)
+    y <- tempf1(x)
+    
+    f1 = stats::approxfun(
+      x = x, y = y, yleft = utils::head(y, 1), yright = utils::tail(y, 1))
+  }
+  
+  list(f0 = tempf, f1 = f1)
+}
+```
+
+We make a caching version of getting a smoothed random process, as obtaining a precise numeric derivative is expensive, and we do not want to repeat this.
+
+```{r}
+get_smoothed_curve_buffered <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
+  if (!include_deriv) {
+    # We only buffer those with derivative
+    return(get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = FALSE))
+  }
+  
+  lock_file <- paste0(tempdir(), "/gsc.lock")
+  lock <- filelock::lock(path = lock_file, exclusive = TRUE)
+  
+  tryCatch(expr = {
+    gsc_file <- paste0(tempdir(), "/gsc_", seed, "_", npoints, ".rds")
+  
+    if (file.exists(gsc_file)) {
+      readRDS(file = gsc_file)
+    } else {
+      sc <- get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = TRUE)
+      saveRDS(object = sc, file = gsc_file, compress = FALSE)
+      sc
+    }
+  }, finally = {
+    filelock::unlock(lock = lock)
+  })
+}
+```
+
+
+## Computing the metrics
+
+We have a handful of dimensions, and the goal is to obtain a data frame with the following columns:
+
+* Process model (ID or name)
+* Variable name
+* Seed of random process
+* Segment index
+* Metric 1, ..., Metric 13 (one column per metric)
+
+Each worker shall compute all metrics for one specific segment. It will therefore be given the PM's variable, the seed/random process, and the segment's index. This way, we can chunk each worker's workload into comfortably sized items.
+
+### Worker
+
+We will be making a grid of all combinations, and the worker will compute the results of that grid. Then finally, we will just be concatenating the grid with the results horizontally and store the result.
+
+```{r}
+ac_worker <- function(PM, P, seg_idx, total_segments = 10) {
+  use <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+           "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+  df <- `colnames<-`(matrix(nrow = 1, ncol = length(use)), use)
+  
+  seg_ext <- 1 / total_segments
+  
+  for (metric in use) {
+    df[1, metric] <- compute_segment_metric(PM = PM, P = P, use = metric, segment = c(
+      (seg_idx - 1) * seg_ext, seg_idx * seg_ext
+    ))
+  }
+  df
+}
+```
+
+### Grid
+
+Let's define the grid of parameters, which will eventually be concatenated with the results.
+
+```{r}
+ac_grid <- expand.grid(list(
+  PM = c("I", "II", "III(avg)", "III(b,11)")[1],
+  Var = names(weight_vartype)[1],
+  Seed = seq(from = 1, length.out = 2),#1e4),
+  Seg_idx = 1:10))
+
+nrow(ac_grid)
+```
+
+Let's compute the grid (attention: this is expensive).
+
+```{r ac-grid-results}
+ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rds", computeExpr = {
+  library(foreach)
+  
+  doWithParallelCluster(numCores = 4, expr = {
+    pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
+    progress <- function(n) utils::setTxtProgressBar(pb = pb, value = n)
+    
+    foreach::foreach(
+      grid_idx = rownames(ac_grid),
+      .combine = rbind,
+      .inorder = FALSE,
+      .options.snow = list(progress = progress)
+    ) %dopar% {
+      params <- ac_grid[grid_idx, ]
+      
+      pm_var <- switch (params$PM,
+        "I" = p1_signals,
+        "II" = p2_signals,
+        "III(avg)" = p3_avg_signals,
+        "III(b,11)" = p3b_all$i_11$signals,
+        {
+          stop(paste0("Don't know ", params$PM, "."))
+        }
+      )[[params$Var]]$get0Function()
+      
+      p_var <- get_smoothed_curve_buffered(seed = params$Seed, include_deriv = FALSE)$f0
+      
+      ac_worker(PM = pm_var, P = p_var, seg_idx = params$Seg_idx)
+    }
+  })
+})
+```
+
+
+
+## Approximating marginal cumulative densities
+
+
+## Calculating scores
+
+### Non-weighted
+
+### Weighted
+
+
+
 # References {-}
 
 <div id="refs"></div>
