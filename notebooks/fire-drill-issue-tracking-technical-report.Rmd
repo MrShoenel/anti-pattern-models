@@ -2717,8 +2717,9 @@ temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
 
 `names<-`(c(
   mean(scoring::brierscore(object = detect_prob ~ ground_truth, data = temp)),
-  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp))
-), c("Brier score", "Log score"))
+  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp)),
+  stats::cor(temp$ground_truth, temp$detect_prob)
+), c("Brier score", "Log score", "Correlation"))
 ```
 
 These results indicate that the binary decision rule does not have perfect scores.
@@ -4248,7 +4249,7 @@ plot_all_req_dev
 The six new projects in figure \ref{fig:project-it-vars-2nd-batch} look like they do in the excel, the import was successful.
 
 
-## Evaluating of the binary decision rule\label{ssec:eval-dr-2nd-batch}
+## Evaluation of the binary decision rule\label{ssec:eval-dr-2nd-batch}
 
 Here we will evaluate the existing binary decision rule to find out whether it can classify the second batch of projects correctly.
 
@@ -4290,8 +4291,9 @@ temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
 
 `names<-`(c(
   mean(scoring::brierscore(object = detect_prob ~ ground_truth, data = temp)),
-  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp))
-), c("Brier score", "Log score"))
+  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp)),
+  stats::cor(temp$ground_truth, temp$detect_prob)
+), c("Brier score", "Log score", "Correlation"))
 ```
 
 These results are a little worse than for the first batch ($\approx0.133$ and $\approx0.4$). Let's compute the scoring rules for all projects together, the results should be somewhere in between:
@@ -4303,8 +4305,9 @@ temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
 
 `names<-`(c(
   mean(scoring::brierscore(object = detect_prob ~ ground_truth, data = temp)),
-  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp))
-), c("Brier score", "Log score"))
+  mean(scoring::logscore(object = detect_prob ~ ground_truth, data = temp)),
+  stats::cor(temp$ground_truth, temp$detect_prob)
+), c("Brier score", "Log score", "Correlation"))
 ```
 
 We can use these results later for comparing against scores as computed by the continuous process models.
