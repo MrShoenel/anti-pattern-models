@@ -2672,7 +2672,12 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
   
   doWithParallelCluster(numCores = 4, expr = {
     pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
-    progress <- function(n) utils::setTxtProgressBar(pb = pb, value = n)
+    progress <- function(n) {
+      if (0 == (n %% 25)) {
+        print(n)
+      }
+      utils::setTxtProgressBar(pb = pb, value = n)
+    }
     
     foreach::foreach(
       grid_idx = rownames(ac_grid),
