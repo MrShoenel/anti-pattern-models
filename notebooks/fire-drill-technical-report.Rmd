@@ -2671,7 +2671,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
   library(foreach)
   
   doWithParallelCluster(numCores = 4, expr = {
-  p3bi11 <- p3b_all$i_11
+  p3b11 <- p3b_all$i_11
   
     pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
     progress <- function(n) {
@@ -2693,7 +2693,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
         "I" = p1_signals,
         "II" = p2_signals,
         "III(avg)" = p3_avg_signals,
-        "III(b,11)" = p3bi11$signals,
+        "III(b,11)" = p3b11$signals,
         {
           stop(paste0("Don't know ", params$PM, "."))
         }
