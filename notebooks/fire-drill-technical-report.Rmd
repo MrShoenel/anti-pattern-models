@@ -2698,7 +2698,8 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
       
       p_var <- get_smoothed_curve_buffered(seed = params$Seed, include_deriv = FALSE)$f0
       
-      ac_worker(PM = pm_var, P = p_var, seg_idx = params$Seg_idx)
+      # Important so we can correctly concatenate the results with the grid parameters!
+      `rownames<-`(ac_worker(PM = pm_var, P = p_var, seg_idx = params$Seg_idx), grid_idx)
     }
   })
 })
