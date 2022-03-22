@@ -508,7 +508,7 @@ stat_diff_2_functions_sd_var_mae_rmse_score <- function(
       "mae"  = stat_diff_2_functions_mae(f1 = f1, f2 = f2, numSamples = numSamples),
       "rmse" = stat_diff_2_functions_rmse(f1 = f1, f2 = f2, numSamples = numSamples),
       {
-        stop(paste0("Don't know ", corrType, "."))
+        stop(paste0("Don't know ", use, "."))
       }
     )
     
