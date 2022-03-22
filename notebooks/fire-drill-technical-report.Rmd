@@ -2608,7 +2608,7 @@ get_smoothed_curve_buffered <- function(seed = NA, npoints = 15, include_deriv =
       readRDS(file = gsc_file)
     } else {
       sc <- get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = include_deriv)
-      saveRDS(object = sc, file = gsc_file, compress = FALSE)
+      saveRDS(object = sc, file = gsc_file)
       sc
     }
   }, finally = {
