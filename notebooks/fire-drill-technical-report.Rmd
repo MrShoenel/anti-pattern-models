@@ -2583,7 +2583,7 @@ get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
       rtol <- x > 1 - sqrt(.Machine$double.eps)
       pracma::fderiv(f = tempf, x = x, method = if (ltol) "forward" else if (rtol) "backward" else "central")
     })
-    x <- seq(from = 0, to = 1, length.out = 1e4)
+    x <- seq(from = 0, to = 1, length.out = 2e3)
     y <- tempf1(x)
     
     f1 = stats::approxfun(
