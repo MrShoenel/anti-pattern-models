@@ -2598,16 +2598,11 @@ We make a caching version of getting a smoothed random process, as obtaining a p
 
 ```{r}
 get_smoothed_curve_buffered <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
-  if (!include_deriv) {
-    # We only buffer those with derivative
-    return(get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = FALSE))
-  }
-  
-  lock_file <- paste0(tempdir(), "/gsc.lock")
+  lock_file <- paste0(tempdir(), "/gsc", (seed %% 10), ".lock")
   lock <- filelock::lock(path = lock_file, exclusive = TRUE)
   
   tryCatch(expr = {
-    gsc_file <- paste0(tempdir(), "/gsc_", seed, "_", npoints, ".rds")
+    gsc_file <- paste0(tempdir(), "/gsc_", seed, "_", npoints, "_", include_deriv, ".rds")
   
     if (file.exists(gsc_file)) {
       readRDS(file = gsc_file)
