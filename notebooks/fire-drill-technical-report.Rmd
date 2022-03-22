@@ -2598,16 +2598,16 @@ We make a caching version of getting a smoothed random process, as obtaining a p
 
 ```{r}
 get_smoothed_curve_buffered <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
-  lock_file <- paste0(tempdir(), "/gsc", (seed %% 10), ".lock")
+  lock_file <- paste0(dirname(tempdir()), "/gsc", (seed %% 10), ".lock")
   lock <- filelock::lock(path = lock_file, exclusive = TRUE)
   
   tryCatch(expr = {
-    gsc_file <- paste0(tempdir(), "/gsc_", seed, "_", npoints, "_", include_deriv, ".rds")
-  
+    gsc_file <- paste0(dirname(tempdir()), "/gsc_", seed, "_", npoints, "_", include_deriv, ".rds")
+    
     if (file.exists(gsc_file)) {
       readRDS(file = gsc_file)
     } else {
-      sc <- get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = TRUE)
+      sc <- get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = include_deriv)
       saveRDS(object = sc, file = gsc_file, compress = FALSE)
       sc
     }
@@ -2651,15 +2651,17 @@ ac_worker <- function(PM, P, seg_idx, total_segments = 10) {
 }
 ```
 
-### Grid
+### Grid for the random processes
 
 Let's define the grid of parameters, which will eventually be concatenated with the results.
 
 ```{r}
-ac_grid <- expand.grid(list(
-  PM = c("I", "II", "III(avg)", "III(b,11)"),
-  Var = names(weight_vartype),
-  Seed = seq(from = 1, length.out = 1e4)))
+ac_grid <- loadResultsOrCompute(file = "../results/ac_grid_sc.rds", computeExpr = {
+  expand.grid(list(
+    PM = c("I", "II", "III(avg)", "III(b,11)"),
+    Var = names(weight_vartype),
+    Seed = seq(from = 1, length.out = 1e4)))
+})
 
 nrow(ac_grid)
 ```
