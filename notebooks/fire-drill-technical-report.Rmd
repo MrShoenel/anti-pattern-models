@@ -2671,6 +2671,8 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
   library(foreach)
   
   doWithParallelCluster(numCores = 4, expr = {
+  p3bi11 <- p3b_all$i_11
+  
     pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
     progress <- function(n) {
       if (0 == (n %% 25)) {
@@ -2691,7 +2693,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
         "I" = p1_signals,
         "II" = p2_signals,
         "III(avg)" = p3_avg_signals,
-        "III(b,11)" = p3b_all$i_11$signals,
+        "III(b,11)" = p3bi11$signals,
         {
           stop(paste0("Don't know ", params$PM, "."))
         }
@@ -2702,8 +2704,8 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
       df <- NULL
       for (seg_idx in 1:10) {
         # Important so we can correctly concatenate the results with the grid parameters!
-        res <- `rownames<-`(as.data.frame(
-          ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10)), grid_idx)
+        res <- as.data.frame(
+          ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
         res$seg_idx <- seg_idx
         res$grid_idx <- grid_idx
         df <- if (is.null(df)) res else rbind(df, res)
