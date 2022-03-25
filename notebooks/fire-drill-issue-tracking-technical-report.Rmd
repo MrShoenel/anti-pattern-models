@@ -4649,6 +4649,90 @@ stats::cor(p3_avg_rfe_2nd_batch_scores, ground_truth_2nd_batch$consensus)
 These results are similarly worse to those obtained from the previous section, where we predicted using the linear model. The only conclusion we can now draw confidently is that we have insufficient training data in order to train a model that can generalize to new data (likely both, instances and feature granularity). However, the features we found to be most important have a good chance to be actually the most important ones. If we were to repeat the variable-importance experiment with a lot more data (projects), we might get a similar ranking and relative importance. It is only that currently, the amount of data does not suffice to generalize from the observations, even if we have a good selection and weighting of features.
 
 
+# Automatic calibration of the continuous process models
+
+We have previously attempted the automatic calibration of the continuous process models that use source code data (section \ref{sec:auto-calib}), and now we will do the same here for the models using issue-tracking data.
+We will reuse the functions defined for source code data as much as possible here.
+A notable difference is of course the process models. Here, we have one less variable, but six instead of four models (I, II(a), III, as well as their resp. derivative models).
+
+
+## Computing the metrics
+
+We will need an extra grid for issue-tracking data, before we can proceed.
+
+```{r}
+ac_grid_it <- loadResultsOrCompute(file = "../results/ac_grid_it.rds", computeExpr = {
+  expand.grid(list(
+    PM = c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)"),
+    Var = c("REQ", "DEV", "DESC"),
+    Seed = seq(from = 1, length.out = 1e4)))
+})
+
+nrow(ac_grid_it)
+```
+
+Let's compute the full grid:
+
+```{r ac-grid-results-it}
+ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it.rds", computeExpr = {
+  library(foreach)
+  
+  cl <- parallel::makePSOCKcluster(124)
+  parallel::clusterExport(cl, varlist = list("req_poly", "dev_poly"))
+  
+  doWithParallelClusterExplicit(cl = cl, stopCl = TRUE, expr = {
+    pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
+    progress <- function(n) {
+      if (0 == (n %% 25)) {
+        print(n)
+      }
+      utils::setTxtProgressBar(pb = pb, value = n)
+    }
+    
+    foreach::foreach(
+      grid_idx = rownames(ac_grid),
+      .combine = rbind,
+      .inorder = TRUE,
+      .verbose = TRUE,
+      .packages = c("cobs"),
+      .options.snow = list(progress = progress)
+    ) %dopar% {
+      params <- ac_grid_it[grid_idx, ]
+      
+      pm_var <- switch (as.character(params$PM),
+        "I" = p1_it_signals,
+        "II(a)" = p2_it_signals,
+        "III" = p3_it_signals,
+        "IV(I)" = p4p1_it_signals,
+        "IV(II(a))" = p4p2a_it_signals,
+        "IV(III)" = p4p3_it_signals,
+        {
+          stop(paste0("Don't know ", params$PM, "."))
+        }
+      )[[params$Var]]$get0Function()
+      
+      include_deriv <- params$PM %in% c("IV(I)", "IV(II(a))", "IV(III)")
+      smooth_curve <- get_smoothed_curve(seed = params$Seed, include_deriv = include_deriv)
+      p_var <- if (include_deriv) smooth_curve$f1 else smooth_curve$f0
+      
+      df <- NULL
+      for (seg_idx in 1:10) {
+        # Important so we can correctly concatenate the results with the grid parameters!
+        res <- as.data.frame(
+          ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
+        res$seg_idx <- seg_idx
+        res$grid_idx <- grid_idx
+        df <- if (is.null(df)) res else rbind(df, res)
+      }
+      df
+    }
+  })
+})
+```
+
+
+
+
 
 # References {-}
 
