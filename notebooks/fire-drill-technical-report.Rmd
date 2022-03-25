@@ -2466,7 +2466,7 @@ With this linear model, we can report a high correlation with the consensus, too
 
 
 
-# Automatic calibration of the continuous process models
+# Automatic calibration of the continuous process models\label{sec:auto-calib}
 
 This is a new section in the seventh iteration of this report.
 "Automatic calibration" refers to a new approach of gauging a continuous PM, so that it can compute true scores for any process, also scores that are __comparable__ across PMs, given the same configuration (segments, objectives, regularizers) was used.
@@ -2598,6 +2598,9 @@ We make a caching version of getting a smoothed random process, as obtaining a p
 
 ```{r}
 get_smoothed_curve_buffered <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
+  if (!include_deriv) {
+    return(get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = include_deriv))
+  }
   lock_file <- paste0(dirname(tempdir()), "/gsc", (seed %% 10), ".lock")
   lock <- filelock::lock(path = lock_file, exclusive = TRUE)
   
@@ -2672,9 +2675,9 @@ Let's compute the grid (attention: this is expensive).
 ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rds", computeExpr = {
   library(foreach)
   
-  doWithParallelCluster(numCores = 4, expr = {
   p3b11 <- p3b_all$i_11
   
+  doWithParallelCluster(numCores = 124, expr = {
     pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
     progress <- function(n) {
       if (0 == (n %% 25)) {
@@ -2721,6 +2724,53 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
 
 
 ## Approximating marginal cumulative densities
+
+Now with the data at hand, the goal is to approximate the empirical cumulative distribution function (ECDF) for each objective, in each segment, for each variable, for each process model. For example, we will have one ECDF for the correlation of the A-variable in the first segment of the type-III (average) pattern.
+All these "address" the specific ECDF. We will first write a helper function that can extract this.
+
+```{r}
+ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_grid_results) {
+  rows <- ac_grid[ac_grid$PM == pmName & ac_grid$Var == varName, ]
+  ac_grid_results[ac_grid_results$seg_idx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
+}
+```
+
+So let's plot a few randomly picked examples:
+
+```{r ac-grid-example, echo=FALSE, fig.height=5, fig.cap="Four randomly picked ECDFs as simulated using the random processes of the automatic calibration."}
+par(mfrow = c(2,2), mgp = c(1.5, 1, 0))
+
+
+set.seed(5)
+temp.PM <- levels(ac_grid$PM)
+temp.Var <- unique(ac_grid$Var)
+temp.Seg <- 1:10
+temp.Metric <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+
+for (i in 1:4) {
+  temp.pm <- sample(temp.PM, 1)
+  temp.PM <- temp.PM[temp.PM != temp.pm]
+  temp.var <- sample(temp.Var, 1)
+  temp.Var <- temp.Var[temp.Var != temp.var]
+  temp.seg <- sample(temp.Seg, 1)
+  temp.Seg <- temp.Seg[temp.Seg != temp.seg]
+  temp.metric <- sample(temp.Metric, 1)
+  temp.Metric <- temp.Metric[temp.Metric != temp.metric]
+  
+  temp <- ac_extract_data(pmName = temp.pm, varName = temp.var, segIdx = temp.seg, metricName = temp.metric, ac_grid = ac_grid, ac_grid_results = ac_grid_results)
+  tempf <- stats::ecdf(temp)
+  curve2(tempf, min(temp), max(temp), xlab = "", main = paste0(
+    "PM=", temp.pm,
+    ", Var=", temp.var
+  ), sub = paste0(
+    "SegIdx=", temp.seg,
+    ", Metric=", temp.metric
+  ))
+}
+```
+
+So as we see in figure \ref{fig:ac-grid-example}, the ECDFs can be quite diverse. In almost any case, the ECDF is __non-linear__, which is exactly what we are after, as it will then be used to rectify the corresponding objective later.
 
 
 ## Calculating scores
