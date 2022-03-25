@@ -2725,7 +2725,6 @@ temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
 These results indicate that the binary decision rule does not have perfect scores.
 
 
-
 #### Manually adjusting the rule
 
 Through manual inspection, we found out that the decision rule can be re-calibrated in order to achieve 100% accuracy on the projects. If the thresholds were $y_1=0.73$ (instead of $0.8$) and $y_4=0.69$ (instead of $0.7), not only would the detection results align perfectly with the ground truth assessment (eliminating both false positives), but also $I_1$ no longer be detected in all projects, failing in projects 2, 6 and 7.
@@ -2819,6 +2818,198 @@ res
 ```
 
 So I have re-run this a couple of times, and it appears that there is a small solution space that is maximally far away, where the first four values for $\bm{y}$ are $\approx\{1,0,1,0\}$, and $y_5$ gets pushed towards $0.18$, but ultimately needs to be lower than that ($\approx 0.179$).
+
+
+#### Automatic calibration of the decision rule
+
+We have previously done the automatic calibration of the continuous PMs based on source code, see section \ref{sec:auto-calib}. Note that this section ("calibration") is conceptually different from the previous sections, where we _adjusted_ the decision rule.
+The decision rule can be calibrated as well, but since it is discrete, things will work a bit differently:
+
+
+* `REQ` is expected to be within a threshold at $t_1$. However, the threshold is only a logical delimiter for the decision rule. For the automatic calibration, only the _expectation_ of `REQ(t_1)` is important (which is $0.7$). Since the threshold is supposed to be a confidence interval, it would have an effect on the calibration. However, the threshold is homogeneous, so there is no such effect.
+* `DEV` is to be measured twice, once at $t_1$ and once at $t_2$. Again, we have a threshold/confidence interval, but only the expectation at both points ($0.075,0.4$) is of importance.
+* `DESC` is measured at $t=1$. The variables as it was drawn in this report is slightly misleading, as we are not drawing the variable, but its upper confidence boundary. De-scoping is _always_ negative (bad), so that our expectation for this activity is __$0$__. In other words, any de-scoping is bad, and $I_3$ would be positive _above_ a value of $0.15$.
+
+
+The objective for the calibration is always the same, it is the absolute difference of any measurement from the expectation.
+The issue-tracking models are normalized. Therefore any measurement must be in the range `[0,1]`. We will simulate uniformly distributed points in that range.
+Let's do the calibration for the four points `REQ(t_1)`, `DEV(t_1)`, `DEV(t_2)`, and `DESC(1)` (the empirical distributions are shown in figure \ref{fig:ac-calib-dec-rule}):
+
+```{r}
+set.seed(1)
+
+temp <- req(t_1)
+ac_itp1_reqt1_ecdf <- stats::ecdf(abs(temp - stats::runif(n = 2e5)))
+temp <- dev(t_1)
+ac_itp1_devt1_ecdf <- stats::ecdf(abs(temp - stats::runif(n = 2e5)))
+temp <- dev(t_2)
+ac_itp1_devt2_ecdf <- stats::ecdf(abs(temp - stats::runif(n = 2e5)))
+ac_itp1_desc1_ecdf <- function(x) x # Since all have same likelihood
+```
+
+```{r ac-calib-dec-rule, echo=FALSE, fig.height=5, fig.cap=""}
+par(mfrow = c(2,2))
+
+temp <- seq(from = 0, to = max(req(t_1), abs(1 - req(t_1))), length.out = 1e3)
+plot(x = temp, y = ac_itp1_reqt1_ecdf(temp), type = "l", ylab = "Cumulative probability", xlab = paste0("EXP[REQ(t1)]=", round(req(t_1), 1), " deviation"), main = "ECDF for REQ(t1)")
+
+temp <- seq(from = 0, to = max(dev(t_1), abs(1 - dev(t_1))), length.out = 1e3)
+plot(x = temp, y = ac_itp1_devt1_ecdf(temp), type = "l", ylab = "Cumulative probability", xlab = paste0("EXP[DEV(t1)]=", round(dev(t_1), 3), " deviation"), main = "ECDF for DEV(t1)")
+temp <- seq(from = 0, to = max(dev(t_2), abs(1 - dev(t_2))), length.out = 1e3)
+plot(x = temp, y = ac_itp1_devt2_ecdf(temp), type = "l", ylab = "Cumulative probability", xlab = paste0("EXP[DEV(t2)]=", round(dev(t_2), 1), " deviation"), main = "ECDF for DEV(t2)")
+
+temp <- seq(from = 0, to = 1, length.out = 1e3)
+plot(x = temp, y = ac_itp1_desc1_ecdf(temp), type = "l", ylab = "Cumulative probability", xlab = paste0("EXP[DESC(1)]=", desc(1), " deviation"), main = "ECDF for DESC(1)")
+```
+
+Since we are calibrating around single points, the ECDFs in figure \ref{fig:ac-calib-dec-rule} are all piece-wise linear, with a single break at the expectation. If the expectation were $0.5$, there would be no break. An expectation $\neq 0.5$ however indicates a different uniform probability before and after it.
+In this simple case we could have constructed these ECDFs manually instead of random sampling around each expectation.
+
+
+Next we will define a function that uses the estimated ECDFs and gives us a probabilistic score from the automatically calibrated decision rule.
+The binary decision rule is a logical concatenation of the three indicators: $I_1\land(I_2\lor I_3)$. We have now transformed the rule into four independent objectives, and each objective describes the deviation from an expected value using a uniformly scaled and uniformly distributed score in the range $[0,1]$.
+As I see it, we have the justification for two distinct setups for the weights. Either, all weights are the same, with each deviation from the corresponding deviation equally important.
+In the other case, we see that the first indicator must be true for the binary decision rule to indicate detection (one half of the entire condition). We could therefore reason to give twice the weight to the objective for `REQ(t_1)`. In the following, we will try both.
+
+
+```{r}
+ac_p1_dr <- function(
+  projName, signals = all_signals, expectations = c(
+    "reqt1" = unname(req(t_1)), "devt1" = unname(dev(t_1)),
+    # Note the expectation for DESC(1) = 0!
+    "devt2" = unname(dev(t_2)), "desc1" = 0),
+  w_reqt1 = 1, w_devt1 = 1, w_devt2 = 1, w_desc1 = 1)
+{
+  p_req <- signals[[projName]]$REQ$get0Function()
+  p_dev <- signals[[projName]]$DEV$get0Function()
+  p_desc <- signals[[projName]]$DESC$get0Function()
+  
+  w_l1 <- w_reqt1 + w_devt1 + w_devt2 + w_desc1
+  
+  (
+    # Note: The objective must be given the absolute difference between
+    # the expectation and the project's value!
+    # Note the objective return the distance, not the similarity.
+    # Therefore, we have to subtract the value from 1!
+    w_reqt1 * (1 - ac_itp1_reqt1_ecdf(abs(expectations["reqt1"] - p_req(t_1)))) +
+    w_devt1 * (1 - ac_itp1_devt1_ecdf(abs(expectations["devt1"] - p_dev(t_1)))) +
+    w_devt2 * (1 - ac_itp1_devt2_ecdf(abs(expectations["devt2"] - p_dev(t_2)))) +
+    w_desc1 * (1 - ac_itp1_desc1_ecdf(abs(expectations["desc1"] - p_desc(1))))
+  ) / w_l1
+}
+```
+
+
+Now we can compute the scores from the automatically calibrated decision rule, using either set of weights:
+
+```{r}
+temp <- append(all_signals, all_signals_2nd_batch)
+
+ac_it_dr_scores <- `colnames<-`(`rownames<-`(matrix(ncol = 3, nrow = length(temp), byrow = FALSE, data = c(
+  sapply(X = names(temp), function(pName) ac_p1_dr(projName = pName, signals = temp)),
+  sapply(X = names(temp), function(pName) ac_p1_dr(projName = pName, signals = temp, w_reqt1 = 2)),
+  c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+)), names(temp)), c("all_equal", "pref_reqt1", "ground_truth"))
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  ac_it_dr_scores
+} else {
+  knitr::kable(
+    x = ac_it_dr_scores,
+    booktabs = TRUE,
+    caption = "Scores as calculated by the automatically calibrated decision rule, once using equal weights, and once giving preference to the objective for REQ(t1).",
+    label = "ac-it-dr-scores"
+  )
+}
+```
+
+The scores from the automatically calibrated decision rule are shown in table \ref{tab:ac_it_dr_scores}.
+Next, we will check the correlation with the ground truth.
+
+```{r}
+stats::cor.test(x = ac_it_dr_scores[, 1], c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score))
+```
+
+```{r}
+stats::cor.test(x = ac_it_dr_scores[, 2], c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score))
+```
+
+There is almost no correlation between these scores and the ground truth, the large p-values support the null hypothesis (no correlation). Let's check the Brier-scoring rule (we will check the MSE as we do not have discrete outcomes).
+
+```{r}
+temp <- cbind(ac_it_dr_scores, data.frame(ground_truth = c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)))
+  
+`names<-`(c(
+  Metrics::mse(temp$all_equal, temp$ground_truth),
+  Metrics::mse(temp$pref_reqt1, temp$ground_truth)
+), c("MSE (all_equal)", "MSE (pref_reqt1)"))
+```
+
+
+These results are much worse than those from the scoring rule of the original decision rule. However, some manual tests indicate that the weights we picked might not have been optimal. We will therefore attempt to optimize them. This is now a simple task since we can define the loss to be the Brier score.
+
+
+```{r}
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+temp <- append(all_signals, all_signals_2nd_batch)
+
+eval_f <- function(x) {
+  res <- sapply(X = names(temp), function(pName) {
+    ac_p1_dr(projName = pName, signals = temp, w_reqt1 = x[1], w_devt1 = x[2], w_devt2 = x[3], w_desc1 = x[4])
+  })
+  # Use this instead to maximize the correlation:
+  # 1 - cor(temp.gt, res)
+  Metrics::mse(actual = temp.gt, predicted = res)
+}
+
+res <- nloptr::nloptr(
+  x0 = rep(0.5, 4),
+  lb = rep(0, 4),
+  ub = rep(1, 4),
+  eval_f = eval_f,
+  eval_grad_f = function(x) pracma::grad(f = eval_f, x0 = x),
+  opts = list(maxeval = 100, algorithm = "NLOPT_LD_TNEWTON")
+)
+res
+```
+
+This Brier/MSE score is the best so far, the value achieved by the binary decision rule across all projects previously was $0.14$ (with a Log-score of $\approx0.431$ and a correlation of $\approx0.696$).
+The weights found by the optimization are:
+
+```{r}
+`names<-`(res$solution, c("reqt1", "devt1", "devt2", "desc1"))
+```
+
+It appears we should not put any weight on the indicator for the `DESC`-variable at $t=1$.
+Let's use the weights:
+
+```{r}
+temp <- append(all_signals, all_signals_2nd_batch)
+
+temp <- `colnames<-`(`rownames<-`(matrix(ncol = 2, nrow = length(temp), byrow = FALSE, data = c(
+  sapply(X = names(temp), function(pName) ac_p1_dr(
+    projName = pName, signals = temp, w_reqt1 = res$solution[1], w_devt1 = res$solution[2],
+    w_devt2 = res$solution[3], w_desc1 = res$solution[4])),
+  c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+)), names(temp)), c("optimized", "ground_truth"))
+temp
+```
+
+Brier-score (MSE) and correlation are:
+
+```{r}
+`names<-`(c(
+  Metrics::mse(c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score), temp[, 1]),
+  cor(c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score), temp[, 1])
+), c("Brier-score (MSE)", "Correlation"))
+```
+
+Note that we can optimize using other objectives, too. For example, if we were to optimize for the correlation between the scores and the ground truth, we can bump the correlation significantly to $\approx0.197$, while the Brier-score would plummet to $\approx0.34$ (however, still far off from the correlation of the original decision rule).
+So while we can optimize the Brier-score, it is ultimately up to the decision maker to pick an objective that will maximize the utility of the model.
+
+
 
 
 ### Average distance to reference (pattern type I)
