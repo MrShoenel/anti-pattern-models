@@ -31,7 +31,8 @@ header-includes:
 ---
 
 \newcommand*\mean[1]{\overline{#1}}
-\newcommand{\norm}[1]{\left\lvert\,#1\,\right\rvert}
+\newcommand{\abs}[1]{\left\lvert\,#1\,\right\rvert}
+\newcommand{\norm}[1]{\left\lVert\,#1\,\right\rVert}
 \newcommand{\infdiv}[2]{#1\;\|\;#2}
 \newcommand\argmax[1]{\underset{#1}{arg\,max}}
 \newcommand\argmin[1]{\underset{#1}{arg\,min}}
