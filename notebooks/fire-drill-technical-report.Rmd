@@ -2776,7 +2776,235 @@ So as we see in figure \ref{fig:ac-grid-example}, the ECDFs can be quite diverse
 
 ## Calculating scores
 
+In the previous sections we have simulated random continuous processes in order to approximate the marginal densities for each and every single objective.
+Now we want to find out how each of our observed projects scores. So the first step is to compute these in the _same_ way as we did the random processes (we can reuse the function `ac_worker()`), and then the next step will be to _rectify_ each score using the previously approximated densities. Only after that, we can continue to evaluate the PMs and see which one is best, and where the strong and weak parts are.
+
+In order to calculate each project's scores, we need to calculate one objective per:
+
+* Project (15),
+* Process model (4),
+* Variable (4),
+* Segment index (10), and
+* Metric (13) [this is not part of the grid, the `ac_worker()` does this].
+
+That will leave us with $15\times 4\times 4\times 10\times 13=31,200$ computations. It's probably best to generate a grid for that:
+
+```{r}
+ac_grid_projects <- expand.grid(list(
+  Project = c(names(project_signals), names(project_signals_2nd_batch)),
+  PM = c("I", "II", "III(avg)", "III(b,11)"),
+  Var = names(weight_vartype),
+  SegIdx = 1:10))
+
+nrow(ac_grid_projects)
+```
+
+Now we can compute the projects' scores:
+
+```{r ac-grid-results}
+ac_grid_projects_results <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_sc.rds", computeExpr = {
+  library(foreach)
+  
+  p3b11 <- p3b_all$i_11
+  project_signals_all <- append(project_signals, project_signals_2nd_batch)
+  
+  doWithParallelCluster(numCores = 16, expr = {
+    pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid_projects), style = 3)
+    progress <- function(n) {
+      if (0 == (n %% 25)) {
+        print(n)
+      }
+      utils::setTxtProgressBar(pb = pb, value = n)
+    }
+    
+    foreach::foreach(
+      grid_idx = rownames(ac_grid_projects),
+      .combine = rbind,
+      .inorder = FALSE,
+      .verbose = TRUE,
+      .options.snow = list(progress = progress)
+    ) %dopar% {
+      params <- ac_grid_projects[grid_idx, ]
+    
+      pm_var <- switch (params$PM,
+        "I" = p1_signals,
+        "II" = p2_signals,
+        "III(avg)" = p3_avg_signals,
+        "III(b,11)" = p3b11$signals,
+        {
+          stop(paste0("Don't know ", params$PM, "."))
+        }
+      )[[params$Var]]$get0Function()
+      
+      p_var <- project_signals_all[[params$Project]][[params$Var]]$get0Function()
+      seg_idx <- params$SegIdx
+      
+      # Important so we can correctly concatenate the results with the grid parameters!
+      res <- as.data.frame(
+        ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
+      res$seg_idx <- seg_idx
+      res$grid_idx <- grid_idx
+      res$Project <- params$Project
+      res$PM <- params$PM
+      res$Var <- params$Var
+      res
+    }
+  })
+})
+```
+
+
+### Rectification of raw scores
+
+Now that we have the raw scores, it is time to transform them using the marginal densities. Each single objective (ECDF) is reused 15 times (once for each project).
+We will make a new temporary grid, where the number of rows in this grid corresponds to the number of ECDFs:
+
+```{r}
+temp.Metric <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+temp.grid <- expand.grid(list(
+  PM = c("I", "II", "III(avg)", "III(b,11)"),
+  Var = names(weight_vartype),
+  SegIdx = 1:10,
+  Metric = temp.Metric))
+
+nrow(temp.grid)
+```
+
+Now it's time to rectify the raw scores:
+
+```{r}
+ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_uniform_sc.rds", computeExpr = {
+  doWithParallelCluster(numCores = 16, expr = {
+    library(foreach)
+    
+    project_signals_all <- append(project_signals, project_signals_2nd_batch)
+    
+    foreach::foreach(
+      grid_idx = rownames(temp.grid),
+      .combine = rbind,
+      .inorder = FALSE,
+      .verbose = TRUE
+    ) %dopar% {
+      params <- temp.grid[grid_idx, ]
+      temp.data <- ac_extract_data(
+        pmName = params$PM, varName = params$Var, segIdx = params$SegIdx,
+        metricName = params$Metric, ac_grid = ac_grid, ac_grid_results = ac_grid_results)
+      tempf <- stats::ecdf(temp.data)
+      
+      res <- matrix(nrow = 1, ncol = length(project_signals_all))
+      for (i in 1:length(project_signals_all)) {
+        res[1, i] <- tempf(ac_grid_projects_results[
+          ac_grid_projects_results$Project == names(project_signals_all)[i] &
+          ac_grid_projects_results$PM == params$PM &
+          ac_grid_projects_results$Var == params$Var &
+          ac_grid_projects_results$seg_idx == params$SegIdx, params$Metric])
+      }
+      cbind(`colnames<-`(res, names(project_signals_all)), params)
+    }
+  })
+})
+```
+
+The results as compute are in a bit of an unpractical format, we need to do some partial transpositions:
+
+```{r}
+temp <- NULL
+temp.Metric <- sort(unique(ac_grid_projects_results_uniform$Metric))
+
+for (projName in names(append(project_signals, project_signals_2nd_batch))) {
+  
+  project.df <- NULL
+  
+  for (metric in sort(unique(ac_grid_projects_results_uniform$Metric))) {
+    temp.df <- ac_grid_projects_results_uniform[
+      ac_grid_projects_results_uniform$Metric == metric, c(projName, "PM", "Var", "SegIdx")]
+    temp.df$Project <- projName
+    temp.df[[metric]] <- temp.df[[projName]] # rename, then drop
+    temp.df[[projName]] <- NULL
+    
+    project.df <- if (is.null(project.df)) temp.df else cbind(
+      project.df, `colnames<-`(as.data.frame(temp.df[, metric]), metric))
+  }
+  
+  temp <- rbind(temp, project.df)
+}
+
+ac_grid_projects_results_uniform <- temp
+```
+
+
 ### Non-weighted
+
+With the results from above, we can do many things, for example:
+
+* Calculate a score between each pair of PM and P
+* Compare scores between PMs (e.g., which model has the highest average score and thus resembles the projects best?)
+  * Compare Brier-score of PMs to the decision rule.
+* Fitting the normalized linear scalarizer:
+  * Compare scores across (groups of) metrics and segments to find out what is important and where.
+* Fit other kind of regression model to analyze what Brier-score or correlation is possible.
+
+
+Here, we will take a first look at which PM appears to be the best. Since all PMs are in the same family, we can now perfectly compare them after the automatic calibration.
+_Same family_ refers to having done the automatic calibration using the same segments, variables, and objectives. For example, the objective for process model type II, variable CP, segment 4, correlation, is the same across all PMs. The PM that returns the highest average score (across all projects) is the best for that single objective.
+We have $4*10*13=520$ objectives and the non-weighted approach is to simply add their scores together and divide by $520$.
+
+We will need a function that takes PM/P and returns that score:
+
+```{r}
+ac_pmp_score <- function(pmName, projName) {
+  temp <- ac_grid_projects_results_uniform[
+    ac_grid_projects_results_uniform$PM == pmName &
+    ac_grid_projects_results_uniform$Project == projName, as.character(temp.Metric)]
+  
+  sum(temp) / (nrow(temp) * ncol(temp))
+}
+```
+
+
+In order to compare PMs, we will find out the following: Which PM produces the highest/lowest score for the best/worst PM, what is the Brier(MSE)-/Log-score and correlation for all projects. The result is shown in table \ref{tab:ac-compare-pms-sc}.
+
+
+```{r}
+temp <- append(project_signals, project_signals_2nd_batch)
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+
+temp.df <- NULL
+
+for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
+  temp.pred <- data.frame(
+    pred = sapply(X = names(temp), function(pName) ac_pmp_score(pmName = pmName, projName = pName)),
+    ground_truth = temp.gt)
+  
+  temp.df <- rbind(temp.df, data.frame(
+    PM = pmName,
+    Score_for_best = ac_pmp_score(pmName = pmName, projName = paste0("project_", which.max(temp.gt))),
+    Score_for_worst = ac_pmp_score(pmName = pmName, projName = paste0("project_", which.min(temp.gt))),
+    MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
+    Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+  ))
+}
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp.df
+} else {
+  knitr::kable(
+    x = temp.df,
+    booktabs = TRUE,
+    caption = "Comparison of contiuous PMs using source code for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus.",
+    label = "ac-compare-pms-sc"
+  )
+}
+```
+
+As we show in the technical report for issue-tracking, the lowest MSE for the binary decision rule is $\approx0.14$ across all 15 projects. All of the PMs using source code data are undercutting this threshold here.
+Other than that, it seems that PM type I appears best for detecting the presence of the Fire Drill, at least for the project with the strongest ground truth.
+Process model type III(avg) appears best for detecting the absence of the anti-pattern. However, we have multiple projects with a ground truth of $0$, and ideally the champion PM would be picked by examining multiple projects where the confidence in the accuracy of the ground truth is high.
+Nonetheless, all these scores are close together, so picking a champion needs to be done with care. Also, the score from each PM is the unweighted aggregation across hundreds of objectives, and at this point we have yet to examine which objectives are the most important (next section).
+
 
 ### Weighted
 
