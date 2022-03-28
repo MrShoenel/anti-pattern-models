@@ -2845,7 +2845,8 @@ temp <- dev(t_1)
 ac_itp1_devt1_ecdf <- stats::ecdf(abs(temp - stats::runif(n = 2e5)))
 temp <- dev(t_2)
 ac_itp1_devt2_ecdf <- stats::ecdf(abs(temp - stats::runif(n = 2e5)))
-ac_itp1_desc1_ecdf <- function(x) x # Since all have same likelihood
+# All have same likelihood since the expectation for DESC(1) = 0 and the distance is the L1-norm:
+ac_itp1_desc1_ecdf <- function(x) x
 ```
 
 ```{r ac-calib-dec-rule, echo=FALSE, fig.height=5, fig.cap=""}
@@ -2874,11 +2875,13 @@ In the other case, we see that the first indicator must be true for the binary d
 
 
 ```{r}
+expectations <- c(
+  "reqt1" = unname(req(t_1)), "devt1" = unname(dev(t_1)),
+  # Note the expectation for DESC(1) = 0!
+  "devt2" = unname(dev(t_2)), "desc1" = 0)
+
 ac_p1_dr <- function(
-  projName, signals = all_signals, expectations = c(
-    "reqt1" = unname(req(t_1)), "devt1" = unname(dev(t_1)),
-    # Note the expectation for DESC(1) = 0!
-    "devt2" = unname(dev(t_2)), "desc1" = 0),
+  projName, signals = all_signals,
   w_reqt1 = 1, w_devt1 = 1, w_devt2 = 1, w_desc1 = 1)
 {
   p_req <- signals[[projName]]$REQ$get0Function()
@@ -2901,16 +2904,33 @@ ac_p1_dr <- function(
 ```
 
 
-Now we can compute the scores from the automatically calibrated decision rule, using either set of weights:
+Now we can compute the scores from the automatically calibrated decision rule, using either set of weights.
+Also, we shore the calibrated score for each of the objectives in table \ref{tab:ac-it-dr-scores}.
 
 ```{r}
 temp <- append(all_signals, all_signals_2nd_batch)
 
-ac_it_dr_scores <- `colnames<-`(`rownames<-`(matrix(ncol = 3, nrow = length(temp), byrow = FALSE, data = c(
+ac_it_dr_scores <- as.data.frame(`colnames<-`(`rownames<-`(matrix(ncol = 7, nrow = length(temp), byrow = FALSE, data = c(
   sapply(X = names(temp), function(pName) ac_p1_dr(projName = pName, signals = temp)),
   sapply(X = names(temp), function(pName) ac_p1_dr(projName = pName, signals = temp, w_reqt1 = 2)),
+  sapply(X = names(temp), function(pName) {
+    p_req <- temp[[pName]]$REQ$get0Function()
+    1 - ac_itp1_reqt1_ecdf(abs(expectations["reqt1"] - p_req(t_1)))
+  }),
+  sapply(X = names(temp), function(pName) {
+    p_dev <- temp[[pName]]$DEV$get0Function()
+    1 - ac_itp1_devt1_ecdf(abs(expectations["devt1"] - p_dev(t_1)))
+  }),
+  sapply(X = names(temp), function(pName) {
+    p_dev <- temp[[pName]]$DEV$get0Function()
+    1 - ac_itp1_devt2_ecdf(abs(expectations["devt2"] - p_dev(t_2)))
+  }),
+  sapply(X = names(temp), function(pName) {
+    p_desc <- temp[[pName]]$DESC$get0Function()
+    1 - ac_itp1_desc1_ecdf(abs(expectations["desc1"] - p_desc(1)))
+  }),
   c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
-)), names(temp)), c("all_equal", "pref_reqt1", "ground_truth"))
+)), names(temp)), c("all_equal", "pref_reqt1", "reqt1_ecdf", "devt1_ecdf", "devt2_ecdf", "desc1_ecdf", "ground_truth")))
 ```
 
 ```{r echo=FALSE}
@@ -2918,7 +2938,7 @@ if (interactive()) {
   ac_it_dr_scores
 } else {
   knitr::kable(
-    x = ac_it_dr_scores,
+    x = round(ac_it_dr_scores, 4),
     booktabs = TRUE,
     caption = "Scores as calculated by the automatically calibrated decision rule, once using equal weights, and once giving preference to the objective for REQ(t1).",
     label = "ac-it-dr-scores"
@@ -2940,11 +2960,9 @@ stats::cor.test(x = ac_it_dr_scores[, 2], c(ground_truth$consensus_score, ground
 There is almost no correlation between these scores and the ground truth, the large p-values support the null hypothesis (no correlation). Let's check the Brier-scoring rule (we will check the MSE as we do not have discrete outcomes).
 
 ```{r}
-temp <- cbind(ac_it_dr_scores, data.frame(ground_truth = c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)))
-  
 `names<-`(c(
-  Metrics::mse(temp$all_equal, temp$ground_truth),
-  Metrics::mse(temp$pref_reqt1, temp$ground_truth)
+  Metrics::mse(ac_it_dr_scores$all_equal, ac_it_dr_scores$ground_truth),
+  Metrics::mse(ac_it_dr_scores$pref_reqt1, ac_it_dr_scores$ground_truth)
 ), c("MSE (all_equal)", "MSE (pref_reqt1)"))
 ```
 
@@ -2952,17 +2970,18 @@ temp <- cbind(ac_it_dr_scores, data.frame(ground_truth = c(ground_truth$consensu
 These results are much worse than those from the scoring rule of the original decision rule. However, some manual tests indicate that the weights we picked might not have been optimal. We will therefore attempt to optimize them. This is now a simple task since we can define the loss to be the Brier score.
 
 
-```{r}
-temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
-temp <- append(all_signals, all_signals_2nd_batch)
 
+```{r}
 eval_f <- function(x) {
-  res <- sapply(X = names(temp), function(pName) {
-    ac_p1_dr(projName = pName, signals = temp, w_reqt1 = x[1], w_devt1 = x[2], w_devt2 = x[3], w_desc1 = x[4])
-  })
+  actual <- 1 / sum(x) * (
+    x[1] * ac_it_dr_scores$reqt1_ecdf +
+    x[2] * ac_it_dr_scores$devt1_ecdf +
+    x[3] * ac_it_dr_scores$devt2_ecdf +
+    x[4] * ac_it_dr_scores$desc1_ecdf)
+  
   # Use this instead to maximize the correlation:
-  # 1 - cor(temp.gt, res)
-  Metrics::mse(actual = temp.gt, predicted = res)
+  # 1 - stats::cor(x = actual, y = ac_it_dr_scores$ground_truth)
+  Metrics::mse(actual = actual, predicted = ac_it_dr_scores$ground_truth)
 }
 
 res <- nloptr::nloptr(
@@ -2977,13 +2996,25 @@ res
 ```
 
 This Brier/MSE score is the best so far, the value achieved by the binary decision rule across all projects previously was $0.14$ (with a Log-score of $\approx0.431$ and a correlation of $\approx0.696$).
-The weights found by the optimization are:
+The weights found by the optimization are shown in table \ref{tab:ac-it-dr-opt-scores}.
 
-```{r}
-`names<-`(res$solution, c("reqt1", "devt1", "devt2", "desc1"))
+```{r echo=FALSE}
+temp <- as.data.frame(t(`names<-`(res$solution, c("reqt1", "devt1", "devt2", "desc1"))))
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Relative importance of the scores as found by optimization and used in the automatically calibrated decision rule.",
+    label = "ac-it-dr-opt-scores"
+  )
+}
 ```
 
-It appears we should not put any weight on the indicator for the `DESC`-variable at $t=1$.
+
+It appears, for example, that we should not put any weight on the indicator for the `DESC`-variable at $t=1$.
 Let's use the weights:
 
 ```{r}
@@ -3009,6 +3040,74 @@ Brier-score (MSE) and correlation are:
 
 Note that we can optimize using other objectives, too. For example, if we were to optimize for the correlation between the scores and the ground truth, we can bump the correlation significantly to $\approx0.197$, while the Brier-score would plummet to $\approx0.34$ (however, still far off from the correlation of the original decision rule).
 So while we can optimize the Brier-score, it is ultimately up to the decision maker to pick an objective that will maximize the utility of the model.
+This short demonstration showed us that we can completely ignore the `desc1` score, and still achieve a lower Brier score than the original decision rule. Given the assumption that the discrete binary decision rule and its continuous counter part measure the same thing, then this would mean that the indicator for `DESC` is redundant.
+
+
+
+So far, we have attempted to learn a weight vector where each weight $\geq0$ (however the sum of all weights must be $>0$ for the normalizing linear weighted scalarizer to work).
+The reason behind this was that all objectives from the automatic calibration have the properties of being uniformly distributed in the range $[0,1]$. A normalizing linear combination $l(x)$ of such scores has the exact same properties as well, i.e.,
+
+$$
+\begin{aligned}
+  \bm{s}\dots\;&\text{vector of score functions, where}\;\forall\,s\in\bm{s},\,s\mapsto\mathcal{U}_{[0,1]}\text{,}
+  \\[1ex]
+  \bm{\omega}\dots\;&\text{weight vector, where}\;\forall\,\omega\in\bm{\omega},\,\omega>0\text{,}
+  \\[1ex]
+  l(x)=&\;\norm{\bm{\omega}}_1^{-1}\times\left(\sum_{i=1}^{N}\,\omega_i\times s_i(x)\right)\text{, scalarizer with same properties as}\;\forall\,s\text{.}
+\end{aligned}
+$$
+
+
+This means, that even after adapting the weights, the scalarizer $l(x)$ still $\mapsto\mathcal{U}_{[0,1]}$, which still allows to compare calibrated models (of the same family) against each other.
+Furthermore, if the weights were adapted this way, we gain insights into the _relative importance_ of each objective (here: score). In our case, we learned for example that the objective `devt2` is the most important, while we should completely ignore objective `desc1` and put only marginal importance into the objectives `reqt1` and `devt1` (see table \ref{tab:ac-it-dr-opt-scores}).
+
+
+In other words, the normalizing linear scalarizer is its own objective, but we may use any other objective to build a regression model that learns coefficients for our features (here: the scores).
+For example, in linear least squares [@rpkg_Matrix], we learn an intercept and a coefficient (multiplier) for each score. However, the resulting fitted model will not that clearly allow us to reason about the relative importance of each score.
+
+Linear least squares, that is
+
+$$
+\begin{aligned}
+  \hat{\bm{\beta}}=&\;\argmin{\bm{\beta}}\,\norm{\bm{y}-\bm{X}}^2
+  \\[1ex]
+  =&\;\left(\bm{X}^\top\bm{X}\right)^{-1}\,\bm{X}^\top\bm{y}\text{,}
+\end{aligned}
+$$
+
+is another kind of objective that will lead to a model of which the predictions will "better" resemble the ground truth. "Better" because the choice of objective is subjective. For example, previously we chose to optimize the Brier-score or correlation.
+Here is the solution of linear least squares, including an intercept term:
+
+```{r}
+m <- cbind(1, as.matrix(ac_it_dr_scores[, c("reqt1_ecdf", "devt1_ecdf", "devt2_ecdf", "desc1_ecdf")]))
+solve(t(m) %*% m) %*% t(m) %*% ac_it_dr_scores$ground_truth
+```
+
+This should be equivalent to a linear model:
+
+```{r}
+temp.lm <- stats::lm(
+  data = ac_it_dr_scores,
+  formula = ground_truth ~ reqt1_ecdf + devt1_ecdf + devt2_ecdf + desc1_ecdf)
+
+stats::coef(temp.lm)
+```
+
+```{r ac-it-lm-fit, echo=FALSE, fig.cap="Residuals and QQ-plot of the automatically calibrated decision rule that was fitted using a linear model."}
+par(mfrow = c(1,2))
+plot(temp.lm, ask = FALSE, which = 1:2)
+```
+
+```{r}
+`names<-`(c(
+  Metrics::mse(ac_it_dr_scores$ground_truth, stats::predict(temp.lm, ac_it_dr_scores)),
+  cor(ac_it_dr_scores$ground_truth, stats::predict(temp.lm, ac_it_dr_scores))
+), c("Brier-score (MSE)", "Correlation"))
+```
+
+This fitted model has exceptional good values for the Brier-score and correlation (see fig. \ref{fig:ac-it-lm-fit}), but we cannot use it in reality as it is almost certainly overfit due to the scarcity of the data.
+Also, because of the intercept, it is much harder to make any valid statements about the variable importance of our scores.
+
 
 
 
@@ -4674,7 +4773,7 @@ nrow(ac_grid_it)
 
 Let's compute the full grid:
 
-```{r ac-grid-results-it}
+```{r ac-grid-results-it, eval=FALSE}
 ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it.rds", computeExpr = {
   library(foreach)
   
@@ -4682,7 +4781,7 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
   parallel::clusterExport(cl, varlist = list("req_poly", "dev_poly"))
   
   doWithParallelClusterExplicit(cl = cl, stopCl = TRUE, expr = {
-    pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
+    pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid_it), style = 3)
     progress <- function(n) {
       if (0 == (n %% 25)) {
         print(n)
@@ -4691,9 +4790,9 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
     }
     
     foreach::foreach(
-      grid_idx = rownames(ac_grid),
+      grid_idx = rownames(ac_grid_it),
       .combine = rbind,
-      .inorder = TRUE,
+      .inorder = FALSE,
       .verbose = TRUE,
       .packages = c("cobs"),
       .options.snow = list(progress = progress)
@@ -4702,7 +4801,7 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
       
       pm_var <- switch (as.character(params$PM),
         "I" = p1_it_signals,
-        "II(a)" = p2_it_signals,
+        "II(a)" = p2a_it_signals,
         "III" = p3_it_signals,
         "IV(I)" = p4p1_it_signals,
         "IV(II(a))" = p4p2a_it_signals,
