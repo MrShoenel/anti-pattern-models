@@ -3104,6 +3104,22 @@ if (interactive()) {
 
 
 
+
+### Weighted by optimization
+
+Here we will attempt to find the best weights (variable importances actually) by optimization.
+A weight is specific to the variable (4), segment (10), and metric (13), so it is best to define an address grid again.
+
+```{r}
+ac_weight_grid <- expand.grid(list(
+  Var = names(weight_vartype),
+  Metric = temp.Metric,
+  SegIdx = 1:10))
+
+nrow(ac_weight_grid)
+```
+
+
 Now the objective for the optimization will search for weights that minimize the MSE between the weighted projects and the ground truth.
 We will optimize the weights once for each process model, and then follow this up by a closer inspection of the champion model (the model with the lowest MSE).
 
@@ -3134,6 +3150,28 @@ ac_sc_weights_optim <- function(pmName) {
   })
 }
 ```
+
+
+```{r}
+temp <- matrix(nrow = 15, ncol = 521)
+temp[, 521] <- temp.gt
+
+for (i in 1:15) {
+  projName <- names(append(project_signals, project_signals_2nd_batch))[i]
+  for (j in 1:520) {
+    params <- ac_weight_grid[j,]
+    temp[i, j] <- ac_grid_projects_results_uniform[
+      ac_grid_projects_results_uniform$PM == "I" &
+      ac_grid_projects_results_uniform$Project == projName &
+      ac_grid_projects_results_uniform$Var == params$Var &
+      ac_grid_projects_results_uniform$SegIdx == params$SegIdx, as.character(params$Metric)]
+  }
+}
+
+temp <- as.data.frame(temp)
+colnames(temp) <- c(paste0("w", 1:520), "gt")
+```
+
 
 #### Variable importance (traditional approach)
 
@@ -3200,20 +3238,20 @@ An overview of the optimization process on a per-project basis is shown in table
 
 ```{r}
 ac_sc_weights_pm_I <- ac_sc_weights_optim(pmName = "I")
-ac_sc_weights_pm_IIa <- ac_sc_weights_optim(pmName = "II")
+ac_sc_weights_pm_II <- ac_sc_weights_optim(pmName = "II")
 ac_sc_weights_pm_IIIavg <- ac_sc_weights_optim(pmName = "III(avg)")
 ac_sc_weights_pm_IIIb11 <- ac_sc_weights_optim(pmName = "III(b,11)")
 ```
 
 
 ```{r echo=FALSE}
-templ <- list(ac_sc_weights_pm_I, ac_sc_weights_pm_IIa, ac_sc_weights_pm_IIIavg, ac_sc_weights_pm_IIIb11)
+templ <- list(ac_sc_weights_pm_I, ac_sc_weights_pm_II, ac_sc_weights_pm_IIIavg, ac_sc_weights_pm_IIIb11)
 temp <- data.frame(
   PM = c("I", "II", "III(avg)", "III(b,11)"),
   MSE = round(unlist(lapply(templ, function(res) res$value)), 5),
   RMSE = round(unlist(lapply(templ, function(res) sqrt(res$value))), 5),
   Num_weights_gt0 = unlist(lapply(templ, function(res) sum(res$par > 0))),
-  Weights_used_perc = unlist(lapply(templ, function(res) paste0(round(100 * sum(res$par > 0) / length(res$par), 2), "%"))),
+  Weights_pruned = unlist(lapply(templ, function(res) paste0(round(100 * (1 - sum(res$par > 0) / length(res$par)), 2), "%"))),
   Num_iter = unlist(lapply(templ, function(res) res$counts["function"])),
   Num_grad = unlist(lapply(templ, function(res) res$counts["gradient"])))
 
@@ -3230,11 +3268,13 @@ if (interactive()) {
 ```
 
 The results from table \ref{tab:ac-sc-weights-optim-overview} show that in general, about 90% or more of the weights are $0$, and hence the corresponding objective is not used, or not important at all for assessing the goodness of fit, i.e., how well the pair PM/P matches (mutual resemblance).
-With relatively few iterations of the optimizer, we can obtain optimized weights for all models. All MSEs are quite low and close together (i.e., no significant variance).
+This affords us to considerably _prune_ the given models.
+With relatively few iterations of the optimizer, we can obtain optimized weights for all models. All MSEs are quite low and close together (i.e., no significant variance). Also, all MSE are lower than the ones found using a Random forest. So, not only do we get pure variable importance information, we also get more precise models with this approach.
 
 Model type II(a) appears to have the lowest MSE, and requires the second fewest weights to be used (only $22$). This PM is an optimized version of type I, so the expectation is that fewer adjustments (fewer weights, less weight in total) are required for this model to perform well, when compared to type I.
 
-Model type III(b, numInt=11) even only requires the usage of 17 weights ($\approx3.27$% of all objectives), but is simultaneously the 2nd-hardest to optimize. Its MSE is comparable to that of model type II(a), which is also expected, since this type of PM was crafted out of no expectation, and then simply aligned to all projects using a weighted average.
+Model type III(b, numInt=11) even only requires the usage of 17 weights ($\approx3.27$% of all objectives), but is simultaneously the 2nd-hardest to optimize. Its MSE is the best and comparable to that of model type II(a), which is also expected, since this type of PM was crafted out of no expectation, and then simply aligned to all projects using a weighted average.
+Recall that this type of model consists of piece-wise linear function, which means no perturbations. This could explain why it is the best in terms of (R)MSE and number of weights as its nature means it is simple, yet effective.
 
 Model type III(avg), while performing similar to model types II(a) and III(b, numInt=11), requires adjustment and usage of comparatively more weights. This is expected, since this kind of model is the weighted average of all observed projects, and hence also includes all fine details and perturbations of each project. It is hence more detailed than the other two previously mentioned types and supposedly requires more weight adjustments to account for that.
 Re-running the optimization for this model often uses less than $44$ weights ($\approx5$ to $10$ fewer), and achieves a little lower MSE ($\approx0.329$).
@@ -3243,6 +3283,58 @@ While not unusable, the first kind of model was clearly the one being "most off"
 
 In any case, the residual MSE also indicates that a PM cannot probably be optimized beyond what the optimization found. Thus, a residual MSE$>0$ indicates an error in the model's formulation, and that even by using some best constellation of the weights, it is not possible to achieve perfect goodness of fit, which indicates a design flaw in either the model and/or the particular objectives used.
 In other words, an MSE$=0$ would mean that a given PM can perfectly assess the goodness of fit of the given processes, and that it was configured in a perfect way (i.e., using the right segments, variables, metrics, etc.) to do so.
+
+Table \ref{tab:ac-compare-pms-sc-optim} shows the scores per optimized PM. We observe a significantly larger margin between the scores for the worst and best project, as well as significantly lower MSE.
+Since the scores for the best/worst project are not $1$ resp. $0$, this indicates that either the models are flawed (that is, the design of the continuous expectation is off), the choice of objectives is inappropriate (to some degree), or that the ground truth is not accurate -- or any combination of these.
+
+
+```{r echo=FALSE}
+temp <- append(project_signals, project_signals_2nd_batch)
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+
+temp.df <- NULL
+
+for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
+  temp.weights <- switch (
+    pmName,
+    "I" = ac_sc_weights_pm_I$par,
+    "II" = ac_sc_weights_pm_II$par,
+    "III(avg)" = ac_sc_weights_pm_IIIavg$par,
+    "III(b,11)" = ac_sc_weights_pm_IIIb11$par,
+    {
+      stop(paste0("Unknown process model: ", pmName))
+    })
+  temp.pred <- data.frame(
+    pred = sapply(X = names(temp), function(pName) ac_pmp_score_weighted(
+      pmName = pmName, projName = pName, weightGrid = ac_weight_grid, weightVector = temp.weights)),
+    ground_truth = temp.gt)
+  
+  temp.df <- rbind(temp.df, data.frame(
+    PM = pmName,
+    Score_for_best = ac_pmp_score_weighted(
+      pmName = pmName, projName = paste0("project_", which.max(temp.gt)),
+      weightGrid = ac_weight_grid, weightVector = temp.weights),
+    Score_for_worst = ac_pmp_score_weighted(
+      pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
+      weightGrid = ac_weight_grid, weightVector = temp.weights),
+    MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
+    Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+  ))
+}
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp.df
+} else {
+  knitr::kable(
+    x = temp.df,
+    booktabs = TRUE,
+    caption = "Comparison of continuous PMs using source code for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using some best set of weights per PM as found by optimization.",
+    label = "ac-compare-pms-sc-optim"
+  )
+}
+```
 
 
 #### Results in detail
@@ -3276,7 +3368,7 @@ if (interactive()) {
 
 
 ```{r echo=FALSE}
-temp <- cbind(ac_weight_grid, data.frame(weight = ac_sc_weights_pm_I$par + ac_sc_weights_pm_IIa$par + ac_sc_weights_pm_IIIavg$par + ac_sc_weights_pm_IIIb11$par))
+temp <- cbind(ac_weight_grid, data.frame(weight = ac_sc_weights_pm_I$par))
 temp$weight <- temp$weight / max(temp$weight) # let's normalize this again
 temp <- temp[temp$weight > 0,]
 temp <- temp[order(-temp$weight),]
