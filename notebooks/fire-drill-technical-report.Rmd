@@ -3079,6 +3079,64 @@ ac_sc_weights_optim <- function(pmName) {
 }
 ```
 
+#### Variable importance (traditional approach)
+
+Assessing the variable importance can be done as we have done previously in section \ref{sssec:var-imp}.
+So before we jump to the results of finding the weights (and thus the importance of each score), we attempt the traditional approach using a Random forest:
+
+```{r}
+ac_sc_weights_varimp <- loadResultsOrCompute(file = "../results/ac_sc_weights_varimp.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    library(caret, quietly = TRUE)
+    
+    set.seed(1)
+    control <- caret::trainControl(method="repeatedcv", number=10, repeats=3)
+    modelFit <- caret::train(gt ~., data=bla, method="rf", trControl=control)
+    imp <- caret::varImp(object = modelFit)
+    
+    list("fit" = modelFit, "imp" = imp)
+  })
+})
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  print(ac_sc_weights_varimp$fit$finalModel)
+} else {
+  # A little hack because otherwise it prints everything.
+  # The below is an exact copy of what is printed interactively.
+  cat("Call:
+ randomForest(x = x, y = y, mtry = param$mtry) 
+               Type of random forest: regression
+                     Number of trees: 500
+No. of variables tried at each split: 2
+
+          Mean of squared residuals: 0.1019207
+                    % Var explained: -15.47")
+}
+```
+
+The Random forest is overfit to the data, as the $R^2$ (explained variance) is negative, i.e., it is worse than a random guess.
+Therefore, it is hard to assess the validity of the obtained results for the variable importance.
+Let's take a look at the fitted model's performance (table \ref{tab:ac-sc-weights-varimp-mse}): It appears we are able to reach acceptable MSE's (last column), albeit not $\approx0$ for some reason. This model and the other fitted models cannot be used in prediction scenarios, as they do not generalize at all, the exercise was only to examine the variable importance.
+
+```{r}
+ac_sc_weights_varimp$fit$results$MSE <- ac_sc_weights_varimp$fit$results$RMSE**2
+if (interactive()) {
+  ac_sc_weights_varimp$fit$results
+} else {
+  knitr::kable(
+    x = ac_sc_weights_varimp$fit$results,
+    booktabs = TRUE,
+    caption = "Best models of fitting of a Random forest to the calibrated data in order to assess the variable importance.",
+    label = "ac-sc-weights-varimp-mse"
+  )
+}
+```
+
+
+
+
 #### Results PM vs. PM
 
 Now for the actual optimization of each type of process model.
