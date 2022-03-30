@@ -2944,7 +2944,10 @@ With the results from above, we can do many things, for example:
   * Compare Brier-score of PMs to the decision rule.
 * Fitting the normalized linear scalarizer:
   * Compare scores across (groups of) metrics, segments, and variables to find out what is important and where for each PM.
+  * Prune overdetermined models (remove scores where the weight is (close to) zero in models that are specified using too many scores). This could perhaps also be understood as _regularization_ of an ill-posed problem, where _ill-posed_ refers to the fact of having too many coefficients in a regression model.
 * Fit other kind of regression model to analyze what Brier-score or correlation is possible.
+* Fit other kind of model that allows examining the variable importance (e.g., a Random forest).
+
 
 
 Here, we will take a first look at which PM appears to be the best. Since all PMs are in the same family, we can now perfectly compare them after the automatic calibration.
@@ -3005,22 +3008,31 @@ As we show in the technical report for issue-tracking, the lowest MSE for the bi
 Also, all of the PMs are slightly better than ZeroR across all projects, which was $\approx0.137$.
 Other than that, it seems that PM type I appears best for detecting the presence of the Fire Drill, at least for the project with the strongest ground truth.
 Process model type III(avg) appears best for detecting the absence of the anti-pattern. However, we have multiple projects with a ground truth of $0$, and ideally the champion PM would be picked by examining multiple projects where the confidence in the accuracy of the ground truth is high.
-Nonetheless, all these scores are close together, so picking a champion needs to be done with care. Also, the score from each PM is the unweighted aggregation across hundreds of objectives, and at this point we have yet to examine which objectives are the most important (next section).
+Nonetheless, all these scores are close together, so picking a champion needs to be done with care. Also, the score from each PM is the unweighted aggregation across hundreds of objectives, and at this point we have yet to examine which objectives are the most important (next two sections).
 
 
-### Weighted
+### Weighted by expert decision maker
 
-We have a large number of weights, so it is important to be able to "address" them correctly. A weight is specific to the variable (4), segment (10), and metric (13).
+The scores as of table \ref{tab:ac-compare-pms-sc} are close together, too close perhaps. This is due to the massive amount of objectives that were used. Also, all of the available objectives were used, across all segments and variables.
+In reality however, an expert would almost certainly not configure a PM this way. Rather, they would choose specific objectives. We will simulate this scenario by choosing the metrics `corr`, `jsd`, and `ImpulseFactor`. As for the weights, they will be the same for each metric, and only vary between segments. The weights will simply increase exponentially towards the end of the project.
+The expression for the weights is $\frac{1}{4}+\frac{3x^3}{4}$.
+
+We have a large number of weights, so it is important to be able to "address" them correctly.
 Therefore, we will use a grid as address register.
+Let's define a weight grid:
 
 ```{r}
-ac_weight_grid <- expand.grid(list(
+ac_weight_grid_expert <- expand.grid(list(
   Var = names(weight_vartype),
-  Metric = temp.Metric,
-  SegIdx = 1:10))
+  Metric = c("corr", "jsd", "ImpulseFactor"),
+  SegIdx = 1:10
+))
 
-nrow(ac_weight_grid)
+ac_weight_vector_expert <- sapply(X = ac_weight_grid_expert$SegIdx, FUN = function(si) {
+  0.25 + 3 * (si / 10)^3 / 4
+})
 ```
+
 
 Also, we will implement a variant of the function `ac_pmp_score()` that can handle weights:
 
@@ -3046,6 +3058,50 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector) {
   sum(res) / sum(weightVector)
 }
 ```
+
+The results are shown in table \ref{tab:ac-compare-pms-sc-expert}. Apparently, our expert did not make a good choice, compared to using all available objectives with equal weight.
+Also, there is still no clear winner among the process models.
+
+
+```{r echo=FALSE}
+temp <- append(project_signals, project_signals_2nd_batch)
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+
+temp.df <- NULL
+
+for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
+  temp.pred <- data.frame(
+    pred = sapply(X = names(temp), function(pName) ac_pmp_score_weighted(
+      pmName = pmName, projName = pName, weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert)),
+    ground_truth = temp.gt)
+  
+  temp.df <- rbind(temp.df, data.frame(
+    PM = pmName,
+    Score_for_best = ac_pmp_score_weighted(
+      pmName = pmName, projName = paste0("project_", which.max(temp.gt)),
+      weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert),
+    Score_for_worst = ac_pmp_score_weighted(
+      pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
+      weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert),
+    MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
+    Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+  ))
+}
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp.df
+} else {
+  knitr::kable(
+    x = temp.df,
+    booktabs = TRUE,
+    caption = "Comparison of continuous PMs using source code for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using expert-picked objectives and weights.",
+    label = "ac-compare-pms-sc-expert"
+  )
+}
+```
+
 
 
 Now the objective for the optimization will search for weights that minimize the MSE between the weighted projects and the ground truth.
