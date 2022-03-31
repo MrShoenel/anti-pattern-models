@@ -2689,7 +2689,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
   
   p3b11 <- p3b_all$i_11
   
-  doWithParallelCluster(numCores = min(2, parallel::detectCores()), expr = {
+  doWithParallelCluster(numCores = min(124, parallel::detectCores()), expr = {
     pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
     progress <- function(n) {
       if (0 == (n %% 25)) {
@@ -2699,7 +2699,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
     }
     
     foreach::foreach(
-      grid_idx = sample(rownames(ac_grid), 2),
+      grid_idx = rownames(ac_grid),
       .combine = rbind,
       .inorder = FALSE,
       .verbose = TRUE,
