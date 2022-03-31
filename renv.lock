@@ -1087,6 +1087,13 @@
       "Repository": "CRAN",
       "Hash": "09eb987710984fc2905c7129c7d85e65"
     },
+    "pls": {
+      "Package": "pls",
+      "Version": "2.7-3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "8d06e43ea092f3224bd2c20ccbcacc58"
+    },
     "plyr": {
       "Package": "plyr",
       "Version": "1.8.6",
