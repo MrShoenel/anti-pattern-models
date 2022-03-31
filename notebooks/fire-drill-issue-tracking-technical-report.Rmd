@@ -2298,7 +2298,7 @@ p1_it_projects <- time_warp_wrapper(pattern = p1_it_signals, derive = FALSE)
 ```
 
 
-```{r eval=FALSE, echo=FALSE}
+```{r echo=FALSE}
 #' This method works slightly different from compute_all_scores().
 #' It does not aggregate scores across variable-types, and returns
 #' a score per type instead.
@@ -4783,7 +4783,7 @@ These results are similarly worse to those obtained from the previous section, w
 
 ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_grid_results) {
   rows <- ac_grid[ac_grid$PM == pmName & ac_grid$Var == varName, ]
-  ac_grid_results[ac_grid_results$seg_idx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
+  ac_grid_results[ac_grid_results$SegIdx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
 }
 
 ac_worker <- function(PM, P, seg_idx, total_segments = 10) {
@@ -4817,12 +4817,15 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, re
   res <- c()
   for (i in 1:length(weightVector)) {
     params <- weightGrid[i,]
+    params$Var <- as.character(params$Var)
+    params$Metric <- as.character(params$Metric)
+    
     # The following selection will result in a single value:
     score <- results_uniform[
       results_uniform$PM == pmName &
       results_uniform$Project == projName &
       results_uniform$Var == params$Var &
-      results_uniform$SegIdx == params$SegIdx, as.character(params$Metric)]
+      results_uniform$SegIdx == params$SegIdx, params$Metric]
     
     res <- c(res, weightVector[i] * score)
   }
@@ -4877,9 +4880,12 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
       .packages = c("cobs"),
       .options.snow = list(progress = progress)
     ) %dopar% {
+      options(warn = 2)
       params <- ac_grid_it[grid_idx, ]
+      params$PM <- as.character(params$PM)
+      params$Var <- as.character(params$Var)
       
-      pm_var <- switch (as.character(params$PM),
+      pm_var <- switch (params$PM,
         "I" = p1_it_signals,
         "II(a)" = p2a_it_signals,
         "III" = p3_it_signals,
@@ -4900,8 +4906,9 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
         # Important so we can correctly concatenate the results with the grid parameters!
         res <- as.data.frame(
           ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
-        res$seg_idx <- seg_idx
-        res$grid_idx <- grid_idx
+        res$GridIdx <- grid_idx
+        res$SegIdx <- seg_idx
+        res <- cbind(res, params)
         df <- if (is.null(df)) res else rbind(df, res)
       }
       df
@@ -4999,9 +5006,13 @@ ac_grid_projects_results_it <- loadResultsOrCompute(file = "../results/ac_grid_p
       .packages = c("cobs"),
       .options.snow = list(progress = progress)
     ) %dopar% {
+      options(warn = 2)
       params <- ac_grid_projects_it[grid_idx, ]
+      params$Project <- as.character(params$Project)
+      params$PM <- as.character(params$PM)
+      params$Var <- as.character(params$Var)
     
-      pm_var <- switch (as.character(params$PM),
+      pm_var <- switch (params$PM,
         "I" = p1_it_signals,
         "II(a)" = p2a_it_signals,
         "III" = p3_it_signals,
@@ -5013,7 +5024,7 @@ ac_grid_projects_results_it <- loadResultsOrCompute(file = "../results/ac_grid_p
         }
       )[[params$Var]]$get0Function()
       
-      tempf <- project_signals_all[[as.character(params$Project)]][[as.character(params$Var)]]$get0Function()
+      tempf <- project_signals_all[[params$Project]][[params$Var]]$get0Function()
       use_deriv <- params$PM %in% c("IV(I)", "IV(II(a))", "IV(III)")
       p_var <- if (use_deriv) {
         # If using the derivative, we approximate a somewhat smooth function of the variable.
@@ -5025,17 +5036,11 @@ ac_grid_projects_results_it <- loadResultsOrCompute(file = "../results/ac_grid_p
         tempf
       }
       
-      seg_idx <- params$SegIdx
-      
       # Important so we can correctly concatenate the results with the grid parameters!
       res <- as.data.frame(
-        ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
-      res$seg_idx <- seg_idx
+        ac_worker(PM = pm_var, P = p_var, seg_idx = params$SegIdx, total_segments = 10))
       res$grid_idx <- grid_idx
-      res$Project <- params$Project
-      res$PM <- params$PM
-      res$Var <- params$Var
-      res
+      cbind(res, params)
     }
   })
 })
@@ -5074,7 +5079,12 @@ ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/a
       .inorder = FALSE,
       .verbose = TRUE
     ) %dopar% {
+      options(warn = 2)
       params <- temp.grid[grid_idx, ]
+      params$PM <- as.character(params$PM)
+      params$Var <- as.character(params$Var)
+      params$Metric <- as.character(params$Metric)
+      
       temp.data <- ac_extract_data(
         pmName = params$PM, varName = params$Var, segIdx = params$SegIdx,
         metricName = params$Metric, ac_grid = ac_grid_it, ac_grid_results = ac_grid_results_it)
@@ -5086,7 +5096,7 @@ ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/a
           ac_grid_projects_results_it$Project == names(project_signals_all)[i] &
           ac_grid_projects_results_it$PM == params$PM &
           ac_grid_projects_results_it$Var == params$Var &
-          ac_grid_projects_results_it$seg_idx == params$SegIdx, params$Metric])
+          ac_grid_projects_results_it$SegIdx == params$SegIdx, params$Metric])
       }
       cbind(`colnames<-`(res, names(project_signals_all)), params)
     }
@@ -5135,14 +5145,17 @@ temp.df <- NULL
 for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
   temp.pred <- data.frame(
     pred = sapply(X = names(temp), function(pName) ac_pmp_score(
+      use_metrics = temp.Metric,
       pmName = pmName, projName = pName, results_uniform = ac_grid_projects_results_uniform_it)),
     ground_truth = temp.gt)
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
     Score_for_best = ac_pmp_score(
+      use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("Project", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
     Score_for_worst = ac_pmp_score(
+      use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("Project", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -5186,9 +5199,9 @@ We will optimize the weights once for each process model, and then follow this u
 
 
 ```{r}
+temp.names <- names(append(all_signals, all_signals_2nd_batch))
 ac_it_weights_optim <- function(pmName) {
   loadResultsOrCompute(file = paste0("../results/ac_it_weights_pm_", pmName, ".rds"), computeExpr = {
-    temp.names <- names(append(all_signals, all_signals_2nd_batch))
     cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
     parallel::clusterExport(cl, varlist = list(
       "temp.gt", "temp.names", "ac_pmp_score_weighted",
@@ -5202,7 +5215,8 @@ ac_it_weights_optim <- function(pmName) {
         upper = rep(1, nrow(ac_weight_grid_it)),
         fn = function(x) {
           Metrics::mse(actual = temp.gt, predicted = sapply(X = temp.names, FUN = function(projName) {
-            ac_pmp_score_weighted(pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it, weightVector = x)
+            ac_pmp_score_weighted(pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
+                                  results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
           }))
         },
         parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
