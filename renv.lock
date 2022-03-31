@@ -380,13 +380,6 @@
       "Repository": "CRAN",
       "Hash": "0f22be39ec1d141fd03683c06f3a6e67"
     },
-    "conquer": {
-      "Package": "conquer",
-      "Version": "1.0.2",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Hash": "a31720f692920e635ecef0481d478247"
-    },
     "corrplot": {
       "Package": "corrplot",
       "Version": "0.84",
@@ -926,13 +919,6 @@
       "Repository": "CRAN",
       "Hash": "defb01fb22ddb08ea55d0ed4c36b632a"
     },
-    "matrixStats": {
-      "Package": "matrixStats",
-      "Version": "0.57.0",
-      "Source": "Repository",
-      "Repository": "CRAN",
-      "Hash": "7249fc52d19eab5af7a02925ab534d9c"
-    },
     "mgcv": {
       "Package": "mgcv",
       "Version": "1.8-31",
@@ -1208,10 +1194,10 @@
     },
     "quantreg": {
       "Package": "quantreg",
-      "Version": "5.73",
+      "Version": "5.88",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "4a1f966bab2298dce07d4d1471e977a1"
+      "Hash": "b7d49f60ce945abad300246d4766326a"
     },
     "randomForest": {
       "Package": "randomForest",
