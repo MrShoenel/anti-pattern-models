@@ -3576,6 +3576,8 @@ rfe_data_it <- cbind(
 
 ```{r warning=FALSE}
 library(caret, quietly = TRUE)
+library(pls)
+library(randomForest)
 
 set.seed(1337)
 
