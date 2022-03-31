@@ -4834,6 +4834,42 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, re
   
   sum(res) / sum(weightVector)
 }
+
+get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
+  if (!is.na(seed)) {
+    set.seed(seed = seed)
+  }
+  
+  x <- sort(c(0, 1, runif(npoints - 2)))
+  y <- runif(length(x))
+  temp <- loess.smooth(x = x, y = y, span = 0.35, family = "g", evaluation = 1000)
+  appr <- stats::approxfun(
+    x = ((temp$x - min(temp$x)) / (max(temp$x) - min(temp$x))),
+    y = temp$y / (max(temp$x) - min(temp$x)),
+    yleft = utils::head(temp$y, 1),
+    yright = utils::tail(temp$y, 1))
+  
+  tempf <- Vectorize(function(x) {
+    # Limit the resulting function to the bounding box of [0,1]
+    min(1, max(0, appr(x)))
+  })
+  
+  f1 <- NULL
+  if (include_deriv) {
+    tempf1 <- Vectorize(function(x) {
+      ltol <- x < sqrt(.Machine$double.eps)
+      rtol <- x > 1 - sqrt(.Machine$double.eps)
+      pracma::fderiv(f = tempf, x = x, method = if (ltol) "forward" else if (rtol) "backward" else "central")
+    })
+    x <- seq(from = 0, to = 1, length.out = 2e3)
+    y <- tempf1(x)
+    
+    f1 = stats::approxfun(
+      x = x, y = y, yleft = utils::head(y, 1), yright = utils::tail(y, 1))
+  }
+  
+  list(f0 = tempf, f1 = f1)
+}
 ```
 
 We have previously attempted the automatic calibration of the continuous process models that use source code data (section \ref{sec:auto-calib}), and now we will do the same here for the models using issue-tracking data.
