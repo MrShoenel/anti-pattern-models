@@ -3637,7 +3637,7 @@ Up to now, we presented two methods to compute losses/scores over the closed int
 
 ```{r}
 p3_avg_area_scores_arb_int <- loadResultsOrCompute(file = "../results/p3_avg_area_scores_arb_int.rds", computeExpr =  {
-  doWithParallelCluster(numCores = min(parallel::detectCores(), 120), expr = {
+  doWithParallelCluster(numCores = min(123, parallel::detectCores()), expr = {
     library(foreach)
     
     tempm <- matrix(ncol = 3, byrow = TRUE, data = sapply(X = seq_len(400 * length(all_signals)), FUN = function(x) {
@@ -3956,7 +3956,7 @@ proc_align_srbtaw <- function(use = c("rss", "logratio")) {
 
 ```{r echo=FALSE}
 compute_proc_align <- function(srbtaw) {
-  cl <- parallel::makePSOCKcluster(min(64, parallel::detectCores()))
+  cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
   tempf <- tempfile()
   saveRDS(object = list(a = srbtaw, b = srbtaw$getObjective()), file = tempf)
   parallel::clusterExport(cl, varlist = list("tempf", "slice_supp"))
@@ -4071,7 +4071,7 @@ use_par <- align_srbtaw_rss$res$par
 align_srbtaw_rss_surface <- loadResultsOrCompute(file = "../results/align_srbtaw_rss_surface.rds", computeExpr = {
   library(foreach)
   
-  cl <- parallel::makePSOCKcluster(min(64, parallel::detectCores()))
+  cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
   parallel::clusterExport(cl, varlist = list("slice_supp"))
   
   doWithParallelClusterExplicit(cl = cl, expr = {
@@ -4860,7 +4860,7 @@ Let's compute the full grid:
 ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it.rds", computeExpr = {
   library(foreach)
   
-  cl <- parallel::makePSOCKcluster(124)
+  cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
   parallel::clusterExport(cl, varlist = list("req_poly", "dev_poly"))
   
   doWithParallelClusterExplicit(cl = cl, stopCl = TRUE, expr = {
