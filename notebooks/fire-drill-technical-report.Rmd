@@ -2728,6 +2728,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
         res <- as.data.frame(
           ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
         res$GridIdx <- grid_idx
+        res$SegIdx <- seg_idx
         res <- cbind(res, params)
         df <- if (is.null(df)) res else rbind(df, res)
       }
