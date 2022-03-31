@@ -2977,10 +2977,10 @@ We have $4*10*13=520$ objectives and the non-weighted approach is to simply add 
 We will need a function that takes PM/P and returns that score:
 
 ```{r}
-ac_pmp_score <- function(pmName, projName, results_uniform) {
+ac_pmp_score <- function(pmName, projName, results_uniform, use_metrics) {
   temp <- results_uniform[
     results_uniform$PM == pmName &
-    results_uniform$Project == projName, as.character(temp.Metric)]
+    results_uniform$Project == projName, as.character(use_metrics)]
   
   sum(temp) / (nrow(temp) * ncol(temp))
 }
@@ -2999,14 +2999,17 @@ temp.df <- NULL
 for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
   temp.pred <- data.frame(
     pred = sapply(X = names(temp), function(pName) ac_pmp_score(
+      use_metrics = temp.Metric,
       pmName = pmName, projName = pName, results_uniform = ac_grid_projects_results_uniform)),
     ground_truth = temp.gt)
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
     Score_for_best = ac_pmp_score(
+      use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("project_", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform),
     Score_for_worst = ac_pmp_score(
+      use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))

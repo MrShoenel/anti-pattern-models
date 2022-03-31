@@ -4801,10 +4801,10 @@ ac_worker <- function(PM, P, seg_idx, total_segments = 10) {
   df
 }
 
-ac_pmp_score <- function(pmName, projName, results_uniform) {
+ac_pmp_score <- function(pmName, projName, results_uniform, use_metrics) {
   temp <- results_uniform[
     results_uniform$PM == pmName &
-    results_uniform$Project == projName, as.character(temp.Metric)]
+    results_uniform$Project == projName, as.character(use_metrics)]
   
   sum(temp) / (nrow(temp) * ncol(temp))
 }
