@@ -4783,6 +4783,65 @@ These results are similarly worse to those obtained from the previous section, w
 ```{r echo=FALSE}
 # Copy-paste of functions from the SC notebook that are needed here:
 
+segment_unit_transform <- function(func, from, to) {
+  ext <- to - from
+  
+  function(x) {
+    # func has a support of [0, 1], and the returned function
+    # has a support of [from, to].
+    func(from + (x * ext))
+  }
+}
+
+compute_segment_metric <- function(
+  PM, P, segment, numSamples = 1e3,
+  use = c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+          "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
+  
+  # We'll have to make this transform as all the scores we compute
+  # assume a support of [0,1] and compute over that.
+  f1 <- segment_unit_transform(PM, from = segment[1], to = segment[2])
+  f2 <- segment_unit_transform(P, from = segment[1], to = segment[2])
+  
+  # Some metrics will require scaling after the segment-unit-transform
+  ext <- segment[2] - segment[1]
+  
+  diff <- NA_real_
+  if (use == "area") {
+    # This is integration and susceptible to scaling!
+    diff <- ext * area_diff_2_functions(f1 = f1, f2 = f2)$value
+  } else if (use == "corr") {
+    # Returns a correlation in range [-1,1], but we want a difference,
+    diff <- stat_diff_2_functions_cor_score(
+      allowReturnNA = TRUE, requiredSign = 0, numSamples = numSamples)(f1 = f1, f2 = f2)
+    # so we'll subtract it from 1 -> [0,2]
+    diff <- 1 - (if (is.na(diff)) 0 else diff) # NA means no correlation +/-
+  } else if (use == "jsd") {
+    diff <- stat_diff_2_functions_symmetric_JSD_sampled(f1 = f1, f2 = f2, numSamples = numSamples)$value
+  } else if (use == "kl") {
+    diff <- stat_diff_2_functions_symmetric_KL_sampled(f1 = f1, f2 = f2, numSamples = numSamples)$value
+  } else if (use == "arclen") {
+    # Returns a ration min/max -> (0,1], where 1 is ideal.
+    # We should inverse that because we are returning a difference.
+    diff <- 1 - stat_diff_2_functions_arclen_score(requiredSign = 0, numSamples = numSamples)(f1 = f1, f2 = f2)
+  } else if (use %in% c("sd", "var", "mae", "rmse")) {
+    temp <- switch (use,
+      "sd"   = stat_diff_2_functions_sd(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      "var"  = stat_diff_2_functions_var(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      "mae"  = ext * stat_diff_2_functions_mae(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      "rmse" = ext * stat_diff_2_functions_rmse(f1 = f1, f2 = f2, numSamples = numSamples)$value,
+      {
+        stop(paste0("Don't know ", use, "."))
+      })
+    diff <- temp
+  } else if (use %in% c("RMS", "Kurtosis", "Peak", "ImpulseFactor")) {
+    # Returns a ratio min/max -> (0,1], where 1 is ideal.
+    diff <- 1 - stat_diff_2_functions_signals_score(use = use, requiredSign = 0, numSamples = numSamples)(f1 = f1, f2 = f2)
+  }
+  
+  diff
+}
+
 ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_grid_results) {
   rows <- ac_grid[ac_grid$PM == pmName & ac_grid$Var == varName, ]
   ac_grid_results[ac_grid_results$SegIdx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
