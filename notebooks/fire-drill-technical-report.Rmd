@@ -2471,8 +2471,9 @@ With this linear model, we can report a high correlation with the consensus, too
 # Automatic calibration of the continuous process models\label{sec:auto-calib}
 
 This is a new section in the seventh iteration of this report.
-"Automatic calibration" refers to a new approach of gauging a continuous PM, so that it can compute true scores for any process, also scores that are __comparable__ across PMs, given the same configuration (segments, objectives, regularizers) was used.
-This approach is based on the idea of __rectification of scores__[^3]. The goal is to learn for every objective a __uniform__ score, where uniform refers to both, a uniform distribution _and_ a codomain of $[0,1]$. With such scores, a linear scalarizer will produce a score with the __same__ properties, and that means we will be able to compare the continuous process models we formulated so far! Even beyond that, we can interpret this score as a probabilistic measure of how well a process matches the PM, so in our case we can translate this information into the degree to which a Fire Drill is present in a project, according to the process model in question. We will also be able to compute the Brier- and Logarithmic scoring rules, and compare against the results that we got using the binary decision rule.
+"Automatic calibration" refers to a new approach of gauging a continuous PM, so that it can compute true scores for any process, also scores that are __comparable__ across PMs, given the same configuration (segments, objectives, regularizers) was used (we say that PM using the same configuration are part of a _family_).
+This approach is based on the idea of __rectification of scores__[^3]. The goal is to learn for every objective a __uniform__ score, where uniform refers to both, a uniform distribution _and_ a codomain of $[0,1]$. With such scores, a linear scalarizer will produce a score with the __same__ properties, and that means we will be able to compare the continuous process models we formulated so far!
+Even beyond that, we can interpret this score as a probabilistic measure of how well a process matches the PM, so in our case we can translate this information into the degree to which a Fire Drill is present in a project, according to the process model in question. We will also be able to compute the Brier- and Logarithmic scoring rules, and compare against the results that we got using the binary decision rule.
 
 [^3]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/rectify-score.md
 
@@ -2558,6 +2559,13 @@ compute_segment_metric <- function(
 
 We have previously used a function to get a smooth random process. We will be slightly adapting this function here to also include the process' derivative. We will not be working with derivative PMs in this notebook, but the very next when we use issue-tracking data.
 
+It is important to note that we do not have any expectation as to how such a random process will look like, except for the fact that we expect it to run within the bounds of the process model, that is, we allow any random process to "behave" arbitrarily within the bounds of $[0,1]$.
+In reality, however, we probably would have some expectation (or at least stricter limitations or some confidence intervals) as to how some process may look/behave.
+In that case, it is perhaps better to construct a _generative model_ from these expectations, and then to uniformly sample from its quantile function (PPF) in order to generate random processes that match our expectations and are within some limitations.
+However, that would require that we have such expectations. Those could come from another set of observations (not the observed projects), or we could perhaps craft some expert-designed expectations by reasoning about potential limits and confidence intervals, or by simply designing a set of plausible processes.
+However here, we took the road where we do not have any of these, and thus allow any process to behave absolutely random within the bounds of our PMs. In other words, our expectation is that we do not have an expectation, and hence we randomly sample uniformly from all possibilities.
+
+
 ```{r}
 get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
   if (!is.na(seed)) {
@@ -2596,9 +2604,11 @@ get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
 }
 ```
 
-We make a caching version of getting a smoothed random process, as obtaining a precise numeric derivative is expensive, and we do not want to repeat this.
 
-```{r}
+
+```{r echo=FALSE}
+# We make a caching version of getting a smoothed random process, as obtaining
+# a precise numeric derivative is expensive, and we do not want to repeat this.
 get_smoothed_curve_buffered <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
   if (!include_deriv) {
     return(get_smoothed_curve(seed = seed, npoints = npoints, include_deriv = include_deriv))
@@ -2679,7 +2689,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
   
   p3b11 <- p3b_all$i_11
   
-  doWithParallelCluster(numCores = 124, expr = {
+  doWithParallelCluster(numCores = min(2, parallel::detectCores()), expr = {
     pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid), style = 3)
     progress <- function(n) {
       if (0 == (n %% 25)) {
@@ -2689,12 +2699,16 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
     }
     
     foreach::foreach(
-      grid_idx = rownames(ac_grid),
+      grid_idx = sample(rownames(ac_grid), 2),
       .combine = rbind,
       .inorder = FALSE,
+      .verbose = TRUE,
       .options.snow = list(progress = progress)
     ) %dopar% {
+      options(warn=2)
       params <- ac_grid[grid_idx, ]
+      params$PM <- as.character(params$PM)
+      params$Var <- as.character(params$Var)
       
       pm_var <- switch (params$PM,
         "I" = p1_signals,
@@ -2706,15 +2720,15 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
         }
       )[[params$Var]]$get0Function()
       
-      p_var <- get_smoothed_curve_buffered(seed = params$Seed, include_deriv = FALSE)$f0
+      p_var <- get_smoothed_curve(seed = params$Seed, include_deriv = FALSE)$f0
       
       df <- NULL
       for (seg_idx in 1:10) {
         # Important so we can correctly concatenate the results with the grid parameters!
         res <- as.data.frame(
           ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
-        res$seg_idx <- seg_idx
-        res$grid_idx <- grid_idx
+        res$GridIdx <- grid_idx
+        res <- cbind(res, params)
         df <- if (is.null(df)) res else rbind(df, res)
       }
       df
@@ -2725,7 +2739,7 @@ ac_grid_results <- loadResultsOrCompute(file = "../results/ac_grid_results_sc.rd
 
 
 
-## Approximating marginal cumulative densities
+## Approximating marginal cumulative densities\label{ssec:ac-approx-marginal-ecdfs}
 
 Now with the data at hand, the goal is to approximate the empirical cumulative distribution function (ECDF) for each objective, in each segment, for each variable, for each process model. For example, we will have one ECDF for the correlation of the A-variable in the first segment of the type-III (average) pattern.
 All these "address" the specific ECDF. We will first write a helper function that can extract this.
@@ -2733,7 +2747,7 @@ All these "address" the specific ECDF. We will first write a helper function tha
 ```{r}
 ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_grid_results) {
   rows <- ac_grid[ac_grid$PM == pmName & ac_grid$Var == varName, ]
-  ac_grid_results[ac_grid_results$seg_idx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
+  ac_grid_results[ac_grid_results$SegIdx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
 }
 ```
 
@@ -2825,7 +2839,11 @@ ac_grid_projects_results <- loadResultsOrCompute(file = "../results/ac_grid_proj
       .verbose = TRUE,
       .options.snow = list(progress = progress)
     ) %dopar% {
+      options(warn=2)
       params <- ac_grid_projects[grid_idx, ]
+      params$Project <- as.character(params$Project)
+      params$PM <- as.character(params$PM)
+      params$Var <- as.character(params$Var)
     
       pm_var <- switch (params$PM,
         "I" = p1_signals,
@@ -2838,17 +2856,13 @@ ac_grid_projects_results <- loadResultsOrCompute(file = "../results/ac_grid_proj
       )[[params$Var]]$get0Function()
       
       p_var <- project_signals_all[[params$Project]][[params$Var]]$get0Function()
-      seg_idx <- params$SegIdx
       
       # Important so we can correctly concatenate the results with the grid parameters!
       res <- as.data.frame(
-        ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
-      res$seg_idx <- seg_idx
+        ac_worker(PM = pm_var, P = p_var, seg_idx = params$SegIdx, total_segments = 10))
+      
       res$grid_idx <- grid_idx
-      res$Project <- params$Project
-      res$PM <- params$PM
-      res$Var <- params$Var
-      res
+      cbind(res, params)
     }
   })
 })
@@ -2887,7 +2901,12 @@ ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_g
       .inorder = FALSE,
       .verbose = TRUE
     ) %dopar% {
+      options(warn=2)
       params <- temp.grid[grid_idx, ]
+      params$PM <- as.character(params$PM)
+      params$Var <- as.character(params$Var)
+      params$Metric <- as.character(params$Metric)
+      
       temp.data <- ac_extract_data(
         pmName = params$PM, varName = params$Var, segIdx = params$SegIdx,
         metricName = params$Metric, ac_grid = ac_grid, ac_grid_results = ac_grid_results)
@@ -2899,7 +2918,7 @@ ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_g
           ac_grid_projects_results$Project == names(project_signals_all)[i] &
           ac_grid_projects_results$PM == params$PM &
           ac_grid_projects_results$Var == params$Var &
-          ac_grid_projects_results$seg_idx == params$SegIdx, params$Metric])
+          ac_grid_projects_results$SegIdx == params$SegIdx, params$Metric])
       }
       cbind(`colnames<-`(res, names(project_signals_all)), params)
     }
@@ -2957,10 +2976,10 @@ We have $4*10*13=520$ objectives and the non-weighted approach is to simply add 
 We will need a function that takes PM/P and returns that score:
 
 ```{r}
-ac_pmp_score <- function(pmName, projName) {
-  temp <- ac_grid_projects_results_uniform[
-    ac_grid_projects_results_uniform$PM == pmName &
-    ac_grid_projects_results_uniform$Project == projName, as.character(temp.Metric)]
+ac_pmp_score <- function(pmName, projName, results_uniform) {
+  temp <- results_uniform[
+    results_uniform$PM == pmName &
+    results_uniform$Project == projName, as.character(temp.Metric)]
   
   sum(temp) / (nrow(temp) * ncol(temp))
 }
@@ -2978,13 +2997,16 @@ temp.df <- NULL
 
 for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
   temp.pred <- data.frame(
-    pred = sapply(X = names(temp), function(pName) ac_pmp_score(pmName = pmName, projName = pName)),
+    pred = sapply(X = names(temp), function(pName) ac_pmp_score(
+      pmName = pmName, projName = pName, results_uniform = ac_grid_projects_results_uniform)),
     ground_truth = temp.gt)
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
-    Score_for_best = ac_pmp_score(pmName = pmName, projName = paste0("project_", which.max(temp.gt))),
-    Score_for_worst = ac_pmp_score(pmName = pmName, projName = paste0("project_", which.min(temp.gt))),
+    Score_for_best = ac_pmp_score(
+      pmName = pmName, projName = paste0("project_", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform),
+    Score_for_worst = ac_pmp_score(
+      pmName = pmName, projName = paste0("project_", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
   ))
@@ -3037,7 +3059,7 @@ ac_weight_vector_expert <- sapply(X = ac_weight_grid_expert$SegIdx, FUN = functi
 Also, we will implement a variant of the function `ac_pmp_score()` that can handle weights:
 
 ```{r}
-ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector) {
+ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, results_uniform) {
   if (length(weightVector) != nrow(weightGrid)) {
     stop("Address register grid does not match weight vector.")
   }
@@ -3045,12 +3067,17 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector) {
   res <- c()
   for (i in 1:length(weightVector)) {
     params <- weightGrid[i,]
+    params$PM <- as.character(params$PM)
+    params$Project <- as.character(params$Project)
+    params$Var <- as.character(params$Var)
+    params$Metric <- as.character(params$Metric)
+    
     # The following selection will result in a single value:
-    score <- ac_grid_projects_results_uniform[
-      ac_grid_projects_results_uniform$PM == pmName &
-      ac_grid_projects_results_uniform$Project == projName &
-      ac_grid_projects_results_uniform$Var == params$Var &
-      ac_grid_projects_results_uniform$SegIdx == params$SegIdx, as.character(params$Metric)]
+    score <- results_uniform[
+      results_uniform$PM == pmName &
+      results_uniform$Project == projName &
+      results_uniform$Var == params$Var &
+      results_uniform$SegIdx == params$SegIdx, params$Metric]
     
     res <- c(res, weightVector[i] * score)
   }
@@ -3072,15 +3099,18 @@ temp.df <- NULL
 for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
   temp.pred <- data.frame(
     pred = sapply(X = names(temp), function(pName) ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = pName, weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert)),
     ground_truth = temp.gt)
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
     Score_for_best = ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.max(temp.gt)),
       weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert),
     Score_for_worst = ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
       weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
@@ -3141,7 +3171,9 @@ ac_sc_weights_optim <- function(pmName) {
         upper = rep(1, nrow(ac_weight_grid)),
         fn = function(x) {
           Metrics::mse(actual = temp.gt, predicted = sapply(X = temp.names, FUN = function(projName) {
-            ac_pmp_score_weighted(pmName = pmName, projName = projName, weightGrid = ac_weight_grid, weightVector = x)
+            ac_pmp_score_weighted(
+              results_uniform = ac_grid_projects_results_uniform,
+              pmName = pmName, projName = projName, weightGrid = ac_weight_grid, weightVector = x)
           }))
         },
         parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
@@ -3152,27 +3184,6 @@ ac_sc_weights_optim <- function(pmName) {
 ```
 
 
-```{r}
-temp <- matrix(nrow = 15, ncol = 521)
-temp[, 521] <- temp.gt
-
-for (i in 1:15) {
-  projName <- names(append(project_signals, project_signals_2nd_batch))[i]
-  for (j in 1:520) {
-    params <- ac_weight_grid[j,]
-    temp[i, j] <- ac_grid_projects_results_uniform[
-      ac_grid_projects_results_uniform$PM == "I" &
-      ac_grid_projects_results_uniform$Project == projName &
-      ac_grid_projects_results_uniform$Var == params$Var &
-      ac_grid_projects_results_uniform$SegIdx == params$SegIdx, as.character(params$Metric)]
-  }
-}
-
-temp <- as.data.frame(temp)
-colnames(temp) <- c(paste0("w", 1:520), "gt")
-```
-
-
 #### Variable importance (traditional approach)
 
 Assessing the variable importance can be done as we have done previously in section \ref{sssec:var-imp}.
@@ -3180,12 +3191,34 @@ So before we jump to the results of finding the weights (and thus the importance
 
 ```{r}
 ac_sc_weights_varimp <- loadResultsOrCompute(file = "../results/ac_sc_weights_varimp.rds", computeExpr = {
+  temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+  projNames <- names(append(project_signals, project_signals_2nd_batch))
+  temp <- matrix(nrow = length(projNames), ncol = 1 + nrow(ac_weight_grid))
+  temp[, ncol(temp)] <- temp.gt
+  
+  for (i in 1:length(projNames)) {
+    for (j in 1:nrow(ac_weight_grid)) {
+      params <- ac_weight_grid[j,]
+      params$Var <- as.character(params$Var)
+      params$Metric <- as.character(params$Metric)
+      
+      temp[i, j] <- ac_grid_projects_results_uniform[
+        ac_grid_projects_results_uniform$PM == "I" &
+        ac_grid_projects_results_uniform$Project == projNames[i] &
+        ac_grid_projects_results_uniform$Var == params$Var &
+        ac_grid_projects_results_uniform$SegIdx == params$SegIdx, params$Metric]
+    }
+  }
+  
+  temp <- as.data.frame(temp)
+  colnames(temp) <- c(paste0("w", 1:nrow(ac_weight_grid)), "gt")
+  
   doWithParallelCluster(expr = {
     library(caret, quietly = TRUE)
     
     set.seed(1)
-    control <- caret::trainControl(method="repeatedcv", number=10, repeats=3)
-    modelFit <- caret::train(gt ~., data=bla, method="rf", trControl=control)
+    control <- caret::trainControl(method = "repeatedcv", number = 10, repeats = 3)
+    modelFit <- caret::train(gt ~., data = temp, method = "rf", trControl = control)
     imp <- caret::varImp(object = modelFit)
     
     list("fit" = modelFit, "imp" = imp)
@@ -3286,6 +3319,10 @@ In other words, an MSE$=0$ would mean that a given PM can perfectly assess the g
 
 Table \ref{tab:ac-compare-pms-sc-optim} shows the scores per optimized PM. We observe a significantly larger margin between the scores for the worst and best project, as well as significantly lower MSE.
 Since the scores for the best/worst project are not $1$ resp. $0$, this indicates that either the models are flawed (that is, the design of the continuous expectation is off), the choice of objectives is inappropriate (to some degree), or that the ground truth is not accurate -- or any combination of these.
+It could also be a hint at the fact that the observed projects do neither represent the worst nor best possible manifestation of the Fire Drill in source code which means that our ground truth is using too-extreme values (e.g., a $10$ in the ground truth might in reality just be a $6$, and likewise for a low value).
+In summary, the conclusions that can be drawn from the finding the optimal weights depend on the assumptions we are certain to make. So for example, if we are confident about our ground truth, it indicates a flaw in, e.g., the model (expectation) or the (choice of) objectives.
+Or if we are confident in the expectation (that is, the design of the continuous model itself), then the flaw could be in the (choice of) objectives or the ground truth, and so on.
+In any case, the fitted weights (actually, variable importances) allow us to reason about the shortcomings of the model (the expectation), its configuration (objectives), and the ground truth.
 
 
 ```{r echo=FALSE}
@@ -3306,15 +3343,18 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
     })
   temp.pred <- data.frame(
     pred = sapply(X = names(temp), function(pName) ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = pName, weightGrid = ac_weight_grid, weightVector = temp.weights)),
     ground_truth = temp.gt)
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
     Score_for_best = ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.max(temp.gt)),
       weightGrid = ac_weight_grid, weightVector = temp.weights),
     Score_for_worst = ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
       weightGrid = ac_weight_grid, weightVector = temp.weights),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
@@ -3345,6 +3385,7 @@ Also, since each such score is tied to one variable, one segment, and one metric
 The more scores that are used (i.e., weight $>0$), the more insights we can gain. As a compromise, we will first look into the weights of model type III(avg), as it performs similarly to the absolute best ones, and uses relatively many weights ($44$). Also during some runs, it was equally good.
 Then we will merge the results of all PMs in order to get a better look at the variables, segments, and metrics.
 We will look at the average importance of each segment, each variable, and each metric. Of course, this could be further drilled down. However, this shall just be a demonstration of what is possible in terms of analyzing a fitted PM.
+It is also worth noting that in this scenario we are using all available metrics, variables, and segments. In a more realistic scenario, an expert would probably only pick a few types of metrics. Also, as long as there are sufficiently many segments that are measured, it is of less importance what actually is measured, because with enough degrees of freedom, we can find optimal weights that will lead to an MSE that has enough utility.
 
 Before the analysis, let's show all the weights that are $>0$ for PM type III(avg) in table \ref{tab:ac-sc-weights-detailed}.
 The first obvious fact that we observe is that the first $14$ weights are all maximally and equally important.
