@@ -2820,6 +2820,7 @@ temp$detect_prob <- sapply(temp$detect, function(d) if (d) 1 else 0)
 ```
 
 These results indicate that the binary decision rule does not have perfect scores.
+If we relax the probabilities it outputs to $0.75$ resp. $0.25$, the Brier- and Log-score deteriorate even more ($\approx0.156$ and $\approx0.445$), so doing that is not in favor of the decision rule.
 
 Also, we need to compute a baseline, using a so-called Zero-Rule, which represents the simplest possible regression model we can suggest _without_ any prior knowledge. Since we try to predict probabilities, the ZeroR regression is just to predict a probability of $0.5$.
 
@@ -2955,7 +2956,7 @@ if (interactive()) {
 }
 ```
 
-The scores from the automatically calibrated decision rule are shown in table \ref{tab:ac_it_dr_scores}.
+The scores from the automatically calibrated decision rule are shown in table \ref{tab:ac-it-dr-scores}.
 Next, we will check the correlation with the ground truth.
 
 ```{r}
@@ -4777,6 +4778,59 @@ These results are similarly worse to those obtained from the previous section, w
 
 # Automatic calibration of the continuous process models
 
+```{r echo=FALSE}
+# Copy-paste of functions from the SC notebook that are needed here:
+
+ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_grid_results) {
+  rows <- ac_grid[ac_grid$PM == pmName & ac_grid$Var == varName, ]
+  ac_grid_results[ac_grid_results$seg_idx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
+}
+
+ac_worker <- function(PM, P, seg_idx, total_segments = 10) {
+  use <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+           "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+  df <- `colnames<-`(matrix(nrow = 1, ncol = length(use)), use)
+  
+  seg_ext <- 1 / total_segments
+  
+  for (metric in use) {
+    df[1, metric] <- compute_segment_metric(PM = PM, P = P, use = metric, segment = c(
+      (seg_idx - 1) * seg_ext, seg_idx * seg_ext
+    ))
+  }
+  df
+}
+
+ac_pmp_score <- function(pmName, projName, results_uniform) {
+  temp <- results_uniform[
+    results_uniform$PM == pmName &
+    results_uniform$Project == projName, as.character(temp.Metric)]
+  
+  sum(temp) / (nrow(temp) * ncol(temp))
+}
+
+ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, results_uniform) {
+  if (length(weightVector) != nrow(weightGrid)) {
+    stop("Address register grid does not match weight vector.")
+  }
+  
+  res <- c()
+  for (i in 1:length(weightVector)) {
+    params <- weightGrid[i,]
+    # The following selection will result in a single value:
+    score <- results_uniform[
+      results_uniform$PM == pmName &
+      results_uniform$Project == projName &
+      results_uniform$Var == params$Var &
+      results_uniform$SegIdx == params$SegIdx, as.character(params$Metric)]
+    
+    res <- c(res, weightVector[i] * score)
+  }
+  
+  sum(res) / sum(weightVector)
+}
+```
+
 We have previously attempted the automatic calibration of the continuous process models that use source code data (section \ref{sec:auto-calib}), and now we will do the same here for the models using issue-tracking data.
 We will reuse the functions defined for source code data as much as possible here.
 A notable difference is of course the process models. Here, we have one less variable, but six instead of four models (I, II(a), III, as well as their resp. derivative models).
@@ -4799,7 +4853,7 @@ nrow(ac_grid_it)
 
 Let's compute the full grid:
 
-```{r ac-grid-results-it, eval=FALSE}
+```{r ac-grid-results-it}
 ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it.rds", computeExpr = {
   library(foreach)
   
@@ -4857,7 +4911,404 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
 ```
 
 
+## Approximating marginal cumulative densities
 
+Now with the simulated random processes, we can approximate the marginal (cumulative) densities for each objective. This is the same as we did previously using source code data (cf. section \ref{ssec:ac-approx-marginal-ecdfs}), and we will reuse some of the previously defined functions there.
+Let's show some randomly picked examples in figure \ref{fig:ac-grid-example-it}. Similarly to source code data, the ECDFs are all clearly non-linear.
+
+```{r ac-grid-example-it, echo=FALSE, fig.height=5, fig.cap="Four randomly picked ECDFs as simulated using the random processes of the automatic calibration for issue-tracking data."}
+par(mfrow = c(2,2), mgp = c(1.5, 1, 0))
+
+
+set.seed(14)
+temp.PM <- levels(ac_grid_it$PM)
+temp.Var <- unique(ac_grid_it$Var)
+temp.Seg <- 1:10
+temp.Metric <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+
+for (i in 1:4) {
+  temp.pm <- sample(temp.PM, 1)
+  temp.PM <- temp.PM[temp.PM != temp.pm]
+  temp.var <- sample(temp.Var, 1)
+  temp.seg <- sample(temp.Seg, 1)
+  temp.Seg <- temp.Seg[temp.Seg != temp.seg]
+  temp.metric <- sample(temp.Metric, 1)
+  temp.Metric <- temp.Metric[temp.Metric != temp.metric]
+  
+  temp <- ac_extract_data(pmName = temp.pm, varName = temp.var, segIdx = temp.seg, metricName = temp.metric, ac_grid = ac_grid_it, ac_grid_results = ac_grid_results_it)
+  tempf <- stats::ecdf(temp)
+  curve2(tempf, min(temp), max(temp), xlab = "", main = paste0(
+    "PM=", temp.pm,
+    ", Var=", temp.var
+  ), sub = paste0(
+    "SegIdx=", temp.seg,
+    ", Metric=", temp.metric
+  ))
+}
+```
+
+
+## Calculating scores
+
+This is the same approach as for source code data, with only minor differences.
+In order to calculate each project's scores, we need to calculate one objective per:
+
+* Project (15),
+* Process model (6),
+* Variable (3),
+* Segment index (10), and
+* Metric (13) [this is not part of the grid, the `ac_worker()` does this].
+
+That will leave us with $15\times 6\times 3\times 10\times 13=35,100$ computations. It's probably best to generate a grid for that:
+
+```{r}
+ac_grid_projects_it <- expand.grid(list(
+  Project = c(names(all_signals), names(all_signals_2nd_batch)),
+  PM = c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)"),
+  Var = c("REQ", "DEV", "DESC"),
+  SegIdx = 1:10))
+
+nrow(ac_grid_projects_it)
+```
+
+Now we can compute the projects' scores:
+
+```{r ac-grid-projects-results-it}
+ac_grid_projects_results_it <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_it.rds", computeExpr = {
+  library(foreach)
+  
+  cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
+  parallel::clusterExport(cl, varlist = list("req_poly", "dev_poly"))
+  project_signals_all <- append(all_signals, all_signals_2nd_batch)
+  
+  doWithParallelClusterExplicit(cl = cl, expr = {
+    pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid_projects_it), style = 3)
+    progress <- function(n) {
+      if (0 == (n %% 25)) {
+        print(n)
+      }
+      utils::setTxtProgressBar(pb = pb, value = n)
+    }
+    
+    foreach::foreach(
+      grid_idx = rownames(ac_grid_projects_it),
+      .combine = rbind,
+      .inorder = FALSE,
+      .verbose = TRUE,
+      .packages = c("cobs"),
+      .options.snow = list(progress = progress)
+    ) %dopar% {
+      params <- ac_grid_projects_it[grid_idx, ]
+    
+      pm_var <- switch (as.character(params$PM),
+        "I" = p1_it_signals,
+        "II(a)" = p2a_it_signals,
+        "III" = p3_it_signals,
+        "IV(I)" = p4p1_it_signals,
+        "IV(II(a))" = p4p2a_it_signals,
+        "IV(III)" = p4p3_it_signals,
+        {
+          stop(paste0("Don't know ", params$PM, "."))
+        }
+      )[[params$Var]]$get0Function()
+      
+      tempf <- project_signals_all[[as.character(params$Project)]][[as.character(params$Var)]]$get0Function()
+      use_deriv <- params$PM %in% c("IV(I)", "IV(II(a))", "IV(III)")
+      p_var <- if (use_deriv) {
+        # If using the derivative, we approximate a somewhat smooth function of the variable.
+        # The recommended span is >= 0.2, and we'll use the lowest since it preserves the
+        # most details.
+        x <- seq(from = 0, to = 1, length.out = 2e3)
+        smooth_signal_loess(x = x, y = tempf(x), span = 0.2, family = "g")
+      } else {
+        tempf
+      }
+      
+      seg_idx <- params$SegIdx
+      
+      # Important so we can correctly concatenate the results with the grid parameters!
+      res <- as.data.frame(
+        ac_worker(PM = pm_var, P = p_var, seg_idx = seg_idx, total_segments = 10))
+      res$seg_idx <- seg_idx
+      res$grid_idx <- grid_idx
+      res$Project <- params$Project
+      res$PM <- params$PM
+      res$Var <- params$Var
+      res
+    }
+  })
+})
+```
+
+
+### Rectification of raw scores
+
+Now that we have the raw scores, it is time to transform them using the marginal densities. Each single objective (ECDF) is reused 15 times (once for each project).
+We will make a new temporary grid, where the number of rows in this grid corresponds to the number of ECDFs:
+
+```{r}
+temp.Metric <- c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+                 "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+temp.grid <- expand.grid(list(
+  PM = c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)"),
+  Var = c("REQ", "DEV", "DESC"),
+  SegIdx = 1:10,
+  Metric = temp.Metric))
+
+nrow(temp.grid)
+```
+
+Now it's time to rectify the raw scores:
+
+```{r}
+ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_uniform_it.rds", computeExpr = {
+  doWithParallelCluster(numCores = min(123, parallel::detectCores()), expr = {
+    library(foreach)
+    
+    project_signals_all <- append(all_signals, all_signals_2nd_batch)
+    
+    foreach::foreach(
+      grid_idx = rownames(temp.grid),
+      .combine = rbind,
+      .inorder = FALSE,
+      .verbose = TRUE
+    ) %dopar% {
+      params <- temp.grid[grid_idx, ]
+      temp.data <- ac_extract_data(
+        pmName = params$PM, varName = params$Var, segIdx = params$SegIdx,
+        metricName = params$Metric, ac_grid = ac_grid_it, ac_grid_results = ac_grid_results_it)
+      tempf <- stats::ecdf(temp.data)
+      
+      res <- matrix(nrow = 1, ncol = length(project_signals_all))
+      for (i in 1:length(project_signals_all)) {
+        res[1, i] <- tempf(ac_grid_projects_results_it[
+          ac_grid_projects_results_it$Project == names(project_signals_all)[i] &
+          ac_grid_projects_results_it$PM == params$PM &
+          ac_grid_projects_results_it$Var == params$Var &
+          ac_grid_projects_results_it$seg_idx == params$SegIdx, params$Metric])
+      }
+      cbind(`colnames<-`(res, names(project_signals_all)), params)
+    }
+  })
+})
+```
+
+
+```{r echo=FALSE}
+# The results as computed are in a bit of an unpractical format,
+# we need to do some partial transpositions:
+temp <- NULL
+temp.Metric <- sort(unique(ac_grid_projects_results_uniform_it$Metric))
+
+for (projName in names(append(all_signals, all_signals_2nd_batch))) {
+  
+  project.df <- NULL
+  
+  for (metric in sort(unique(ac_grid_projects_results_uniform_it$Metric))) {
+    temp.df <- ac_grid_projects_results_uniform_it[
+      ac_grid_projects_results_uniform_it$Metric == metric, c(projName, "PM", "Var", "SegIdx")]
+    temp.df$Project <- projName
+    temp.df[[metric]] <- temp.df[[projName]] # rename, then drop
+    temp.df[[projName]] <- NULL
+    
+    project.df <- if (is.null(project.df)) temp.df else cbind(
+      project.df, `colnames<-`(as.data.frame(temp.df[, metric]), metric))
+  }
+  
+  temp <- rbind(temp, project.df)
+}
+
+ac_grid_projects_results_uniform_it <- temp
+```
+
+
+### Non-weighted
+
+
+```{r}
+temp <- append(all_signals, all_signals_2nd_batch)
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+
+temp.df <- NULL
+
+for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
+  temp.pred <- data.frame(
+    pred = sapply(X = names(temp), function(pName) ac_pmp_score(
+      pmName = pmName, projName = pName, results_uniform = ac_grid_projects_results_uniform_it)),
+    ground_truth = temp.gt)
+  
+  temp.df <- rbind(temp.df, data.frame(
+    PM = pmName,
+    Score_for_best = ac_pmp_score(
+      pmName = pmName, projName = paste0("Project", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
+    Score_for_worst = ac_pmp_score(
+      pmName = pmName, projName = paste0("Project", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
+    MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
+    Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+  ))
+}
+```
+
+The results of table \ref{tab:ac-compare-pms-it} are odd, in that the scores for best and worst project are interchanged, while the MSE and Log-scores are quite acceptable.
+The PMs for source code data did not have this problem (i.e., the score for best was consistently higher than the score for worst).
+At this point, this could indicate that the continuous PMs for issue tracking data measure the opposite of the phenomenon, that is, they indicate the absence of the Fire Drill, rather than its presence (negative correlation between these scores and the ground truth).
+In terms of MSE and Log-score, the derivative models appear to perform slightly better.
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp.df
+} else {
+  knitr::kable(
+    x = temp.df,
+    booktabs = TRUE,
+    caption = "Comparison of continuous PMs using issue-tracking data for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus.",
+    label = "ac-compare-pms-it"
+  )
+}
+```
+
+
+### Weighted by optimization
+
+```{r}
+ac_weight_grid_it <- expand.grid(list(
+  Var = c("REQ", "DEV", "DESC"),
+  Metric = temp.Metric,
+  SegIdx = 1:10))
+
+nrow(ac_weight_grid_it)
+```
+
+
+Now the objective for the optimization will search for weights that minimize the MSE between the weighted projects and the ground truth.
+We will optimize the weights once for each process model, and then follow this up by a closer inspection of the champion model (the model with the lowest MSE).
+
+
+```{r}
+ac_it_weights_optim <- function(pmName) {
+  loadResultsOrCompute(file = paste0("../results/ac_it_weights_pm_", pmName, ".rds"), computeExpr = {
+    temp.names <- names(append(all_signals, all_signals_2nd_batch))
+    cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
+    parallel::clusterExport(cl, varlist = list(
+      "temp.gt", "temp.names", "ac_pmp_score_weighted",
+      "ac_weight_grid_it", "ac_grid_projects_results_uniform_it"))
+
+    doWithParallelClusterExplicit(cl = cl, expr = {
+      optimParallel::optimParallel(
+        par = rep(0.5, nrow(ac_weight_grid_it)),
+        method = "L-BFGS-B",
+        lower = rep(0, nrow(ac_weight_grid_it)),
+        upper = rep(1, nrow(ac_weight_grid_it)),
+        fn = function(x) {
+          Metrics::mse(actual = temp.gt, predicted = sapply(X = temp.names, FUN = function(projName) {
+            ac_pmp_score_weighted(pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it, weightVector = x)
+          }))
+        },
+        parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
+      )
+    })
+  })
+}
+```
+
+#### Results PM vs. PM
+
+Now for the actual optimization of each type of process model.
+An overview of the optimization process on a per-project basis is shown in table \ref{tab:ac-sc-weights-optim-overview}.
+
+```{r}
+ac_it_weights_pm_I <- ac_it_weights_optim(pmName = "I")
+ac_it_weights_pm_IIa <- ac_it_weights_optim(pmName = "II(a)")
+ac_it_weights_pm_III <- ac_it_weights_optim(pmName = "III")
+ac_it_weights_pm_IV_I <- ac_it_weights_optim(pmName = "IV(I)")
+ac_it_weights_pm_IV_IIa <- ac_it_weights_optim(pmName = "IV(II(a))")
+ac_it_weights_pm_IV_III <- ac_it_weights_optim(pmName = "IV(III)")
+```
+
+```{r echo=FALSE}
+templ <- list(
+  ac_it_weights_pm_I,
+  ac_it_weights_pm_IIa,
+  ac_it_weights_pm_III,
+  ac_it_weights_pm_IV_I,
+  ac_it_weights_pm_IV_IIa,
+  ac_it_weights_pm_IV_III)
+temp <- data.frame(
+  PM = c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)"),
+  MSE = round(unlist(lapply(templ, function(res) res$value)), 5),
+  RMSE = round(unlist(lapply(templ, function(res) sqrt(res$value))), 5),
+  Num_weights_gt0 = unlist(lapply(templ, function(res) sum(res$par > 0))),
+  Weights_pruned = unlist(lapply(templ, function(res) paste0(round(100 * (1 - sum(res$par > 0) / length(res$par)), 2), "%"))),
+  Num_iter = unlist(lapply(templ, function(res) res$counts["function"])),
+  Num_grad = unlist(lapply(templ, function(res) res$counts["gradient"])))
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Overview of the results of optimizing the weights using the normalizing linear scalarizer objective, on a per-project basis, for issue-tracking process models.",
+    label = "ac-it-weights-optim-overview"
+  )
+}
+```
+
+
+
+```{r echo=FALSE}
+temp <- append(all_signals, all_signals_2nd_batch)
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+
+temp.df <- NULL
+
+for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
+  temp.weights <- switch (
+    pmName,
+    "I" = ac_it_weights_pm_I$par,
+    "II(a)" = ac_it_weights_pm_IIa$par,
+    "III" = ac_it_weights_pm_III$par,
+    "IV(I)" = ac_it_weights_pm_IV_I$par,
+    "IV(II(a))" = ac_it_weights_pm_IV_IIa$par,
+    "IV(III)" = ac_it_weights_pm_IV_III$par,
+    {
+      stop(paste0("Unknown process model: ", pmName))
+    })
+  temp.pred <- data.frame(
+    pred = sapply(X = names(temp), function(pName) ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform_it,
+      pmName = pmName, projName = pName, weightGrid = ac_weight_grid_it, weightVector = temp.weights)),
+    ground_truth = temp.gt)
+  
+  temp.df <- rbind(temp.df, data.frame(
+    PM = pmName,
+    Score_for_best = ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform_it,
+      pmName = pmName, projName = paste0("Project", which.max(temp.gt)),
+      weightGrid = ac_weight_grid_it, weightVector = temp.weights),
+    Score_for_worst = ac_pmp_score_weighted(
+      results_uniform = ac_grid_projects_results_uniform_it,
+      pmName = pmName, projName = paste0("Project", which.min(temp.gt)),
+      weightGrid = ac_weight_grid_it, weightVector = temp.weights),
+    MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
+    Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+  ))
+}
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp.df
+} else {
+  knitr::kable(
+    x = temp.df,
+    booktabs = TRUE,
+    caption = "Comparison of continuous PMs using issue-tracking data for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using some best set of weights per PM as found by optimization.",
+    label = "ac-compare-pms-it-optim"
+  )
+}
+```
 
 
 # References {-}
