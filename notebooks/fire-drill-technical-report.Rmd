@@ -2748,7 +2748,7 @@ All these "address" the specific ECDF. We will first write a helper function tha
 ```{r}
 ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_grid_results) {
   rows <- ac_grid[ac_grid$PM == pmName & ac_grid$Var == varName, ]
-  ac_grid_results[ac_grid_results$SegIdx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
+  ac_grid_results[ac_grid_results$SegIdx == segIdx & ac_grid_results$GridIdx %in% rownames(rows), metricName]
 }
 ```
 
@@ -3033,8 +3033,9 @@ if (interactive()) {
 As we show in the technical report for issue-tracking, the lowest MSE for the binary decision rule is $\approx0.14$ across all 15 projects. All of the PMs using source code data are undercutting this threshold here (using all scores with equal weight).
 Also, all of the PMs are slightly better than ZeroR across all projects, which was $\approx0.137$.
 Other than that, it seems that PM type I appears best for detecting the presence of the Fire Drill, at least for the project with the strongest ground truth.
-Process model type III(avg) appears best for detecting the absence of the anti-pattern. However, we have multiple projects with a ground truth of $0$, and ideally the champion PM would be picked by examining multiple projects where the confidence in the accuracy of the ground truth is high.
+Process model type II appears best for detecting the absence of the anti-pattern. However, we have multiple projects with a ground truth of $0$, and ideally the champion PM would be picked by examining multiple projects where the confidence in the accuracy of the ground truth is high.
 Nonetheless, all these scores are close together, so picking a champion needs to be done with care. Also, the score from each PM is the unweighted aggregation across hundreds of objectives, and at this point we have yet to examine which objectives are the most important (next two sections).
+Since the score for the best project is consistently higher than the score for the worst project, it indicates that all process models capture the presence of the Fire Drill (and not its absence), which is a first good sign.
 
 
 ### Weighted by expert decision maker
@@ -3071,8 +3072,6 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, re
   res <- c()
   for (i in 1:length(weightVector)) {
     params <- weightGrid[i,]
-    params$PM <- as.character(params$PM)
-    params$Project <- as.character(params$Project)
     params$Var <- as.character(params$Var)
     params$Metric <- as.character(params$Metric)
     
@@ -3136,12 +3135,15 @@ if (interactive()) {
 }
 ```
 
+It appears our hypothetical expert made a choice that is worse than using all available objectives with same weight, as the MSE and Log-score for all PMs worsened significantly.
+The only thing that we still see is the consistency of score for best $>$ score for worst.
 
 
 
 ### Weighted by optimization
 
-Here we will attempt to find the best weights (variable importances actually) by optimization.
+Here we will attempt to find the best weights (variable importances, actually) by optimization.
+The interesting thing is, that the weights have a $1:1$ correlation to the principle of variable importance, since the objective is normalizing linear scalarizer, and and all objectives are scores with a linear co-domain of $[0,1]$.
 A weight is specific to the variable (4), segment (10), and metric (13), so it is best to define an address grid again.
 
 ```{r}
@@ -3159,10 +3161,11 @@ We will optimize the weights once for each process model, and then follow this u
 
 
 ```{r}
+temp.names <- names(append(project_signals, project_signals_2nd_batch))
+
 ac_sc_weights_optim <- function(pmName) {
   loadResultsOrCompute(file = paste0("../results/ac_sc_weights_pm_", pmName, ".rds"), computeExpr = {
-    temp.names <- names(append(project_signals, project_signals_2nd_batch))
-    cl <- parallel::makePSOCKcluster(min(16, parallel::detectCores()))
+    cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
     parallel::clusterExport(cl, varlist = list(
       "temp.gt", "temp.names", "ac_pmp_score_weighted",
       "ac_weight_grid", "ac_grid_projects_results_uniform"))
@@ -3242,8 +3245,8 @@ if (interactive()) {
                      Number of trees: 500
 No. of variables tried at each split: 2
 
-          Mean of squared residuals: 0.1019207
-                    % Var explained: -15.47")
+          Mean of squared residuals: 0.1087897
+                    % Var explained: -23.25")
 }
 ```
 
@@ -3308,25 +3311,20 @@ The results from table \ref{tab:ac-sc-weights-optim-overview} show that in gener
 This affords us to considerably _prune_ the given models.
 With relatively few iterations of the optimizer, we can obtain optimized weights for all models. All MSEs are quite low and close together (i.e., no significant variance). Also, all MSE are lower than the ones found using a Random forest. So, not only do we get pure variable importance information, we also get more precise models with this approach.
 
-Model type II(a) appears to have the lowest MSE, and requires the second fewest weights to be used (only $22$). This PM is an optimized version of type I, so the expectation is that fewer adjustments (fewer weights, less weight in total) are required for this model to perform well, when compared to type I.
+Model type I performs surprisingly well and is among the three best models. After pruning almost $97$% of its objectives, it achieves a respectable MSE. It required the 2nd-most optimization iterations.
+The results are surprising because this models was designed without inspecting any of the data or ground truth. All other PM types are either enhanced by data, or solely based on it.
 
-Model type III(b, numInt=11) even only requires the usage of 17 weights ($\approx3.27$% of all objectives), but is simultaneously the 2nd-hardest to optimize. Its MSE is the best and comparable to that of model type II(a), which is also expected, since this type of PM was crafted out of no expectation, and then simply aligned to all projects using a weighted average.
-Recall that this type of model consists of piece-wise linear function, which means no perturbations. This could explain why it is the best in terms of (R)MSE and number of weights as its nature means it is simple, yet effective.
+Model type II appears to have the lowest MSE, and requires the second fewest weights to be used (only $14$). This PM is an optimized version of type I, so the expectation is that fewer adjustments (fewer weights, less weight in total) are required for this model to perform well, when compared to type I.
 
-Model type III(avg), while performing similar to model types II(a) and III(b, numInt=11), requires adjustment and usage of comparatively more weights. This is expected, since this kind of model is the weighted average of all observed projects, and hence also includes all fine details and perturbations of each project. It is hence more detailed than the other two previously mentioned types and supposedly requires more weight adjustments to account for that.
-Re-running the optimization for this model often uses less than $44$ weights ($\approx5$ to $10$ fewer), and achieves a little lower MSE ($\approx0.329$).
+Model type III(b, numInt=11) even only requires the usage of $10$ weights ($\approx1.92$% of all objectives), but is simultaneously the hardest to optimize, requiring two to three times the iterations.
+Its MSE is the 2nd best (though only insignificantly worse than the best) and comparable to that of model type II, which is also expected, since this type of PM was crafted out of no expectation, and then simply aligned to all projects using a weighted average.
+Recall that this type of model consists of piece-wise linear functions per variable, which means no perturbations. This could explain why it is among the best in terms of (R)MSE and number of weights as its nature means it is simple, yet effective.
 
-While not unusable, the first kind of model was clearly the one being "most off" in describing the manifestation of the Fire Drill. It has the largest MSE, requires the most weight adjustments, and the most steps during optimization. This was expected as well, since this model was designed without inspecting any of the data or ground truth. All the other PM types are either enhanced by data, or solely based on it.
+Model type III(avg), while performing similar to model types II and III(b, numInt=11), requires adjustment and usage of comparatively more weights and has the largest MSE. This is expected, since this kind of model is the weighted average of all observed projects, and hence also includes all fine details and perturbations of each project. It is hence more detailed than the other two previously mentioned types and supposedly requires more weight adjustments to account for that.
+Re-running the optimization for this model often uses less than $49$ weights ($\approx5$ to $10$ fewer), and achieves a little lower MSE ($\approx0.033$).
 
 In any case, the residual MSE also indicates that a PM cannot probably be optimized beyond what the optimization found. Thus, a residual MSE$>0$ indicates an error in the model's formulation, and that even by using some best constellation of the weights, it is not possible to achieve perfect goodness of fit, which indicates a design flaw in either the model and/or the particular objectives used.
 In other words, an MSE$=0$ would mean that a given PM can perfectly assess the goodness of fit of the given processes, and that it was configured in a perfect way (i.e., using the right segments, variables, metrics, etc.) to do so.
-
-Table \ref{tab:ac-compare-pms-sc-optim} shows the scores per optimized PM. We observe a significantly larger margin between the scores for the worst and best project, as well as significantly lower MSE.
-Since the scores for the best/worst project are not $1$ resp. $0$, this indicates that either the models are flawed (that is, the design of the continuous expectation is off), the choice of objectives is inappropriate (to some degree), or that the ground truth is not accurate -- or any combination of these.
-It could also be a hint at the fact that the observed projects do neither represent the worst nor best possible manifestation of the Fire Drill in source code which means that our ground truth is using too-extreme values (e.g., a $10$ in the ground truth might in reality just be a $6$, and likewise for a low value).
-In summary, the conclusions that can be drawn from the finding the optimal weights depend on the assumptions we are certain to make. So for example, if we are confident about our ground truth, it indicates a flaw in, e.g., the model (expectation) or the (choice of) objectives.
-Or if we are confident in the expectation (that is, the design of the continuous model itself), then the flaw could be in the (choice of) objectives or the ground truth, and so on.
-In any case, the fitted weights (actually, variable importances) allow us to reason about the shortcomings of the model (the expectation), its configuration (objectives), and the ground truth.
 
 
 ```{r echo=FALSE}
@@ -3381,12 +3379,21 @@ if (interactive()) {
 ```
 
 
+Table \ref{tab:ac-compare-pms-sc-optim} shows the scores per optimized PM. We observe a significantly larger margin between the scores for the worst and best project, as well as significantly lower MSE.
+Going by only these values, the champion model is perhaps type II, given the spread and MSE. Model type III (b, numInt=11) performs similar, with even a slightly lower Log-score, which indicates that it produces less-extreme outliers, as the Log-score is much more sensible to that than MSE.
+Since the scores for the best/worst project are not $1$ resp. $0$, this indicates that either the models are flawed (that is, the design of the continuous expectation is off), the choice of objectives is inappropriate (to some degree), or that the ground truth is not accurate -- or any combination of these.
+It could also be a hint at the fact that the observed projects do neither represent the worst nor best possible manifestation of the Fire Drill in source code which means that our ground truth is using too-extreme values (e.g., a $10$ in the ground truth might in reality just be a $6$, and likewise for a low value).
+In summary, the conclusions that can be drawn from finding the optimal weights depend on the assumptions we are certain to make. So for example, if we are confident about our ground truth, it indicates a flaw in, e.g., the model (expectation) or the (choice of) objectives.
+Or if we are confident in the expectation (that is, the design of the continuous model itself), then the flaw could be in the (choice of) objectives or the ground truth, and so on.
+In any case, the fitted weights (actually, variable importances) allow us to reason about the shortcomings of the model (the expectation), its configuration (objectives), and the ground truth.
+
+
 #### Results in detail
 
 With each weight linked to a single objective (score), we have the ability to gain rich insights into which of these scores are most important.
 Also, since each such score is tied to one variable, one segment, and one metric, we can find out more about any of these (for example, which is the most important variable in a PM, or which metrics are important and which may be discarded, and when/where).
 
-The more scores that are used (i.e., weight $>0$), the more insights we can gain. As a compromise, we will first look into the weights of model type III(avg), as it performs similarly to the absolute best ones, and uses relatively many weights ($44$). Also during some runs, it was equally good.
+The more scores that are used (i.e., weight $>0$), the more insights we can gain. As a compromise, we will first look into the weights of model type III(avg), as it performs similarly to the absolute best ones, and uses relatively many weights ($49$). Also during some runs, it was equally good.
 Then we will merge the results of all PMs in order to get a better look at the variables, segments, and metrics.
 We will look at the average importance of each segment, each variable, and each metric. Of course, this could be further drilled down. However, this shall just be a demonstration of what is possible in terms of analyzing a fitted PM.
 It is also worth noting that in this scenario we are using all available metrics, variables, and segments. In a more realistic scenario, an expert would probably only pick a few types of metrics. Also, as long as there are sufficiently many segments that are measured, it is of less importance what actually is measured, because with enough degrees of freedom, we can find optimal weights that will lead to an MSE that has enough utility.
@@ -3404,6 +3411,7 @@ if (interactive()) {
 } else {
   knitr::kable(
     x = temp,
+    row.names = FALSE,
     booktabs = TRUE,
     caption = "All non-zero weights as optimized for PM type III(avg), also showing which variable, metric, and segment they address.",
     label = "ac-sc-weights-detailed"
@@ -3413,7 +3421,7 @@ if (interactive()) {
 
 
 ```{r echo=FALSE}
-temp <- cbind(ac_weight_grid, data.frame(weight = ac_sc_weights_pm_I$par))
+temp <- cbind(ac_weight_grid, data.frame(weight = ac_sc_weights_pm_I$par + ac_sc_weights_pm_II$par + ac_sc_weights_pm_IIIavg$par + ac_sc_weights_pm_IIIb11$par))
 temp$weight <- temp$weight / max(temp$weight) # let's normalize this again
 temp <- temp[temp$weight > 0,]
 temp <- temp[order(-temp$weight),]
@@ -3487,7 +3495,7 @@ We may also show the most frequented segments, variables, and metrics:
 ```{r ac-sc-weights-detailed-plot-counts, echo=FALSE, fig.height=5.5, fig.cap="Number of score usages per segment, variable, and metric (across all process models)."}
 layout(mat = matrix(data = c(1,2,3,3), ncol = 2, byrow = TRUE))
 
-barplot(table(temp$SegIdx), main = "No. of scores used / segment (normalized)")
+barplot(table(temp$SegIdx), main = "No. of scores used per segment")
 grid()
 barplot(table(temp$Var)[levels(temp$Var)], main = "No. of scores used per variable")
 grid()
@@ -3503,11 +3511,12 @@ grid()
 ```
 
 The differences as of figures \ref{fig:ac-sc-weights-detailed-plot} and \ref{fig:ac-sc-weights-detailed-plot-counts} are interesting and a bit unexpected.
-While the average importance per segment suggests that the first segments are somewhat more important than the last ones, we see the most scores were used in the two middle segments and the last segment.
-This means that it is more important to sample from a process in these segments, and that fluctuations in these segments are more sensible to the outcome (assessing the goodness of fit). This finding is also interesting w.r.t. the binary decision rule as used for issue-tracking data. It measures at three characteristic points in time of a project, namely at $t_1=0.4$, $t_2=0.85$, and $t_{\mathrm{end}}=1$. If we look at the average importance of each segment, the choice for $t_1$ seems to be a good fit, while the others are slightly off.
+While the average importance per segment suggests that the first segments are somewhat more important than the last ones, we see the most scores were used in the last segments.
+This means that it is more important to sample from a process in these segments, and that fluctuations in these segments are more sensible to the outcome (assessing the goodness of fit). This finding is also interesting w.r.t. the binary decision rule as used for issue-tracking data. It measures at three characteristic points in time of a project, namely at $t_1=0.4$, $t_2=0.85$, and $t_{\mathrm{end}}=1$. If we look at the average importance of each segment, those choices are perhaps not ideal (under the assumptions that the source code variables quantify the same thing as the issue-tracking variables, which they do not).
 
-The average importance per variable in figure \ref{fig:ac-sc-weights-detailed-plot} favored `A` and `FREQ`, then `SCD` and then with some distance `CP`. In figure \ref{fig:ac-sc-weights-detailed-plot-counts} however, `A`, `CP`, and `FREQ` have almost the same number of scores on them $\approx27$, while `SCD` has almost $10$ more. Requiring more scores on a variable could indicate it having a large variance, for example. In other words, if relatively more scores are required in a segment or for a variable, then those are probably required to accommodate the larger variances.
-We also see a significant difference in average importance and number of type of scores, with the ImpulseFactor being the score used most frequently by far. The impulse factor divides the process' peak by its average and is therefore sensitive to perturbations of the entire signal and not just its extremes. A difference between Peak and ImpulseFactor could indicate that in fact differences between process and model exist.
+The average importance per variable in figure \ref{fig:ac-sc-weights-detailed-plot} favored `CP` and `FREQ`, and then with some distance `A` and `SCD`, which are similarly important. In figure \ref{fig:ac-sc-weights-detailed-plot-counts} however, `CP`, and `SCD` have a lot more scores on them than `A` and `FREQ` ($\approx26$). Requiring more scores on a variable could indicate it having a large variance, for example. In other words, if relatively more scores are required in a segment or for a variable, then those are probably required to accommodate the larger variances.
+We also see a significant difference between average importance and number of type of scores, with the `rmse`` being the score used most frequently.
+The impulse factor divides the process' peak by its average and is therefore sensitive to perturbations of the entire signal and not just its extremes. A difference between Peak and ImpulseFactor could indicate that in fact differences between process and model exist.
 
 
 
