@@ -2754,8 +2754,8 @@ ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_gri
 
 So let's plot a few randomly picked examples:
 
-```{r ac-grid-example, echo=FALSE, fig.height=5, fig.cap="Four randomly picked ECDFs as simulated using the random processes of the automatic calibration."}
-par(mfrow = c(2,2), mgp = c(1.5, 1, 0))
+```{r ac-grid-example, echo=FALSE, fig.height=5, fig.cap="Four randomly picked ECCDFs as simulated using the random processes of the automatic calibration."}
+par(mfrow = c(2,2), mgp = c(2.5, 1, 0))
 
 
 set.seed(5)
@@ -2777,7 +2777,7 @@ for (i in 1:4) {
   
   temp <- ac_extract_data(pmName = temp.pm, varName = temp.var, segIdx = temp.seg, metricName = temp.metric, ac_grid = ac_grid, ac_grid_results = ac_grid_results)
   tempf <- stats::ecdf(temp)
-  curve2(tempf, min(temp), max(temp), xlab = "", main = paste0(
+  curve2(function(x) 1 - tempf(x), min(temp), max(temp), ylim = c(0, 1), xlab = "", ylab = "Score", main = paste0(
     "PM=", temp.pm,
     ", Var=", temp.var
   ), sub = paste0(
