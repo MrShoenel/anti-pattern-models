@@ -2471,9 +2471,9 @@ With this linear model, we can report a high correlation with the consensus, too
 # Automatic calibration of the continuous process models\label{sec:auto-calib}
 
 This is a new section in the seventh iteration of this report.
-"Automatic calibration" refers to a new approach of gauging a continuous PM, so that it can compute true scores for any process, also scores that are __comparable__ across PMs, given the same configuration (segments, objectives, regularizers) was used (we say that PM using the same configuration are part of a _family_).
-This approach is based on the idea of __rectification of scores__[^3]. The goal is to learn for every objective a __uniform__ score, where uniform refers to both, a uniform distribution _and_ a codomain of $[0,1]$. With such scores, a linear scalarizer will produce a score with the __same__ properties, and that means we will be able to compare the continuous process models we formulated so far!
-Even beyond that, we can interpret this score as a probabilistic measure of how well a process matches the PM, so in our case we can translate this information into the degree to which a Fire Drill is present in a project, according to the process model in question. We will also be able to compute the Brier- and Logarithmic scoring rules, and compare against the results that we got using the binary decision rule.
+"Automatic calibration" refers to a new approach of gauging a continuous PM, so that it can compute true scores for any process, also scores that are __comparable__ across PMs, given the same configuration (segments, objectives, regularizers) was used (we say that PMs using the same configuration are part of a _family_).
+This approach is based on the idea of __rectification of scores__[^3]. The goal is to learn for every objective a __uniform__ score, where uniform refers to both, a uniform distribution _and_ a codomain of $[0,1]$. With such scores, a normalizing linear scalarizer will produce a score with the __same__ properties, and that means we will be able to compare the continuous process models we formulated so far!
+Even beyond that, we can use this score similar to a probabilistic measure of how well a process matches the PM, so in our case we can translate this information into the degree to which a Fire Drill is present in a project, according to the process model in question. We will also be able to compute the Brier- and Logarithmic scoring rules, and compare against the results that we got using the binary decision rule.
 
 [^3]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/rectify-score.md
 
@@ -2887,11 +2887,13 @@ temp.grid <- expand.grid(list(
 nrow(temp.grid)
 ```
 
-Now it's time to rectify the raw scores:
+Now it's time to rectify the raw scores.
+Also, and this __is important__, we are reversing the the scores here into a notion where a score of $0$ is the worst possible score, and $1$ the best possible.
+So far, we were using distances, and a lower distance was proportional with a low score, now we are inverting this.
 
 ```{r}
 ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_uniform_sc.rds", computeExpr = {
-  doWithParallelCluster(numCores = 16, expr = {
+  doWithParallelCluster(numCores = min(123, parallel::detectCores()), expr = {
     library(foreach)
     
     project_signals_all <- append(project_signals, project_signals_2nd_batch)
@@ -2902,7 +2904,7 @@ ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_g
       .inorder = FALSE,
       .verbose = TRUE
     ) %dopar% {
-      options(warn=2)
+      options(warn = 2)
       params <- temp.grid[grid_idx, ]
       params$PM <- as.character(params$PM)
       params$Var <- as.character(params$Var)
@@ -2915,7 +2917,12 @@ ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_g
       
       res <- matrix(nrow = 1, ncol = length(project_signals_all))
       for (i in 1:length(project_signals_all)) {
-        res[1, i] <- tempf(ac_grid_projects_results[
+        # Attention! It is only here that we also transform a score into
+        # the notion of 1=best, 0=worst! Beware that the data for the ECDF
+        # is the empirical distribution of distances. So for any x where
+        # ECDF(x)=0 is the best possible score, so we need to subtract that
+        # from 1 -- the more we subtract, the worse the score.
+        res[1, i] <- 1 - tempf(ac_grid_projects_results[
           ac_grid_projects_results$Project == names(project_signals_all)[i] &
           ac_grid_projects_results$PM == params$PM &
           ac_grid_projects_results$Var == params$Var &
