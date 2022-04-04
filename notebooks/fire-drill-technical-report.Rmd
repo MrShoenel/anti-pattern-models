@@ -2787,7 +2787,8 @@ for (i in 1:4) {
 }
 ```
 
-So as we see in figure \ref{fig:ac-grid-example}, the ECDFs can be quite diverse. In almost any case, the ECDF is __non-linear__, which is exactly what we are after, as it will then be used to rectify the corresponding objective later.
+So as we see in figure \ref{fig:ac-grid-example}, the ECCDFs can be quite diverse. Increasing distances are now non-linearly correlated with lower scores.
+In almost any case, the ECDF is __non-linear__, which is exactly what we are after, as it will then be used to rectify the corresponding objective later.
 
 
 ## Calculating scores
@@ -2893,7 +2894,7 @@ So far, we were using distances, and a lower distance was proportional with a lo
 
 ```{r}
 ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_uniform_sc.rds", computeExpr = {
-  doWithParallelCluster(numCores = min(123, parallel::detectCores()), expr = {
+  doWithParallelCluster(numCores = min(32, parallel::detectCores()), expr = {
     library(foreach)
     
     project_signals_all <- append(project_signals, project_signals_2nd_batch)
