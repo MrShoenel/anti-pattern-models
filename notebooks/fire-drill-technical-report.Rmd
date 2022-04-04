@@ -2935,33 +2935,6 @@ ac_grid_projects_results_uniform <- loadResultsOrCompute(file = "../results/ac_g
 })
 ```
 
-The results as computed are in a bit of an unpractical format, we need to do some partial transpositions:
-
-```{r}
-temp <- NULL
-temp.Metric <- sort(unique(ac_grid_projects_results_uniform$Metric))
-
-for (projName in names(append(project_signals, project_signals_2nd_batch))) {
-  
-  project.df <- NULL
-  
-  for (metric in sort(unique(ac_grid_projects_results_uniform$Metric))) {
-    temp.df <- ac_grid_projects_results_uniform[
-      ac_grid_projects_results_uniform$Metric == metric, c(projName, "PM", "Var", "SegIdx")]
-    temp.df$Project <- projName
-    temp.df[[metric]] <- temp.df[[projName]] # rename, then drop
-    temp.df[[projName]] <- NULL
-    
-    project.df <- if (is.null(project.df)) temp.df else cbind(
-      project.df, `colnames<-`(as.data.frame(temp.df[, metric]), metric))
-  }
-  
-  temp <- rbind(temp, project.df)
-}
-
-ac_grid_projects_results_uniform <- temp
-```
-
 
 ### Non-weighted
 
@@ -2988,9 +2961,9 @@ We will need a function that takes PM/P and returns that score:
 ac_pmp_score <- function(pmName, projName, results_uniform, use_metrics) {
   temp <- results_uniform[
     results_uniform$PM == pmName &
-    results_uniform$Project == projName, as.character(use_metrics)]
+    results_uniform$Metric %in% as.character(use_metrics), projName]
   
-  sum(temp) / (nrow(temp) * ncol(temp))
+  mean(temp)
 }
 ```
 
@@ -3059,7 +3032,7 @@ Let's define a weight grid:
 ```{r}
 ac_weight_grid_expert <- expand.grid(list(
   Var = names(weight_vartype),
-  Metric = c("corr", "jsd", "ImpulseFactor"),
+  Metric = c("area", "corr"),
   SegIdx = 1:10
 ))
 
@@ -3086,9 +3059,13 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, re
     # The following selection will result in a single value:
     score <- results_uniform[
       results_uniform$PM == pmName &
-      results_uniform$Project == projName &
       results_uniform$Var == params$Var &
-      results_uniform$SegIdx == params$SegIdx, params$Metric]
+      results_uniform$Metric == params$Metric &
+      results_uniform$SegIdx == params$SegIdx, projName]
+    
+    if (length(score) != 1) {
+      stop()
+    }
     
     res <- c(res, weightVector[i] * score)
   }
@@ -3145,7 +3122,6 @@ if (interactive()) {
 
 It appears our hypothetical expert made a choice that is worse than using all available objectives with same weight, as the MSE and Log-score for all PMs worsened significantly.
 The only thing that we still see is the consistency of score for best $>$ score for worst.
-
 
 
 ### Weighted by optimization
@@ -3228,7 +3204,7 @@ ac_sc_weights_varimp <- loadResultsOrCompute(file = "../results/ac_sc_weights_va
   temp <- as.data.frame(temp)
   colnames(temp) <- c(paste0("w", 1:nrow(ac_weight_grid)), "gt")
   
-  doWithParallelCluster(expr = {
+  doWithParallelCluster(numCores = 10, expr = {
     library(caret, quietly = TRUE)
     
     set.seed(1)
@@ -3253,8 +3229,8 @@ if (interactive()) {
                      Number of trees: 500
 No. of variables tried at each split: 2
 
-          Mean of squared residuals: 0.1087897
-                    % Var explained: -23.25")
+          Mean of squared residuals: 0.1018337
+                    % Var explained: -15.37")
 }
 ```
 
@@ -3284,7 +3260,7 @@ if (interactive()) {
 Now for the actual optimization of each type of process model.
 An overview of the optimization process on a per-project basis is shown in table \ref{tab:ac-sc-weights-optim-overview}.
 
-```{r}
+```{r ac-calc-varimp-weights-sc}
 ac_sc_weights_pm_I <- ac_sc_weights_optim(pmName = "I")
 ac_sc_weights_pm_II <- ac_sc_weights_optim(pmName = "II")
 ac_sc_weights_pm_IIIavg <- ac_sc_weights_optim(pmName = "III(avg)")
