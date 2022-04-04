@@ -2825,7 +2825,7 @@ ac_grid_projects_results <- loadResultsOrCompute(file = "../results/ac_grid_proj
   p3b11 <- p3b_all$i_11
   project_signals_all <- append(project_signals, project_signals_2nd_batch)
   
-  doWithParallelCluster(numCores = 16, expr = {
+  doWithParallelCluster(numCores = min(123, parallel::detectCores()), expr = {
     pb <- utils::txtProgressBar(min = 1, max = nrow(ac_grid_projects), style = 3)
     progress <- function(n) {
       if (0 == (n %% 25)) {
@@ -3195,16 +3195,16 @@ ac_sc_weights_varimp <- loadResultsOrCompute(file = "../results/ac_sc_weights_va
       
       temp[i, j] <- ac_grid_projects_results_uniform[
         ac_grid_projects_results_uniform$PM == "I" &
-        ac_grid_projects_results_uniform$Project == projNames[i] &
+        ac_grid_projects_results_uniform$Metric == params$Metric &
         ac_grid_projects_results_uniform$Var == params$Var &
-        ac_grid_projects_results_uniform$SegIdx == params$SegIdx, params$Metric]
+        ac_grid_projects_results_uniform$SegIdx == params$SegIdx, projNames[i]]
     }
   }
   
   temp <- as.data.frame(temp)
   colnames(temp) <- c(paste0("w", 1:nrow(ac_weight_grid)), "gt")
   
-  doWithParallelCluster(numCores = 10, expr = {
+  doWithParallelCluster(numCores = min(16, parallel::detectCores()), expr = {
     library(caret, quietly = TRUE)
     
     set.seed(1)
