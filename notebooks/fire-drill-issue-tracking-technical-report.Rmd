@@ -4780,6 +4780,10 @@ These results are similarly worse to those obtained from the previous section, w
 
 # Automatic calibration of the continuous process models
 
+We have previously attempted the automatic calibration of the continuous process models that use source code data (section \ref{sec:auto-calib}), and now we will do the same here for the models using issue-tracking data.
+We will reuse the functions defined for source code data as much as possible here.
+A notable difference is of course the process models. Here, we have one less variable, but six instead of four models (I, II(a), III, as well as their resp. derivative models).
+
 ```{r echo=FALSE}
 # Copy-paste of functions from the SC notebook that are needed here:
 
@@ -4935,10 +4939,6 @@ get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
 }
 ```
 
-We have previously attempted the automatic calibration of the continuous process models that use source code data (section \ref{sec:auto-calib}), and now we will do the same here for the models using issue-tracking data.
-We will reuse the functions defined for source code data as much as possible here.
-A notable difference is of course the process models. Here, we have one less variable, but six instead of four models (I, II(a), III, as well as their resp. derivative models).
-
 
 ## Computing the metrics
 
@@ -5022,7 +5022,7 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
 ## Approximating marginal cumulative densities
 
 Now with the simulated random processes, we can approximate the marginal (cumulative) densities for each objective. This is the same as we did previously using source code data (cf. section \ref{ssec:ac-approx-marginal-ecdfs}), and we will reuse some of the previously defined functions there.
-Let's show some randomly picked examples in figure \ref{fig:ac-grid-example-it}. Similarly to source code data, the ECDFs are all clearly non-linear.
+Let's show some randomly picked examples in figure \ref{fig:ac-grid-example-it}. Similarly to source code data, the ECCDFs are all clearly non-linear.
 
 ```{r ac-grid-example-it, echo=FALSE, fig.height=5, fig.cap="Four randomly picked ECCDFs as simulated using the random processes of the automatic calibration for issue-tracking data."}
 par(mfrow = c(2,2), mgp = c(1.5, 1, 0))
@@ -5230,16 +5230,13 @@ for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
     Score_for_worst = ac_pmp_score(
       use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("Project", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
+    RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
   ))
 }
 ```
 
-The results of table \ref{tab:ac-compare-pms-it} are odd, in that the scores for best and worst project are interchanged, while the MSE and Log-scores are quite acceptable.
-The PMs for source code data did not have this problem (i.e., the score for best was consistently higher than the score for worst).
-At this point, this could indicate that the continuous PMs for issue tracking data measure the opposite of the phenomenon, that is, they indicate the absence of the Fire Drill, rather than its presence (negative correlation between these scores and the ground truth).
-In terms of MSE and Log-score, the derivative models appear to perform slightly better.
 
 ```{r echo=FALSE}
 if (interactive()) {
@@ -5253,6 +5250,10 @@ if (interactive()) {
   )
 }
 ```
+
+
+The results of table \ref{tab:ac-compare-pms-it} are quite OK on the surface, as all PMs consistently produce a higher score for the best project than they do for the worst.
+However, all the scores are quite bad, so there is room for improvement in terms of selecting the right objectives (weights).
 
 
 ### Weighted by optimization
@@ -5323,8 +5324,8 @@ templ <- list(
   ac_it_weights_pm_IV_III)
 temp <- data.frame(
   PM = c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)"),
-  MSE = round(unlist(lapply(templ, function(res) res$value)), 5),
   RMSE = round(unlist(lapply(templ, function(res) sqrt(res$value))), 5),
+  MSE = round(unlist(lapply(templ, function(res) res$value)), 5),
   Num_weights_gt0 = unlist(lapply(templ, function(res) sum(res$par > 0))),
   Weights_pruned = unlist(lapply(templ, function(res) paste0(round(100 * (1 - sum(res$par > 0) / length(res$par)), 2), "%"))),
   Num_iter = unlist(lapply(templ, function(res) res$counts["function"])),
@@ -5341,6 +5342,9 @@ if (interactive()) {
   )
 }
 ```
+
+Table \ref{tab:ac-it-weights-optim-overview} gives on overview of the optimization results, which are quite diverse.
+Similarly to the source code PMs, it appears that the expert-designed models of type I are also the worst after optimization, requiring many weights $>0$ to achieve a low (R)MSE.
 
 
 
@@ -5378,6 +5382,7 @@ for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
       results_uniform = ac_grid_projects_results_uniform_it,
       pmName = pmName, projName = paste0("Project", which.min(temp.gt)),
       weightGrid = ac_weight_grid_it, weightVector = temp.weights),
+    RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
   ))
@@ -5393,6 +5398,34 @@ if (interactive()) {
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using issue-tracking data for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using some best set of weights per PM as found by optimization.",
     label = "ac-compare-pms-it-optim"
+  )
+}
+```
+
+Unlike the optimized models for issue-tracking data, we have a clear champion model here, type IV(II(a)) (time-derivative model of type II(a)).
+It has the highest score for the best project, the lowest score for the worst project (and hence also the largest spread), as well as the lowest MSE- and Log-scores (cf. table \ref{tab:ac-compare-pms-it-optim}).
+With an RMSE of $\approx0.16$ we should be close to or have a usable (in practice) model.
+
+A general observation is that the derivative version of each PM is always better in any regard (best/worst, spread, (R)MSE- and Log-score) when compared to its non-derivative ancestral model.
+This means that we can make the general statement that using a derivative version of any PM is better for indicating the degree to which the Fire Drill is present in a project. It is also likely that the derivative models resemble the derivative observations better, or that the evaluated metrics possess more explanatory power in a derivative scenario.
+
+If we inspect the metrics used in the champion model, it unveils the following (table \ref{tab:ac-it-details-pm-iv-iia}):
+Except for one usage of `corr`, all other metrics are signal theory metrics, with the `ImpulseFactor` being used $5$ out of $8$ times!
+The impulse factor divides the process' peak by its average and is therefore sensitive to perturbations of the entire signal and not just its extremes. A difference between `Peak` and `ImpulseFactor` could indicate that in fact differences between process and model exist.
+Derivative PMs and observations can result in signals with extreme amplitudes, and the excessive use of signal theory metrics could indicate that such extremes are suitable and more appropriate in derivative scenarios.
+
+
+```{r echo=FALSE}
+temp <- ac_weight_grid_it[ac_it_weights_pm_IV_IIa$par > 0, ]
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    row.names = FALSE,
+    caption = "The metrics used in PM IV(II(a)). All but one metric are metrics from signal theory.",
+    label = "ac-it-details-pm-iv-iia"
   )
 }
 ```
