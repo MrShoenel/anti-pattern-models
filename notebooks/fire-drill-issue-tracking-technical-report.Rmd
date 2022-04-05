@@ -5167,7 +5167,7 @@ nrow(temp.grid)
 
 Now it's time to rectify the raw scores:
 
-```{r}
+```{r ac-grid-projects-results-uniform-it}
 ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_uniform_it.rds", computeExpr = {
   doWithParallelCluster(numCores = min(32, parallel::detectCores()), expr = {
     library(foreach)
@@ -5203,34 +5203,6 @@ ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/a
     }
   })
 })
-```
-
-
-```{r echo=FALSE}
-# The results as computed are in a bit of an unpractical format,
-# we need to do some partial transpositions:
-temp <- NULL
-temp.Metric <- sort(unique(ac_grid_projects_results_uniform_it$Metric))
-
-for (projName in names(append(all_signals, all_signals_2nd_batch))) {
-  
-  project.df <- NULL
-  
-  for (metric in sort(unique(ac_grid_projects_results_uniform_it$Metric))) {
-    temp.df <- ac_grid_projects_results_uniform_it[
-      ac_grid_projects_results_uniform_it$Metric == metric, c(projName, "PM", "Var", "SegIdx")]
-    temp.df$Project <- projName
-    temp.df[[metric]] <- temp.df[[projName]] # rename, then drop
-    temp.df[[projName]] <- NULL
-    
-    project.df <- if (is.null(project.df)) temp.df else cbind(
-      project.df, `colnames<-`(as.data.frame(temp.df[, metric]), metric))
-  }
-  
-  temp <- rbind(temp, project.df)
-}
-
-ac_grid_projects_results_uniform_it <- temp
 ```
 
 
