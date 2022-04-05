@@ -5104,10 +5104,11 @@ ac_grid_projects_results_it <- loadResultsOrCompute(file = "../results/ac_grid_p
       .combine = rbind,
       .inorder = FALSE,
       .verbose = TRUE,
-      .packages = c("cobs"),
+      .packages = c("cobs", "R6"),
       .options.snow = list(progress = progress)
     ) %dopar% {
       options(warn = 2)
+      source("../models/SRBTW-R6.R")
       params <- ac_grid_projects_it[grid_idx, ]
       params$Project <- as.character(params$Project)
       params$PM <- as.character(params$PM)
@@ -5128,11 +5129,7 @@ ac_grid_projects_results_it <- loadResultsOrCompute(file = "../results/ac_grid_p
       tempf <- project_signals_all[[params$Project]][[params$Var]]$get0Function()
       use_deriv <- params$PM %in% c("IV(I)", "IV(II(a))", "IV(III)")
       p_var <- if (use_deriv) {
-        # If using the derivative, we approximate a somewhat smooth function of the variable.
-        # The recommended span is >= 0.2, and we'll use the lowest since it preserves the
-        # most details.
-        x <- seq(from = 0, to = 1, length.out = 2e3)
-        smooth_signal_loess(x = x, y = tempf(x), span = 0.2, family = "g")
+        get_smoothed_signal_d1(name = "foo", func = tempf)$get0Function()
       } else {
         tempf
       }
