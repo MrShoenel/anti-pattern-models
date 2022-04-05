@@ -4844,7 +4844,7 @@ compute_segment_metric <- function(
 
 ac_extract_data <- function(pmName, varName, segIdx, metricName, ac_grid, ac_grid_results) {
   rows <- ac_grid[ac_grid$PM == pmName & ac_grid$Var == varName, ]
-  ac_grid_results[ac_grid_results$SegIdx == segIdx & ac_grid_results$grid_idx %in% rownames(rows), metricName]
+  ac_grid_results[ac_grid_results$SegIdx == segIdx & ac_grid_results$GridIdx %in% rownames(rows), metricName]
 }
 
 ac_worker <- function(PM, P, seg_idx, total_segments = 10) {
@@ -4865,9 +4865,9 @@ ac_worker <- function(PM, P, seg_idx, total_segments = 10) {
 ac_pmp_score <- function(pmName, projName, results_uniform, use_metrics) {
   temp <- results_uniform[
     results_uniform$PM == pmName &
-    results_uniform$Project == projName, as.character(use_metrics)]
+    results_uniform$Metric %in% as.character(use_metrics), projName]
   
-  sum(temp) / (nrow(temp) * ncol(temp))
+  mean(temp)
 }
 
 ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, results_uniform) {
@@ -4884,9 +4884,13 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, re
     # The following selection will result in a single value:
     score <- results_uniform[
       results_uniform$PM == pmName &
-      results_uniform$Project == projName &
       results_uniform$Var == params$Var &
-      results_uniform$SegIdx == params$SegIdx, params$Metric]
+      results_uniform$Metric == params$Metric &
+      results_uniform$SegIdx == params$SegIdx, projName]
+    
+    if (length(score) != 1) {
+      stop()
+    }
     
     res <- c(res, weightVector[i] * score)
   }
