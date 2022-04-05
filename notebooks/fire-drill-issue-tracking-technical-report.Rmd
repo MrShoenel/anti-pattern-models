@@ -5169,7 +5169,7 @@ Now it's time to rectify the raw scores:
 
 ```{r}
 ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/ac_grid_projects_results_uniform_it.rds", computeExpr = {
-  doWithParallelCluster(numCores = min(123, parallel::detectCores()), expr = {
+  doWithParallelCluster(numCores = min(32, parallel::detectCores()), expr = {
     library(foreach)
     
     project_signals_all <- append(all_signals, all_signals_2nd_batch)
@@ -5193,7 +5193,7 @@ ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/a
       
       res <- matrix(nrow = 1, ncol = length(project_signals_all))
       for (i in 1:length(project_signals_all)) {
-        res[1, i] <- tempf(ac_grid_projects_results_it[
+        res[1, i] <- 1 - tempf(ac_grid_projects_results_it[
           ac_grid_projects_results_it$Project == names(project_signals_all)[i] &
           ac_grid_projects_results_it$PM == params$PM &
           ac_grid_projects_results_it$Var == params$Var &
