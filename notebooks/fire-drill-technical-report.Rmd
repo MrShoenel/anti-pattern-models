@@ -3229,8 +3229,8 @@ if (interactive()) {
                      Number of trees: 500
 No. of variables tried at each split: 2
 
-          Mean of squared residuals: 0.1018337
-                    % Var explained: -15.37")
+          Mean of squared residuals: 0.09919653
+                    % Var explained: -12.38")
 }
 ```
 
