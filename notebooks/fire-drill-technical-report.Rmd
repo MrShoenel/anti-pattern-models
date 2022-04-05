@@ -3001,6 +3001,7 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
     Score_for_worst = ac_pmp_score(
       use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform),
+    RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
   ))
@@ -3108,6 +3109,7 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
       results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
       weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert),
+    RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
   ))
@@ -3283,8 +3285,8 @@ ac_sc_weights_pm_IIIb11 <- ac_sc_weights_optim(pmName = "III(b,11)")
 templ <- list(ac_sc_weights_pm_I, ac_sc_weights_pm_II, ac_sc_weights_pm_IIIavg, ac_sc_weights_pm_IIIb11)
 temp <- data.frame(
   PM = c("I", "II", "III(avg)", "III(b,11)"),
-  MSE = round(unlist(lapply(templ, function(res) res$value)), 5),
   RMSE = round(unlist(lapply(templ, function(res) sqrt(res$value))), 5),
+  MSE = round(unlist(lapply(templ, function(res) res$value)), 5),
   Num_weights_gt0 = unlist(lapply(templ, function(res) sum(res$par > 0))),
   Weights_pruned = unlist(lapply(templ, function(res) paste0(round(100 * (1 - sum(res$par > 0) / length(res$par)), 2), "%"))),
   Num_iter = unlist(lapply(templ, function(res) res$counts["function"])),
@@ -3353,6 +3355,7 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
       results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
       weightGrid = ac_weight_grid, weightVector = temp.weights),
+    RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
   ))
@@ -3519,7 +3522,6 @@ This means that it is more important to sample from a process in these segments,
 The variables seem to be almost equally important on average. However, when we look at the total importance (that is, the sum of the weights per segment/metric/variable), this changes drastically, making the `FREQ` variable the most important.
 Comparing average and total importance per type of metric is inconsistent, too, with the exception of the metrics `area`, `mae` (which is the same), and `rmse` being least important in either scenario.
 Similarly, the signal theory metrics keep their importance between average and total.
-The impulse factor divides the process' peak by its average and is therefore sensitive to perturbations of the entire signal and not just its extremes. A difference between `Peak` and `ImpulseFactor` could indicate that in fact differences between process and model exist.
 A higher total than average importance could indicate that while a metric is suitable to quantify differences, comparatively many instance of it are required to accommodate the variance found in the observations.
 
 
