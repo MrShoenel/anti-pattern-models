@@ -2488,7 +2488,7 @@ In the following, we'll basically repeat calculating the correlation scores of a
 For every cumulative quantity we should apply some smoothing in order to get usable gradients. This applies to all projects in all comparisons, as well as to process model III, since its variables are weighted averages of such quantities.
 
 ```{r}
-get_smoothed_signal_d1 <- function(name, func) {
+get_smoothed_signal_d1 <- function(name, func, use_span) {
   xvals <- seq(from = 0, to = 1, length.out = 1e4)
   func <- smooth_signal_loess(
     x = xvals, y = func(xvals),
@@ -2504,25 +2504,25 @@ get_smoothed_signal_d1 <- function(name, func) {
 
 ```{r echo=FALSE}
 p4p1_it_signals <- list(
-  "REQ"  = get_smoothed_signal_d1(name = "p4p1_it_REQ",  func = req),
-  "DEV"  = get_smoothed_signal_d1(name = "p4p1_it_DEV",  func = dev),
-  "DESC" = get_smoothed_signal_d1(name = "p4p1_it_DESC", func = desc))
+  "REQ"  = get_smoothed_signal_d1(name = "p4p1_it_REQ",  func = req,  use_span = use_span),
+  "DEV"  = get_smoothed_signal_d1(name = "p4p1_it_DEV",  func = dev,  use_span = use_span),
+  "DESC" = get_smoothed_signal_d1(name = "p4p1_it_DESC", func = desc, use_span = use_span))
 
 p4p1_it_projects <- time_warp_wrapper(pattern = p4p1_it_signals, derive = TRUE)
 
 
 p4p2a_it_signals <- list(
-  "REQ"  = get_smoothed_signal_d1(name = "p4p2a_it_REQ",  func = req_p2a),
-  "DEV"  = get_smoothed_signal_d1(name = "p4p2a_it_DEV",  func = dev_p2a),
-  "DESC" = get_smoothed_signal_d1(name = "p4p2a_it_DESC", func = desc_p2a))
+  "REQ"  = get_smoothed_signal_d1(name = "p4p2a_it_REQ",  func = req_p2a,  use_span = use_span),
+  "DEV"  = get_smoothed_signal_d1(name = "p4p2a_it_DEV",  func = dev_p2a,  use_span = use_span),
+  "DESC" = get_smoothed_signal_d1(name = "p4p2a_it_DESC", func = desc_p2a, use_span = use_span))
 
 p4p2a_it_projects <- time_warp_wrapper(pattern = p4p2a_it_signals, derive = TRUE)
 
 
 p4p3_it_signals <- list(
-  "REQ"  = get_smoothed_signal_d1(name = "p4p3_it_REQ",  func = req_p3),
-  "DEV"  = get_smoothed_signal_d1(name = "p4p3_it_DEV",  func = dev_p3),
-  "DESC" = get_smoothed_signal_d1(name = "p4p3_it_DESC", func = desc_p3))
+  "REQ"  = get_smoothed_signal_d1(name = "p4p3_it_REQ",  func = req_p3,  use_span = use_span),
+  "DEV"  = get_smoothed_signal_d1(name = "p4p3_it_DEV",  func = dev_p3,  use_span = use_span),
+  "DESC" = get_smoothed_signal_d1(name = "p4p3_it_DESC", func = desc_p3, use_span = use_span))
 
 p4p3_it_projects <- time_warp_wrapper(pattern = p4p3_it_signals, derive = TRUE)
 ```
@@ -5129,7 +5129,10 @@ ac_grid_projects_results_it <- loadResultsOrCompute(file = "../results/ac_grid_p
       tempf <- project_signals_all[[params$Project]][[params$Var]]$get0Function()
       use_deriv <- params$PM %in% c("IV(I)", "IV(II(a))", "IV(III)")
       p_var <- if (use_deriv) {
-        get_smoothed_signal_d1(name = "foo", func = tempf)$get0Function()
+        # If using the derivative, we approximate a somewhat smooth function of the variable.
+        # The recommended span is >= 0.2, and we'll use the value 0.35 as this was also the
+        # span used for smoothing the projects' variables.
+        get_smoothed_signal_d1(name = "foo", func = tempf, use_span = 0.35)$get0Function()
       } else {
         tempf
       }
