@@ -5330,6 +5330,14 @@ ac_it_weights_pm_III <- ac_it_weights_optim(pmName = "III")
 ac_it_weights_pm_IV_I <- ac_it_weights_optim(pmName = "IV(I)")
 ac_it_weights_pm_IV_IIa <- ac_it_weights_optim(pmName = "IV(II(a))")
 ac_it_weights_pm_IV_III <- ac_it_weights_optim(pmName = "IV(III)")
+
+# Also, load the optimization results using the Log-score as objective:
+ac_it_weights_pm_I_Log <- ac_it_weights_optim(pmName = "I", useLog = TRUE)
+ac_it_weights_pm_IIa_Log <- ac_it_weights_optim(pmName = "II(a)", useLog = TRUE)
+ac_it_weights_pm_III_Log <- ac_it_weights_optim(pmName = "III", useLog = TRUE)
+ac_it_weights_pm_IV_I_Log <- ac_it_weights_optim(pmName = "IV(I)", useLog = TRUE)
+ac_it_weights_pm_IV_IIa_Log <- ac_it_weights_optim(pmName = "IV(II(a))", useLog = TRUE)
+ac_it_weights_pm_IV_III_Log <- ac_it_weights_optim(pmName = "IV(III)", useLog = TRUE)
 ```
 
 ```{r echo=FALSE}
@@ -5342,12 +5350,33 @@ templ <- list(
   ac_it_weights_pm_IV_III)
 temp <- data.frame(
   PM = c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)"),
+  Objective = rep("MSE", 6),
+  Solution = round(unlist(lapply(templ, function(res) res$value)), 5),
   RMSE = round(unlist(lapply(templ, function(res) sqrt(res$value))), 5),
-  MSE = round(unlist(lapply(templ, function(res) res$value)), 5),
-  Num_weights_gt0 = unlist(lapply(templ, function(res) sum(res$par > 0))),
-  Weights_pruned = unlist(lapply(templ, function(res) paste0(round(100 * (1 - sum(res$par > 0) / length(res$par)), 2), "%"))),
-  Num_iter = unlist(lapply(templ, function(res) res$counts["function"])),
-  Num_grad = unlist(lapply(templ, function(res) res$counts["gradient"])))
+  Num_w_gt0 = unlist(lapply(templ, function(res) sum(res$par > 0))),
+  Perc_w_pruned = unlist(lapply(templ, function(res) paste0(round(100 * (1 - sum(res$par > 0) / length(res$par)), 2), "%"))),
+  Iter = unlist(lapply(templ, function(res) res$counts["function"])),
+  Iter_grad = unlist(lapply(templ, function(res) res$counts["gradient"])))
+
+
+templ <- list(
+  ac_it_weights_pm_I_Log,
+  ac_it_weights_pm_IIa_Log,
+  ac_it_weights_pm_III_Log,
+  ac_it_weights_pm_IV_I_Log,
+  ac_it_weights_pm_IV_IIa_Log,
+  ac_it_weights_pm_IV_III_Log)
+temp <- rbind(temp, data.frame(
+  PM = c(
+    "I", "II(a)", "III",
+    "IV(I)", "IV(II(a))", "IV(III)"),
+  Objective = rep("Log-Score", 1),
+  Solution = round(unlist(lapply(templ, function(res) res$value)), 5),
+  RMSE = rep(NA_real_, 6),
+  Num_w_gt0 = unlist(lapply(templ, function(res) sum(res$par > 0))),
+  Perc_w_pruned = unlist(lapply(templ, function(res) paste0(round(100 * (1 - sum(res$par > 0) / length(res$par)), 2), "%"))),
+  Iter = unlist(lapply(templ, function(res) res$counts["function"])),
+  Iter_grad = unlist(lapply(templ, function(res) res$counts["gradient"]))))
 
 if (interactive()) {
   temp
@@ -5355,7 +5384,7 @@ if (interactive()) {
   knitr::kable(
     x = temp,
     booktabs = TRUE,
-    caption = "Overview of the results of optimizing the weights using the normalizing linear scalarizer objective, on a per-project basis, for issue-tracking process models.",
+    caption = "Overview of the results of optimizing the weights using the normalizing linear scalarizer objective, on a per-project basis, for issue-tracking process models. Shown are results once minimized using the MSE, and once using the Log-score.",
     label = "ac-it-weights-optim-overview"
   )
 }
@@ -5372,38 +5401,41 @@ temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_scor
 
 temp.df <- NULL
 
-for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
-  temp.weights <- switch (
-    pmName,
-    "I" = ac_it_weights_pm_I$par,
-    "II(a)" = ac_it_weights_pm_IIa$par,
-    "III" = ac_it_weights_pm_III$par,
-    "IV(I)" = ac_it_weights_pm_IV_I$par,
-    "IV(II(a))" = ac_it_weights_pm_IV_IIa$par,
-    "IV(III)" = ac_it_weights_pm_IV_III$par,
-    {
-      stop(paste0("Unknown process model: ", pmName))
-    })
-  temp.pred <- data.frame(
-    pred = sapply(X = names(temp), function(pName) ac_pmp_score_weighted(
-      results_uniform = ac_grid_projects_results_uniform_it,
-      pmName = pmName, projName = pName, weightGrid = ac_weight_grid_it, weightVector = temp.weights)),
-    ground_truth = temp.gt)
-  
-  temp.df <- rbind(temp.df, data.frame(
-    PM = pmName,
-    Score_for_best = ac_pmp_score_weighted(
-      results_uniform = ac_grid_projects_results_uniform_it,
-      pmName = pmName, projName = paste0("Project", which.max(temp.gt)),
-      weightGrid = ac_weight_grid_it, weightVector = temp.weights),
-    Score_for_worst = ac_pmp_score_weighted(
-      results_uniform = ac_grid_projects_results_uniform_it,
-      pmName = pmName, projName = paste0("Project", which.min(temp.gt)),
-      weightGrid = ac_weight_grid_it, weightVector = temp.weights),
-    RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
-    MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
-    Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
-  ))
+for (useLog in c(FALSE, TRUE)) {
+  for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
+    temp.weights <- switch (
+      pmName,
+      "I" = if (useLog) ac_it_weights_pm_I_Log$par else ac_it_weights_pm_I$par,
+      "II(a)" = if (useLog) ac_it_weights_pm_IIa_Log$par else ac_it_weights_pm_IIa$par,
+      "III" = if (useLog) ac_it_weights_pm_III_Log$par else ac_it_weights_pm_III$par,
+      "IV(I)" = if (useLog) ac_it_weights_pm_IV_I_Log$par else ac_it_weights_pm_IV_I$par,
+      "IV(II(a))" = if (useLog) ac_it_weights_pm_IV_IIa_Log$par else ac_it_weights_pm_IV_IIa$par,
+      "IV(III)" = if (useLog) ac_it_weights_pm_IV_III_Log$par else ac_it_weights_pm_IV_III$par,
+      {
+        stop(paste0("Unknown process model: ", pmName))
+      })
+    temp.pred <- data.frame(
+      pred = sapply(X = names(temp), function(pName) ac_pmp_score_weighted(
+        results_uniform = ac_grid_projects_results_uniform_it,
+        pmName = pmName, projName = pName, weightGrid = ac_weight_grid_it, weightVector = temp.weights)),
+      ground_truth = temp.gt)
+    
+    temp.df <- rbind(temp.df, data.frame(
+      PM = pmName,
+      Score_for_best = ac_pmp_score_weighted(
+        results_uniform = ac_grid_projects_results_uniform_it,
+        pmName = pmName, projName = paste0("Project", which.max(temp.gt)),
+        weightGrid = ac_weight_grid_it, weightVector = temp.weights),
+      Score_for_worst = ac_pmp_score_weighted(
+        results_uniform = ac_grid_projects_results_uniform_it,
+        pmName = pmName, projName = paste0("Project", which.min(temp.gt)),
+        weightGrid = ac_weight_grid_it, weightVector = temp.weights),
+      Obj = if (useLog) "Log" else "MSE",
+      RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
+      MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
+      Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+    ))
+  }
 }
 ```
 
