@@ -5274,10 +5274,31 @@ We will optimize the weights once for each process model, and then follow this u
 
 ```{r}
 temp.names <- names(append(all_signals, all_signals_2nd_batch))
-ac_it_weights_optim <- function(pmName) {
-  loadResultsOrCompute(file = paste0("../results/ac_it_weights_pm_", pmName, ".rds"), computeExpr = {
+temp.objLog <- function(x) {
+  temp.pred <- data.frame(
+    ground_truth = temp.gt,
+    pred = sapply(X = temp.names, FUN = function(projName) {
+      ac_pmp_score_weighted(
+        pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
+        results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
+    }))
+  
+  mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+}
+
+temp.objMSE <- function(x) {
+  Metrics::mse(actual = temp.gt, predicted = sapply(X = temp.names, FUN = function(projName) {
+    ac_pmp_score_weighted(
+      pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
+      results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
+  }))
+}
+
+ac_it_weights_optim <- function(pmName, useLog = FALSE) {
+  loadResultsOrCompute(file = paste0("../results/ac_it_weights_pm_", pmName, (if (useLog) "_Log"), ".rds"), computeExpr = {
     cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
     parallel::clusterExport(cl, varlist = list(
+      "temp.objLog", "temp.objMSE",
       "temp.gt", "temp.names", "ac_pmp_score_weighted",
       "ac_weight_grid_it", "ac_grid_projects_results_uniform_it"))
 
@@ -5288,10 +5309,7 @@ ac_it_weights_optim <- function(pmName) {
         lower = rep(0, nrow(ac_weight_grid_it)),
         upper = rep(1, nrow(ac_weight_grid_it)),
         fn = function(x) {
-          Metrics::mse(actual = temp.gt, predicted = sapply(X = temp.names, FUN = function(projName) {
-            ac_pmp_score_weighted(pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
-                                  results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
-          }))
+          if (useLog) temp.objLog(x) else temp.objMSE(x)
         },
         parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
       )
