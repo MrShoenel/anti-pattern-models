@@ -5392,6 +5392,7 @@ if (interactive()) {
 
 Table \ref{tab:ac-it-weights-optim-overview} gives on overview of the optimization results, which are quite diverse.
 Similarly to the source code PMs, it appears that the expert-designed models of type I are also the worst after optimization, requiring many weights $>0$ to achieve a low (R)MSE.
+Running the minimization with the Log-score in significantly smaller models for the non-derivative PMs. However, this was just a test, and we should not derive any conclusions from the Log-score results. This is because technically, the Log-score assumes mutually-exclusive, discrete classes (which we do not have). So the test was wether or not some optimization can be reached using another objective.
 
 
 
@@ -5452,21 +5453,33 @@ if (interactive()) {
 }
 ```
 
-Unlike the optimized models for issue-tracking data, we have a clear champion model here, type IV(II(a)) (time-derivative model of type II(a)).
-It has the highest score for the best project, the lowest score for the worst project (and hence also the largest spread), as well as the lowest MSE- and Log-scores (cf. table \ref{tab:ac-compare-pms-it-optim}).
-With an RMSE of $\approx0.16$ we should be close to or have a usable (in practice) model.
 
-A general observation is that the derivative version of each PM is always better in any regard (best/worst, spread, (R)MSE- and Log-score) when compared to its non-derivative ancestral model.
+The results of table \ref{tab:ac-compare-pms-it-optim} indicate that there is no clear winner, although there are some remarkable results.
+First of all, the MSE of the derivative models that were also optimized using the MSE is consistently lower compared to their non-derivative counterparts.
 This means that we can make the general statement that using a derivative version of any PM is better for indicating the degree to which the Fire Drill is present in a project. It is also likely that the derivative models resemble the derivative observations better, or that the evaluated metrics possess more explanatory power in a derivative scenario.
+Secondly, using the Log-score as objective during optimization, it is possible to actually achieve comparatively low Log-scores, sometimes even in combination with a low MSE.
+The optimization increased the margin between the scores for worst/best project for all PMs significantly.
+One of the perhaps best results is PM type IV(II(a)) using MSE, as it has the largest margin, lowest Log-score, and is along the PMs with lowest MSE.
+An RMSE $<\approx0.2$ means that the models is perhaps already usable in practice.
 
-If we inspect the metrics used in the champion model, it unveils the following (table \ref{tab:ac-it-details-pm-iv-iia}):
-Except for one usage of `corr`, all other metrics are signal theory metrics, with the `ImpulseFactor` being used $5$ out of $8$ times!
+
+#### Detailed results derivative models
+
+If we inspect the metrics used in the picked champion model (IV(II(a))/MSE), we can make some very interesting observations (table \ref{tab:ac-it-details-pm-iv-iia}).
+Using only six objectives in total, only one of them is the `ImpulseFactor`, while the other five are correlation.
+Remember that the derivative depicts the rate of change, which means that absolute differences such as `area`, `mae`, or `rmse` become useless the more similar two curves are, since all curves now have an intercept of $0$.
+Derivative PMs and observations can result in signals with extreme amplitudes.
+So apparently, comparing rate-of-change models is done most effectively using the correlation.
+If we translate this to our concrete use case, it means that if a project's activities' rate of change (i.e., in-/decrease) correlates well with how the PM models the rate of change, then the Fire Drill is likely present (quite logical). It could however also indicate that we did a better job designing how the variables change, while we did a worse job designing the actual magnitudes.
+
+Furthermore, this model does not cover the segments $\{1,3,6,9\}$, but is still able to detect the presence (or absence) of the Fire Drill with great confidence.
 The impulse factor divides the process' peak by its average and is therefore sensitive to perturbations of the entire signal and not just its extremes. A difference between `Peak` and `ImpulseFactor` could indicate that in fact differences between process and model exist.
-Derivative PMs and observations can result in signals with extreme amplitudes, and the excessive use of signal theory metrics could indicate that such extremes are suitable and more appropriate in derivative scenarios.
 
 
 ```{r echo=FALSE}
 temp <- ac_weight_grid_it[ac_it_weights_pm_IV_IIa$par > 0, ]
+temp$weight <- round(ac_it_weights_pm_IV_IIa$par[ac_it_weights_pm_IV_IIa$par > 0], 3)
+
 if (interactive()) {
   temp
 } else {
@@ -5479,6 +5492,77 @@ if (interactive()) {
   )
 }
 ```
+
+
+```{r echo=FALSE}
+temp <- cbind(ac_weight_grid_it, data.frame(weight = ac_it_weights_pm_IV_I$par + ac_it_weights_pm_IV_IIa$par + ac_it_weights_pm_IV_III$par))
+#temp$weight <- temp$weight / max(temp$weight) # let's normalize this again
+temp <- temp[temp$weight > 0,]
+temp <- temp[order(-temp$weight),]
+```
+
+
+```{r ac-it-weights-detailed-plot, echo=FALSE, fig.height=8, fig.cap="Average and total importances of scores per segment, variable, and metric, for derivative process models (optimized using MSE)."}
+layout(mat = matrix(data = c(1,3,2,4,5,5,6,6), ncol = 2, byrow = TRUE))
+
+temp.seg <- `names<-`(sapply(X = 1:10, FUN = function(si) {
+  weights <- temp[temp$SegIdx == si,]$weight
+  if (length(weights) == 0) 0 else mean(weights)
+}), paste0(1:10))
+barplot(temp.seg, main = "Average importance per segment")
+grid()
+temp.seg <- `names<-`(sapply(X = 1:10, FUN = function(si) {
+  weights <- temp[temp$SegIdx == si,]$weight
+  if (length(weights) == 0) 0 else sum(weights)
+}), paste0(1:10))
+barplot(temp.seg, main = "Total importance per segment")
+grid()
+
+
+temp.var <- `names<-`(sapply(X = sort(unique(temp$Var)), function(var) {
+  weights <- temp[temp$Var == var,]$weight
+  if (length(weights) == 0) 0 else mean(weights)
+}), sort(unique(temp$Var)))
+barplot(temp.var, main = "Average importance per variable")
+grid()
+temp.var <- `names<-`(sapply(X = sort(unique(temp$Var)), function(var) {
+  weights <- temp[temp$Var == var,]$weight
+  if (length(weights) == 0) 0 else sum(weights)
+}), sort(unique(temp$Var)))
+barplot(temp.var, main = "Total importance per variable")
+grid()
+
+
+temp.metric <- `names<-`(sapply(X = sort(unique(temp$Metric)), function(m) {
+  weights <- temp[temp$Metric == m,]$weight
+  if (length(weights) == 0) 0 else mean(weights)
+}), sort(unique(temp$Metric))) #%>% sort %>% rev
+# We need to shorten some metrics' names:
+names(temp.metric) <- sapply(names(temp.metric), function(m) {
+  if (m == "Kurtosis") return("Kurt.")
+  if (m == "ImpulseFactor") return("ImpFac")
+  m
+})
+barplot(temp.metric, main = "Average importance per metric")
+grid()
+
+
+temp.metric <- `names<-`(sapply(X = sort(unique(temp$Metric)), function(m) {
+  weights <- temp[temp$Metric == m,]$weight
+  if (length(weights) == 0) 0 else sum(weights)
+}), sort(unique(temp$Metric))) #%>% sort %>% rev
+# We need to shorten some metrics' names:
+names(temp.metric) <- sapply(names(temp.metric), function(m) {
+  if (m == "Kurtosis") return("Kurt.")
+  if (m == "ImpulseFactor") return("ImpFac")
+  m
+})
+barplot(temp.metric, main = "Total importance per metric")
+grid()
+```
+
+Interestingly, the derivative models only use the correlation and the impulse factor, with correlation being much more frequently used (see figure \ref{fig:ac-it-weights-detailed-plot}).
+This is interesting, because those two metrics are cheap to compute and straightforward to understand.
 
 
 # References {-}
