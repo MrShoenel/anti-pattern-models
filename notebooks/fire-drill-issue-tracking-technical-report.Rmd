@@ -1456,6 +1456,41 @@ CI_dev_p3avg(x = use_x, all_signals$Project4$DEV$get0Function()(use_x))
 At `x=0.8`, the average variable is at $\approx0.71$, the average confidence for the slice is $\approx0.19$, and the confidence of the evaluated variable (project 4, `DEV`) is at $\approx0.22$. This means that the ratio is in the interval $(0,\infty)$. A "perfect" ratio of $1.0$ would express that the tested variable is, on average, equal to the average confidence.
 
 
+## _f_-divergences as objectives
+
+f-divergences describe the divergence between two continuous _random_ variables, not between two continuous non-random variables (processes).
+As we will show, however, it is possible to mimic the most important properties of random variables, making f-divergences applicable to any continuous process.
+The computation of any such divergence can be understood as an aggregation of all point-wise differences.
+f-divergences are _convex_ functions that express by how much one quantity diverges from the other using a ratio. Therefore, a ratio of $1$ results in a divergence of $0$, and any other ratio in a divergence $>0$.
+Three properties are required to mimic random variables. First, for a continuous process $f:\mathbb{R}\mapsto\mathbb{R}$, for all realizations $x\in\mathcal{X}$, $f(x)\geq0$. Second, the integral of $f=1$, i.e., $\int_{\mathcal{X}}\,f=1$. And third, _Absolute continuity_ between $f$ and a second continuous process $g$ is required, that is, the domains of $f$ and $g$ must coincide.
+Absolute continuity, sharing the same support, is especially required in cases where the segments of the PM and the process are not the same, which might by a valid case for some objectives.
+
+In many cases it might be feasible to fulfill all three properties.
+The first one is perhaps just a translation of $f$ by defining $f'=f-\argmin{f}$. When designing a PM, this property can be conveniently considered.
+The second property requires the first to hold. Then, $f$ can perhaps be scaled by defining $f''=f'\div\int\,f'$.
+For fulfilling the third property, we suggest using a transform- and scale-operator, $\mathsf{T}$ \eqref{eq:transf-op}.
+Consider the example of the Kullback--Leibler divergence between distributions $P,Q$, and their resp. densities $p,q$ \eqref{eq:kl-div}.
+Plugging in the transform operator $\mathsf{T}$ allows us to define a ``relative'' variant of the divergence \eqref{eq:kl-div-rel}.
+Another advantage is that integration intervals simplify to $[0,1]$ \eqref{eq:kl-div-rel-int}, which is beneficial to any measurement operator or objective.
+
+
+\begin{align}
+    \mathsf{T}(a,b,x)=&\;a+x(b-a)\label{eq:transf-op}\text{,}
+    \\[1ex]
+    D_{\text{KL}}\left(P\,\|\,Q\right)=&\;\int_{-\infty}^{\infty}\,p(x)\log{\left(\frac{p(x)}{q(x)}\right)}\,dx\label{eq:kl-div}\text{,}
+    \\[1em]
+    a_P,b_P,a_Q,b_Q\;\dots&\;\text{supports for}\;p,q\text{ (known a priori),}\nonumber
+    \\[1ex]
+    D_{\text{KL}}^{\text{rel}}\left(P\,\|\,Q\right)=&\;p\big(\mathsf{T}(a_P,b_P,x)\big)\log{\left(\frac{p\big(\mathsf{T}(a_P,b_P,x)\big)}{q\big(\mathsf{T}(a_Q,b_Q,x)\big)}\right)}\label{eq:kl-div-rel}\text{, where}
+    \\[1ex]
+    \operatorname{supp}\left(D_{\text{KL}}^{\text{rel}}\left(P\,\|\,Q\right)\right)=&\;[0,1]\nonumber\text{,}
+    \\[1ex]
+    %\operatorname{supp}\Big(D_{\text{KL}}^{\text{rel}}(P\,\|\,Q)\Big)=&\;[0,1]\;\text{, so the divergence}\;d_{PQ}\;\text{becomes}\nonumber
+    %\\[1ex]
+    d_{PQ}=&\;\int_0^1\,D_{\text{KL}}^{\text{rel}}\left(P\,\|\,Q\right)\,dx\label{eq:kl-div-rel-int}\text{.}
+\end{align}
+
+
 ## $m$-dimensional relative continuous Pearson sample correlation coefficient
 
 First, here is the formula:
@@ -2061,8 +2096,8 @@ $$
     \\
     0,&\text{if}\;f_{\text{upper}}(x)>\operatorname{CI}_{\text{upper}}(x),
     \\
-    \operatorname{CI}(x,y),&\text{otherwise}
-  \end{cases}\;\text{,}
+    \operatorname{CI}(x,y),&\text{otherwise,}
+  \end{cases}
   \\[1em]
   \text{average confidence}\;=&\;\int_a^b\bigg[\int_{f_{\text{lower}}(x)}^{f_{\text{upper}}(x)}\,\operatorname{CI}_{\text{overlap}}(x,y)\times\big(f_{\text{upper}}(x)-f_{\text{lower}}(x)\big)^{-1}\,dy\bigg]\times(b-a)^{-1}\,dx\;\text{.}
 \end{aligned}
