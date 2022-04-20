@@ -4936,18 +4936,43 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, re
   
   sum(res) / sum(weightVector)
 }
+```
 
-get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE) {
+
+```{r echo=FALSE}
+# This function works a bit different for issue-tracking data, as here we
+# have exclusively cumulative quantities.
+# Also, the DESC variable is special in that it can never reach 1, as it
+# normalized by the amount of activities in the DEV variable. Them mean of
+# DESC(1) is ~0.125 and the max is ~0.58. Therefore, we will assume a maximum
+# de-scoping of 2/3.
+# unlist(lapply(append(all_signals, all_signals_2nd_batch), function(p) p$DESC$get0Function()(1)))
+get_smoothed_curve <- function(seed = NA, npoints = 15, include_deriv = FALSE, issue_tracking = FALSE, desc_var = FALSE) {
   if (!is.na(seed)) {
     set.seed(seed = seed)
   }
   
-  x <- sort(c(0, 1, runif(npoints - 2)))
-  y <- runif(length(x))
+  x <- sort(c(0, 1, runif(n = npoints - 2)))
+  y <- runif(n = length(x), min = 0, max = if (issue_tracking && desc_var) runif(n = 1, max = 2/3) else 1)
+  if (issue_tracking) {
+    # For issue-tracking, we exclusively have cumulative (monotonically increasing)
+    # quantities that start at 0.
+    y <- sort(y)
+    y[1] <- 0
+  }
+  
+  
   temp <- loess.smooth(x = x, y = y, span = 0.35, family = "g", evaluation = 1000)
+  if (issue_tracking) {
+    temp$y <- sort(temp$y) - min(temp$y)
+  }
   appr <- stats::approxfun(
     x = ((temp$x - min(temp$x)) / (max(temp$x) - min(temp$x))),
-    y = temp$y / (max(temp$x) - min(temp$x)),
+    y = if (issue_tracking && !desc_var) {
+      temp$y / (max(temp$y) - min(temp$y))
+    } else {
+      temp$y / (max(temp$x) - min(temp$x))
+    },
     yleft = utils::head(temp$y, 1),
     yright = utils::tail(temp$y, 1))
   
@@ -5034,7 +5059,7 @@ ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it
       )[[params$Var]]$get0Function()
       
       include_deriv <- params$PM %in% c("IV(I)", "IV(II(a))", "IV(III)")
-      smooth_curve <- get_smoothed_curve(seed = params$Seed, include_deriv = include_deriv)
+      smooth_curve <- get_smoothed_curve(seed = params$Seed, include_deriv = include_deriv, issue_tracking = TRUE, desc_var = params$Var == "DESC")
       p_var <- if (include_deriv) smooth_curve$f1 else smooth_curve$f0
       
       df <- NULL
