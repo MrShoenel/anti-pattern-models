@@ -2992,6 +2992,36 @@ if (interactive()) {
 ```
 
 The scores from the automatically calibrated decision rule are shown in table \ref{tab:ac-it-dr-scores}.
+
+We should also examine the scores more in detail for both configurations of weights, and find out what were the scores for the best/worst projects.
+
+```{r}
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+
+temp.df <- NULL
+
+for (confName in c("all_equal", "pref_reqt1")) {
+  temp.weight <- if (confName == "all_equal") 1 else 2
+  temp.pred <- data.frame(
+    pred = sapply(X = names(temp), function(pName) ac_p1_dr(projName = pName, signals = temp, w_reqt1 = temp.weight)),
+    ground_truth = temp.gt)
+  
+  temp.df <- rbind(temp.df, data.frame(
+    Config = confName,
+    Score_for_best = ac_p1_dr(signals = temp, projName = paste0("Project", which.max(temp.gt))),
+    Score_for_worst = ac_p1_dr(signals = temp, projName = paste0("Project", which.min(temp.gt))),
+    Score_mean = mean(temp.pred$pred),
+    RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
+    MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
+    Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
+  ))
+}
+
+rownames(temp.df) <- NULL
+temp.df
+```
+
+
 Next, we will check the correlation with the ground truth.
 
 ```{r}
@@ -4939,6 +4969,15 @@ ac_pmp_score_weighted <- function(pmName, projName, weightGrid, weightVector, re
 ```
 
 
+Another notable difference is how we simulate the random processes. While for source code, we could not make any assumptions how a random process may look, for issue tracking we can make and guarantee these:
+
+* Processes for issue-tracking data are monotonically increasing. Therefore, when we fit a curve through some random points, we will order them smallest to largest.
+* Furthermore, all processes start at $0,0$ (x/y). The variables `REQ` and `DEV` also always end at $1,1$.
+* While $DESC$ does never end at $y=1$ (it cannot as of the normalization through whatever amount `DEV` accumulated), we can conservably limit it to $y=\frac{2}{3}$.
+
+These assumptions, which will hold, should allow us to simulate random processes that much closer resemble the actual processes as we model them for issue tracking data. Therefore, we expect better outcomes than we did for source code data.
+
+
 ```{r echo=FALSE}
 # This function works a bit different for issue-tracking data, as here we
 # have exclusively cumulative quantities.
@@ -5015,7 +5054,7 @@ ac_grid_it <- loadResultsOrCompute(file = "../results/ac_grid_it.rds", computeEx
 nrow(ac_grid_it)
 ```
 
-Let's compute the full grid:
+Let's compute the full grid (warning -- expensive):
 
 ```{r ac-grid-results-it}
 ac_grid_results_it <- loadResultsOrCompute(file = "../results/ac_grid_results_it.rds", computeExpr = {
@@ -5268,6 +5307,9 @@ ac_grid_projects_results_uniform_it <- loadResultsOrCompute(file = "../results/a
 
 ### Non-weighted
 
+Let's have a look at how the calibrated models behave, without further fitting of weights.
+This will give us insights into which (family of) models is best suitable for predicting the ground truth (given the configuration).
+
 
 ```{r}
 temp <- append(all_signals, all_signals_2nd_batch)
@@ -5284,12 +5326,15 @@ for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
-    Score_for_best = ac_pmp_score(
-      use_metrics = temp.Metric,
-      pmName = pmName, projName = paste0("Project", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
     Score_for_worst = ac_pmp_score(
       use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("Project", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
+    Score_for_best = ac_pmp_score(
+      use_metrics = temp.Metric,
+      pmName = pmName, projName = paste0("Project", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
+    Score_low = min(temp.pred$pred),
+    Score_high = max(temp.pred$pred),
+    Score_mean = mean(temp.pred$pred),
     RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -5303,7 +5348,7 @@ if (interactive()) {
   temp.df
 } else {
   knitr::kable(
-    x = temp.df,
+    x = cbind(temp.df$PM, round(temp.df[, 2:ncol(temp.df)], 4)),
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using issue-tracking data for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus.",
     label = "ac-compare-pms-it"
@@ -5311,9 +5356,11 @@ if (interactive()) {
 }
 ```
 
-
-The results of table \ref{tab:ac-compare-pms-it} are quite OK on the surface, as all PMs consistently produce a higher score for the best project than they do for the worst.
-However, all the scores are quite bad, so there is room for improvement in terms of selecting the right objectives (weights).
+Table \ref{tab:ac-compare-pms-it} shows the results of the calibrated models. It is worth noting that we are looking at two families of models: the ordinary PMs, and the derivative PMs are in on family each.
+What we can see directly is that the derivative models all suffer from the inconsistency that the score for the best project is lower than the score for the worst project. The ordinary models do not have that problem. Also the MSE is much larger for derivative models.
+Another observation is that the score for best/worst is not necessarily the lowest/highest score predicted.
+The mean score in each family tells us which the best model is. Here, it is type III, and that is no big surprise, as it was derived from data, so it should resemble the observed projects best.
+However, looking at the spread of best/worst scores, it seems that there is room for improvement in terms of selecting the right objectives (weights).
 
 
 ### Weighted by optimization
@@ -5334,31 +5381,11 @@ We will optimize the weights once for each process model, and then follow this u
 
 ```{r}
 temp.names <- names(append(all_signals, all_signals_2nd_batch))
-temp.objLog <- function(x) {
-  temp.pred <- data.frame(
-    ground_truth = temp.gt,
-    pred = sapply(X = temp.names, FUN = function(projName) {
-      ac_pmp_score_weighted(
-        pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
-        results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
-    }))
-  
-  mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
-}
-
-temp.objMSE <- function(x) {
-  Metrics::mse(actual = temp.gt, predicted = sapply(X = temp.names, FUN = function(projName) {
-    ac_pmp_score_weighted(
-      pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
-      results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
-  }))
-}
 
 ac_it_weights_optim <- function(pmName, useLog = FALSE) {
   loadResultsOrCompute(file = paste0("../results/ac_it_weights_pm_", pmName, (if (useLog) "_Log"), ".rds"), computeExpr = {
     cl <- parallel::makePSOCKcluster(min(123, parallel::detectCores()))
     parallel::clusterExport(cl, varlist = list(
-      "temp.objLog", "temp.objMSE",
       "temp.gt", "temp.names", "ac_pmp_score_weighted",
       "ac_weight_grid_it", "ac_grid_projects_results_uniform_it"))
 
@@ -5369,7 +5396,23 @@ ac_it_weights_optim <- function(pmName, useLog = FALSE) {
         lower = rep(0, nrow(ac_weight_grid_it)),
         upper = rep(1, nrow(ac_weight_grid_it)),
         fn = function(x) {
-          if (useLog) temp.objLog(x) else temp.objMSE(x)
+          if (useLog) {
+            temp.pred <- data.frame(
+              ground_truth = temp.gt,
+              pred = sapply(X = temp.names, FUN = function(projName) {
+                ac_pmp_score_weighted(
+                  pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
+                  results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
+              }))
+            
+            return(mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred)))
+          } else {
+            return(Metrics::mse(actual = temp.gt, predicted = sapply(X = temp.names, FUN = function(projName) {
+              ac_pmp_score_weighted(
+                pmName = pmName, projName = projName, weightGrid = ac_weight_grid_it,
+                results_uniform = ac_grid_projects_results_uniform_it, weightVector = x)
+            })))
+          }
         },
         parallel = list(cl = cl, forward = FALSE, loginfo = TRUE)
       )
@@ -5451,8 +5494,10 @@ if (interactive()) {
 ```
 
 Table \ref{tab:ac-it-weights-optim-overview} gives on overview of the optimization results, which are quite diverse.
-Similarly to the source code PMs, it appears that the expert-designed models of type I are also the worst after optimization, requiring many weights $>0$ to achieve a low (R)MSE.
-Running the minimization with the Log-score in significantly smaller models for the non-derivative PMs. However, this was just a test, and we should not derive any conclusions from the Log-score results. This is because technically, the Log-score assumes mutually-exclusive, discrete classes (which we do not have). So the test was wether or not some optimization can be reached using another objective.
+All but model type IV(II(a)) could be pruned considerably (by $\approx97$% or more), which means that about $6-12$ objectives is enough to predict with a small deviation.
+Again, we observe a substantial difference between the families of ordinary and derived models, with the former performing considerably better.
+Running the minimization with the Log-score results in significantly smaller models. However, this was just a test, and we should not derive any conclusions from the Log-score results. This is because technically, the Log-score assumes mutually-exclusive, discrete classes (which we do not have).
+So the test was whether or not some optimization can be reached using another objective.
 
 
 
@@ -5505,7 +5550,8 @@ if (interactive()) {
   temp.df
 } else {
   knitr::kable(
-    x = temp.df,
+    x = cbind(data.frame(
+      PM = temp.df$PM, Obj = temp.df$Obj), round(temp.df[, c(2:3, 5:6)], 4)),
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using issue-tracking data for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using some best set of weights per PM as found by optimization.",
     label = "ac-compare-pms-it-optim"
@@ -5514,31 +5560,107 @@ if (interactive()) {
 ```
 
 
-The results of table \ref{tab:ac-compare-pms-it-optim} indicate that there is no clear winner, although there are some remarkable results.
-First of all, the MSE of the derivative models that were also optimized using the MSE is consistently lower compared to their non-derivative counterparts.
-This means that we can make the general statement that using a derivative version of any PM is better for indicating the degree to which the Fire Drill is present in a project. It is also likely that the derivative models resemble the derivative observations better, or that the evaluated metrics possess more explanatory power in a derivative scenario.
-Secondly, using the Log-score as objective during optimization, it is possible to actually achieve comparatively low Log-scores, sometimes even in combination with a low MSE.
-The optimization increased the margin between the scores for worst/best project for all PMs significantly.
-One of the perhaps best results is PM type IV(II(a)) using MSE, as it has the largest margin, lowest Log-score, and is along the PMs with lowest MSE.
-An RMSE $<\approx0.2$ means that the models is perhaps already usable in practice.
+The results of table \ref{tab:ac-compare-pms-it-optim} demonstrate that we can drastically improve the models by optimizing the variable importance.
+Going by lowest MSE and widest spread, the clear winner is perhaps again type III.
+Again, the family of derivative models has much higher MSEs, but we were able to correct the inconsistency for best/worst projects.
+
+In general we can say that the family of derivative models performs worse than their ordinary counter part. However, the performance of the derivative models is perhaps still acceptable in some scenarios, and from these results we can say that they work and are operationalizable, even if not the best.
+An MSE $<\approx0.1$ means that the models is perhaps already usable in practice.
+
+
+We also want to check what results are achievable using an ordinary Random forest.
+For that, we are going to use the champion model (type III).
+
+```{r echo=FALSE}
+temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
+projNames <- names(append(all_signals, all_signals_2nd_batch))
+temp <- matrix(nrow = length(projNames), ncol = 1 + nrow(ac_weight_grid_it))
+temp[, ncol(temp)] <- temp.gt
+
+for (i in 1:length(projNames)) {
+  for (j in 1:nrow(ac_weight_grid_it)) {
+    params <- ac_weight_grid_it[j,]
+    params$Var <- as.character(params$Var)
+    params$Metric <- as.character(params$Metric)
+    
+    temp[i, j] <- ac_grid_projects_results_uniform_it[
+      ac_grid_projects_results_uniform_it$PM == "III" &
+      ac_grid_projects_results_uniform_it$Metric == params$Metric &
+      ac_grid_projects_results_uniform_it$Var == params$Var &
+      ac_grid_projects_results_uniform_it$SegIdx == params$SegIdx, projNames[i]]
+  }
+}
+
+temp <- as.data.frame(temp)
+colnames(temp) <- c(paste0("w", 1:nrow(ac_weight_grid_it)), "gt")
+```
+
+```{r ac-it-weights-varimp-traditional}
+ac_it_weights_varimp <- loadResultsOrCompute(file = "../results/ac_it_weights_varimp.rds", computeExpr = {
+  doWithParallelCluster(numCores = min(8, parallel::detectCores()), expr = {
+    library(caret, quietly = TRUE)
+    
+    set.seed(1)
+    control <- caret::trainControl(method = "repeatedcv", number = 10, repeats = 3)
+    modelFit <- caret::train(gt ~., data = temp, method = "rf", trControl = control)
+    imp <- caret::varImp(object = modelFit)
+    
+    list("fit" = modelFit, "imp" = imp)
+  })
+})
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  print(ac_it_weights_varimp$fit$finalModel)
+} else {
+  # A little hack because otherwise it prints everything.
+  # The below is an exact copy of what is printed interactively.
+  cat("Call:
+ randomForest(x = x, y = y, mtry = param$mtry) 
+               Type of random forest: regression
+                     Number of trees: 500
+No. of variables tried at each split: 2
+
+          Mean of squared residuals: 0.09069598
+                    % Var explained: -2.75")
+}
+```
+
+The Random forest is overfit to the data, as the $R^2$ (explained variance) is negative, i.e., it is worse than a random guess.
+Therefore, it is hard to assess the validity of the obtained results for the variable importance.
+Let's take a look at the fitted model's performance (table \ref{tab:ac-it-weights-varimp-mse}):
+The MSE to beat was $\approx0.0096$, and the lowest MSE achieved by a Random forest was $\approx0.064$, which is an order of magnitude larger. So clearly, our variable importance approach is better.
+
+```{r echo=FALSE}
+ac_it_weights_varimp$fit$results$MSE <- ac_it_weights_varimp$fit$results$RMSE**2
+if (interactive()) {
+  ac_it_weights_varimp$fit$results
+} else {
+  knitr::kable(
+    x = ac_it_weights_varimp$fit$results,
+    booktabs = TRUE,
+    caption = "Best models of fitting of a Random forest to the calibrated data in order to assess the variable importance.",
+    label = "ac-it-weights-varimp-mse"
+  )
+}
+```
 
 
 #### Detailed results derivative models
 
-If we inspect the metrics used in the picked champion model (IV(II(a))/MSE), we can make some very interesting observations (table \ref{tab:ac-it-details-pm-iv-iia}).
-Using only six objectives in total, only one of them is the `ImpulseFactor`, while the other five are correlation.
-Remember that the derivative depicts the rate of change, which means that absolute differences such as `area`, `mae`, or `rmse` become useless the more similar two curves are, since all curves now have an intercept of $0$.
-Derivative PMs and observations can result in signals with extreme amplitudes.
-So apparently, comparing rate-of-change models is done most effectively using the correlation.
-If we translate this to our concrete use case, it means that if a project's activities' rate of change (i.e., in-/decrease) correlates well with how the PM models the rate of change, then the Fire Drill is likely present (quite logical). It could however also indicate that we did a better job designing how the variables change, while we did a worse job designing the actual magnitudes.
-
-Furthermore, this model does not cover the segments $\{1,3,6,9\}$, but is still able to detect the presence (or absence) of the Fire Drill with great confidence.
+If we inspect the metrics used in the picked champion model (III/MSE), we can make some very interesting observations (table \ref{tab:ac-it-details-pm-iii}).
+Using only twelve objectives in total (5/3/4 usages for `REQ`/`DEV`/`DESC`), we see that the by far most important objective is the `ImpulseFactor` on the `DESC` variable in segment $9$. This seems plausible, as the de-scoping is an important indicator for a project going awry, but only towards project end.
 The impulse factor divides the process' peak by its average and is therefore sensitive to perturbations of the entire signal and not just its extremes. A difference between `Peak` and `ImpulseFactor` could indicate that in fact differences between process and model exist.
+The next two most (and equally) important objectives are the standard deviation and the variance in segment $4$.
+Apart from the `arclen` in segment one and the `jsd` and `kl` in segment $10$, the rest of the objectives are signal metrics.
+
+Also, segments $\{2,3,6\}$ were not used and deemed unimportant. In other words, using only $7$/$10$ segments, the model is still able to detect the presence (or absence) of the Fire Drill with great confidence.
 
 
 ```{r echo=FALSE}
-temp <- ac_weight_grid_it[ac_it_weights_pm_IV_IIa$par > 0, ]
-temp$weight <- round(ac_it_weights_pm_IV_IIa$par[ac_it_weights_pm_IV_IIa$par > 0], 3)
+temp <- ac_weight_grid_it[ac_it_weights_pm_I$par > 0, ]
+temp$weight <- round(ac_it_weights_pm_I$par[ac_it_weights_pm_I$par > 0], 3)
 
 if (interactive()) {
   temp
@@ -5547,22 +5669,44 @@ if (interactive()) {
     x = temp,
     booktabs = TRUE,
     row.names = FALSE,
-    caption = "The metrics used in PM IV(II(a)). All but one metric are metrics from signal theory.",
-    label = "ac-it-details-pm-iv-iia"
+    caption = "The metrics used in PM III. All but one metric are metrics from signal theory.",
+    label = "ac-it-details-pm-iii"
   )
 }
 ```
 
 
 ```{r echo=FALSE}
-temp <- cbind(ac_weight_grid_it, data.frame(weight = ac_it_weights_pm_IV_I$par + ac_it_weights_pm_IV_IIa$par + ac_it_weights_pm_IV_III$par))
-#temp$weight <- temp$weight / max(temp$weight) # let's normalize this again
+#temp <- cbind(ac_weight_grid_it, data.frame(weight = ac_it_weights_pm_IV_I$par + ac_it_weights_pm_IV_IIa$par + ac_it_weights_pm_IV_III$par))
+temp <- cbind(ac_weight_grid_it, data.frame(
+  weight =
+    ac_it_weights_pm_I$par +
+    ac_it_weights_pm_IIa$par +
+    ac_it_weights_pm_III$par +
+    ac_it_weights_pm_I_Log$par +
+    ac_it_weights_pm_IIa_Log$par +
+    ac_it_weights_pm_III_Log$par
+))
+
+temp.deriv <- cbind(ac_weight_grid_it, data.frame(
+  weight =
+    ac_it_weights_pm_IV_I$par +
+    ac_it_weights_pm_IV_IIa$par +
+    ac_it_weights_pm_IV_III$par +
+    ac_it_weights_pm_IV_I_Log$par +
+    ac_it_weights_pm_IV_IIa_Log$par +
+    ac_it_weights_pm_IV_III_Log$par
+))
+
+
 temp <- temp[temp$weight > 0,]
 temp <- temp[order(-temp$weight),]
+temp.deriv <- temp.deriv[temp.deriv$weight > 0,]
+temp.deriv <- temp.deriv[order(-temp.deriv$weight),]
 ```
 
 
-```{r ac-it-weights-detailed-plot, echo=FALSE, fig.height=8, fig.cap="Average and total importances of scores per segment, variable, and metric, for derivative process models (optimized using MSE)."}
+```{r ac-it-weights-detailed-plot, echo=FALSE, fig.height=8, fig.cap="Average and total importances of scores per segment, variable, and metric, for the families of ordinary and derivative process models (optimized using MSE)."}
 layout(mat = matrix(data = c(1,3,2,4,5,5,6,6), ncol = 2, byrow = TRUE))
 
 temp.seg <- `names<-`(sapply(X = 1:10, FUN = function(si) {
@@ -5572,10 +5716,10 @@ temp.seg <- `names<-`(sapply(X = 1:10, FUN = function(si) {
 barplot(temp.seg, main = "Average importance per segment")
 grid()
 temp.seg <- `names<-`(sapply(X = 1:10, FUN = function(si) {
-  weights <- temp[temp$SegIdx == si,]$weight
-  if (length(weights) == 0) 0 else sum(weights)
+  weights <- temp.deriv[temp.deriv$SegIdx == si,]$weight
+  if (length(weights) == 0) 0 else mean(weights)
 }), paste0(1:10))
-barplot(temp.seg, main = "Total importance per segment")
+barplot(temp.seg, main = "Average importance per segment (derivative)")
 grid()
 
 
@@ -5586,10 +5730,10 @@ temp.var <- `names<-`(sapply(X = sort(unique(temp$Var)), function(var) {
 barplot(temp.var, main = "Average importance per variable")
 grid()
 temp.var <- `names<-`(sapply(X = sort(unique(temp$Var)), function(var) {
-  weights <- temp[temp$Var == var,]$weight
-  if (length(weights) == 0) 0 else sum(weights)
+  weights <- temp.deriv[temp.deriv$Var == var,]$weight
+  if (length(weights) == 0) 0 else mean(weights)
 }), sort(unique(temp$Var)))
-barplot(temp.var, main = "Total importance per variable")
+barplot(temp.var, main = "Average importance per variable (derivative)")
 grid()
 
 
@@ -5606,10 +5750,9 @@ names(temp.metric) <- sapply(names(temp.metric), function(m) {
 barplot(temp.metric, main = "Average importance per metric")
 grid()
 
-
 temp.metric <- `names<-`(sapply(X = sort(unique(temp$Metric)), function(m) {
-  weights <- temp[temp$Metric == m,]$weight
-  if (length(weights) == 0) 0 else sum(weights)
+  weights <- temp.deriv[temp.deriv$Metric == m,]$weight
+  if (length(weights) == 0) 0 else mean(weights)
 }), sort(unique(temp$Metric))) #%>% sort %>% rev
 # We need to shorten some metrics' names:
 names(temp.metric) <- sapply(names(temp.metric), function(m) {
@@ -5617,12 +5760,18 @@ names(temp.metric) <- sapply(names(temp.metric), function(m) {
   if (m == "ImpulseFactor") return("ImpFac")
   m
 })
-barplot(temp.metric, main = "Total importance per metric")
+barplot(temp.metric, main = "Average importance per metric (derivative)")
 grid()
 ```
 
-Interestingly, the derivative models only use the correlation and the impulse factor, with correlation being much more frequently used (see figure \ref{fig:ac-it-weights-detailed-plot}).
-This is interesting, because those two metrics are cheap to compute and straightforward to understand.
+In figure \ref{fig:ac-it-weights-detailed-plot} we compare importances between the two families of ordinary and derivative process models.
+It appears that the latter type of models make a more even use across all segments, while ordinary models focus their attention more on some segments than on others.
+In both cases, the `DESC` variable is the most important, followed by `REQ`.
+Correlation and signal metrics are important for both families, with varying importance for other kinds of metrics.
+This is interesting, as these metrics are comparatively cheap to compute.
+
+For the ordinary models it does not seem important by how much PM/P actually differ in absolute terms. In other words, it appears that it is more important to quantify deviation and resemblance by metrics other than `area`/`mae` or `rmse`. Instead, it makes apparently more sense to compare PM/P as signals (ratios), as well as by how their _shape_ diverges (`corr`, `sd`/`var` are sensitive to these).
+
 
 
 # References {-}
