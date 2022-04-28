@@ -192,6 +192,21 @@ knitr::kable(
 Using the _quadratic weighted Kappa_ [@cohen1968weighted], we can report an unadjusted agreement of __`r round(Metrics::ScoreQuadraticWeightedKappa(rater.a = ground_truth$rater.a, rater.b = ground_truth$rater.b, min.rating = 0, max.rating = 10), 3)`__ for both raters. A Kappa value in the range $[0.6,0.8]$ is considered _substantial_, and values beyond that as _almost perfect_ [@landis1977application]. As for the Pearson-correlation, we report a slightly higher value of __`r round(cor(x = ground_truth$rater.a, y = ground_truth$rater.b), 3)`__. The entire ground truth is shown in table \ref{tab:groundtruth}. The final consensus was reached after both raters exchanged their opinions, and it is the consensus that we will use as the actual ground truth from here on and out.
 
 
+The assessors initially met to agree on the project artifacts to be used in the assessment, the method itself and the scale. The examined artifacts included notes taken by the teams at meetings, both internal and with the customer, iteration retrospectives (required by the process), experience reports compiled by each team at the end of the project, mentor evaluation notes taken after meeting with the teams at the end of each iteration and at the project closure, voluntary comments on teams' performance, and all other artifacts of similar nature -- e.g., describing progress, successes, problems, challenges, practices, and experiences during the projects from a project management and process standpoint.
+
+Expressly excluded were the tasks, time logs and code commits to achieve a higher level of independence between the automatic detection (which is to use these) and the ground truth assessment. The assessors were to examine the materials individually, making notes of what they found, where and whether it indicates presence or absence of a Fire Drill.
+
+After weighing their findings for each project they would evaluate on a zero-to-ten scale their confidence of a present FD, where zero meant no sign of presence or express signs of absence, and ten marked certainty of an FD occurrence.
+The initial meeting took approximately an hour and an assessment of each project by a single assessor ranged between one and two hours.
+
+After both assessors processed all the projects, they met for the final time to reach a consensus on the ground truth assessment.
+For each individual project, first both assessors presented their case, arguments for and against the presence of Fire Drill, evidence found in the materials and their own assessment value. If the values from both assessors for a single project matched, the value was taken as a consensus outright with no further discussion.
+If not, the assessors discussed in depth, going over the materials together whenever needed until reaching an assessment they both agreed on. When a precise agreement could not be reached between two neighboring values (the resulting value needed to be integer, as per previous agreement), more weight was always given to the second assessor, as they were more independent from the projects themselves (having no part in their actual execution).
+The individual assessments were seldomly much distant from each other and the consensus value was almost always reached somewhere in the interval between them.
+During the discussions, the notes on the consensus were also taken. The consensus meeting took approximately two hours.
+
+
+
 ## The Student Projects
 
 The ground truth was extracted from nine student-conducted projects. Seven of these were implemented simultaneously between March and June 2020, and two the year before in a similar timeframe.
