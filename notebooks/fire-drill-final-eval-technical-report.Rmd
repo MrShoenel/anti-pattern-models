@@ -57,6 +57,7 @@ library(Cairo)
 ```{r}
 library(extrafont)
 font_import()
+loadfonts()
 ```
 
 
@@ -707,11 +708,11 @@ plotexpr <- rlang::expr({
   
   # other thresholds:
   abline(h = req(t_1), col = "#888888")
-  text(x = .82, y = .64, paste0("$REQ(t_1)=", round(req(t_1), 2), "$"))
+  text(x = .82, y = .64, paste0("$\\mathrm{req}(t_1)=", round(req(t_1), 2), "$"))
   
   abline(h = req_ci_upper(t_1), col = "#888888")
   #text(x = .28, y = .86, paste0("$CI_{req}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
-  boxtext(x = .28, y = .86, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$CI_{req}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
+  boxtext(x = .28, y = .86, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{CI}_{\\mathrm{req}}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
   
   abline(v = 0, col = "#888888")
   abline(v = 1, col = "#888888")
@@ -720,8 +721,8 @@ plotexpr <- rlang::expr({
   abline(v = t_1)
   text(x = .47, y = .04, paste0("$t_1=", t_1, "$"))
   
-  legend(.74, .42, legend = c("upper CI", "lower CI", "REQ"),
-         col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2),
+  legend(.74, .42, legend = c("req", "upper CI", "lower CI"),
+         col = "red", lty = c(1, 2, 3), lwd = c(2, 1, 1),
          bg = "white", cex = .85)
   
   
@@ -753,18 +754,18 @@ plotexpr <- rlang::expr({
   
   # t_1(dev), t_2(dev):
   abline(h = dev(t_1), col = "#888888")
-  #text(x = .2, y = .2, paste0("$DEV(t_1)=", round(dev(t_1), 3), "$"))
-  boxtext(x = .12, y = .2, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$DEV(t_1)=", round(dev(t_1), 3), "$"))
+  #text(x = .2, y = .2, paste0("$\\mathrm{dev}(t_1)=", round(dev(t_1), 3), "$"))
+  boxtext(x = .12, y = .2, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{dev}(t_1)=", round(dev(t_1), 3), "$"))
   abline(h = dev(t_2), col = "#888888")
   #text(x = .51, y = .46, paste0("$DEV(t_2)=", round(dev(t_2), 2), "$"))
-  boxtext(x = .51, y = .46, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$DEV(t_2)=", round(dev(t_2), 2), "$"))
+  boxtext(x = .51, y = .46, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{dev}(t_2)=", round(dev(t_2), 2), "$"))
   
   # other thresholds:
   abline(h = dev_ci_upper(t_2), col = "#888888")
   #text(x = .73, y = .77, paste0("$CI_{dev}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"))
-  boxtext(x = .73, y = .77, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$CI_{dev}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"))
+  boxtext(x = .73, y = .77, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{CI}_{\\mathrm{dev}}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"))
   abline(h = desc(1), col = "#888888")
-  text(x = .87, y = .2, paste0("$DESC(1)=", round(desc(1), 2), "$"))
+  text(x = .87, y = .2, paste0("$\\mathrm{desc}(1)=", round(desc(1), 2), "$"))
   
   
   abline(v = 0, col = "#888888")
@@ -776,7 +777,7 @@ plotexpr <- rlang::expr({
   abline(v = t_2)
   text(x = .775, y = .98, paste0("$t_2=", t_2, "$"))
   
-  legend(.01, 1.01, legend = c("DEV upper CI", "DEV", "DESC"),
+  legend(.01, 1.01, legend = c("dev upper CI", "dev", "desc"),
          col = c("blue", "blue", "forestgreen"), lty = c(3, 1, 1),
          lwd = c(1, 2, 2), bg = "white", cex = .85)
 })
@@ -786,8 +787,8 @@ eval(plotexpr)
 
 
 ```{r echo=FALSE, eval=FALSE}
-saveTikzExpr(name = "model_t1_it", height = 4.2, expr = plotexpr)
-saveEPSExpr(name = "model_t1_it", height = 4.2, expr = plotexpr)
+saveTikzExpr(name = "model_t1_it", height = 4.2, width = 3.3, expr = plotexpr)
+# saveEPSExpr(name = "model_t1_it", height = 4.2, expr = plotexpr)
 ```
 
 
