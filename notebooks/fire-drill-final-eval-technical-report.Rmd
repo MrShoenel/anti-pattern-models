@@ -794,6 +794,171 @@ saveTikzExpr(name = "model_t1_it", height = 4.2, width = 3.3, expr = plotexpr)
 
 ```{r}
 plotexpr <- rlang::expr({
+  par(mfrow=c(1,1), mar=c(3,3,1,0), family = "LM Roman 10", oma=rep(0,4))
+
+
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  title(ylab = "Relative cum. time spent", line = 2)
+  title(xlab = "Relative project time", line = 2)
+  grid()
+  
+  polygon(
+    x = seq(from = 0, to = 1, length.out = 50),
+    y = req_ci_upper(seq(from = 0, to = 1, length.out = 50)),
+    col = "#ff000033",
+    border = NA)
+  curve(req_ci_lower, 0, 1, col = "red", lty = 2, add = TRUE)
+  curve(req_ci_upper, 0, 1, col = "red", lty = 3, add = TRUE)
+  curve(req, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+  
+  # other thresholds:
+  #abline(h = req(t_1), col = "#888888")
+  #text(x = .82, y = .64, paste0("$\\mathrm{req}(t_1)=", round(req(t_1), 2), "$"))
+  
+  abline(h = req_ci_upper(t_1), col = "#888888")
+  #text(x = .28, y = .86, paste0("$CI_{req}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
+  #boxtext(x = .28, y = .86, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{CI}_{\\mathrm{req}}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
+  text(x = .495, y = .86, paste0("$y_1=", round(req_ci_upper(t_1), 2), "$"))
+  text(x = .305, y = .46, paste0("$y_2=", round(req_ci_lower(t_1), 2), "$"))
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  
+  polygon(
+    x = c(seq(from = 0, to = 1, length.out = 50), 1),
+    y = c(dev_ci_upper(seq(from = 0, to = 1, length.out = 50)), 0),
+    col = "#0000ff33",
+    border = NA)
+  
+  curve(dev_ci_upper, 0, 1, col = "blue", lty = 3, add = TRUE)
+  curve(dev, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
+  
+  # t_1(dev), t_2(dev):
+  text(x = .295, y = .21, paste0("$y_3=", round(dev_ci_upper(t_1), 3), "$"))
+  abline(h = dev_ci_upper(t_1), col = "#888888")
+  #boxtext(x = .12, y = .2, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{dev}(t_1)=", round(dev(t_1), 3), "$"))
+  abline(h = dev(t_2), col = "#888888")
+  #text(x = .51, y = .46, paste0("$DEV(t_2)=", round(dev(t_2), 2), "$"))
+  #boxtext(x = .51, y = .46, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{dev}(t_2)=", round(dev(t_2), 2), "$"))
+  #text(x = .75, y = .45, paste0("$y_4=", round(dev(t_2), 2), "$"))
+  
+  # other thresholds:
+  abline(h = dev_ci_upper(t_2), col = "#888888")
+  text(x = .755, y = .76, paste0("$y_4=", round(dev_ci_upper(t_2), 2), "$"))
+  #boxtext(x = .73, y = .77, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{CI}_{\\mathrm{dev}}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"))
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  abline(v = t_1)
+  text(x = t_1, y = 1.1, paste0("$t_1=", t_1, "$"), xpd = NA)
+  abline(v = t_2)
+  text(x = t_2, y = 1.1, paste0("$t_2=", t_2, "$"), xpd = NA)
+  
+  legend(.72, 0.42, legend = c("req", "$\\mathrm{CI}_{\\mathrm{req}}^{+}$", "$\\mathrm{CI}_{\\mathrm{req}}^{-}$"),
+         col = "red", lty = c(1, 3, 2), lwd = c(2.25, 1.5, 1.5),
+         bg = "white", cex = .85)
+  
+  legend(.01, 1.02, legend = c("dev", "$\\mathrm{CI}_{\\mathrm{dev}}^{+}$"),
+         col = "blue", lty = c(1, 3), lwd = c(2.25, 1.5),
+         bg = "white", cex = .85)
+})
+
+eval(plotexpr)
+```
+
+```{r}
+saveTikzExpr(name = "model_t1_it_req-dev", height = 2.2, width = 3.45, expr = plotexpr)
+```
+
+```{r}
+plotexpr <- rlang::expr({
+  par(mfrow=c(1,1), mar=c(3,2.5,1,0), family = "LM Roman 10", oma=rep(0,4))
+
+
+  plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
+       xlab = "", ylab = "")
+  #title(ylab = "Relative cum. time spent", line = 2)
+  title(xlab = "Relative project time", line = 2)
+  grid()
+  
+  polygon(
+    x = seq(from = 0, to = 1, length.out = 50),
+    y = req_ci_upper(seq(from = 0, to = 1, length.out = 50)),
+    col = "#ff000033",
+    border = NA)
+  curve(req_ci_lower, 0, 1, col = "red", lty = 2, add = TRUE)
+  curve(req_ci_upper, 0, 1, col = "red", lty = 3, add = TRUE)
+  curve(req, 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
+  
+  # other thresholds:
+  #abline(h = req(t_1), col = "#888888")
+  #text(x = .82, y = .64, paste0("$\\mathrm{req}(t_1)=", round(req(t_1), 2), "$"))
+  
+  abline(h = req_ci_upper(t_1), col = "#888888")
+  #text(x = .28, y = .86, paste0("$CI_{req}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
+  #boxtext(x = .28, y = .86, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{CI}_{\\mathrm{req}}^{+}(t_1)=", round(req_ci_upper(t_1), 2), "$"))
+  text(x = .495, y = .86, paste0("$y_1=", round(req_ci_upper(t_1), 2), "$"))
+  text(x = .495, y = .46, paste0("$y_2=", round(req_ci_lower(t_1), 2), "$"))
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  x <- seq(from = 0, to = 1, length.out = 50)
+  polygon(
+    x = c(x, rev(x)),
+    y = c(dev_ci_upper(x), desc(rev(x))),
+    col = "#1a701a44",
+    border = NA)
+  
+  curve(dev_ci_upper, 0, 1, col = "forestgreen", lty = 3, add = TRUE)
+  #curve(dev, 0, 1, col = "blue", lty = 1, lwd = 3, add = TRUE)
+  curve(desc, 0, 1, col = "forestgreen", lty = 2, add = TRUE)
+  
+  # t_1(dev), t_2(dev):
+  abline(h = dev_ci_upper(t_1), col = "#888888")
+  #boxtext(x = .12, y = .2, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{dev}(t_1)=", round(dev(t_1), 3), "$"))
+  abline(h = dev(t_2), col = "#888888")
+  #text(x = .51, y = .46, paste0("$DEV(t_2)=", round(dev(t_2), 2), "$"))
+  #boxtext(x = .51, y = .46, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{dev}(t_2)=", round(dev(t_2), 2), "$"))
+  #text(x = .75, y = .45, paste0("$y_4=", round(dev(t_2), 2), "$"))
+  
+  # other thresholds:
+  #abline(h = dev_ci_upper(t_2), col = "#888888")
+  #text(x = .755, y = .75, paste0("$y_4=", round(dev_ci_upper(t_2), 2), "$"))
+  #boxtext(x = .73, y = .77, col.bg = "white", padding = c(0.1, 1.5), labels = paste0("$\\mathrm{CI}_{\\mathrm{dev}}^{+}(t_2)=", round(dev_ci_upper(t_2), 2), "$"))
+  
+  abline(v = 0, col = "#888888")
+  abline(v = 1, col = "#888888")
+  
+  abline(v = t_1)
+  text(x = t_1, y = 1.1, paste0("$t_1=", t_1, "$"), xpd = NA)
+  text(x = .895, y = .21, paste0("$y_5=", round(desc(1), 3), "$"))
+  
+  
+  #legend(.72, 0.37, legend = c("req", "$\\mathrm{CI}_{\\mathrm{req}}^{+}$", "$\\mathrm{CI}_{\\mathrm{req}}^{-}$"),
+  #       col = "red", lty = c(1, 3, 2), lwd = c(2, 1, 1),
+  #       bg = "white", cex = .85)
+  
+  legend(.01, 1.02, legend = c("$\\mathrm{CI}_{\\mathrm{desc}}^{+}$", "$\\mathrm{CI}_{\\mathrm{desc}}^{-}$"),
+         col = "forestgreen", lty = c(3, 2), lwd = 1.5,
+         bg = "white", cex = .85)
+})
+
+eval(plotexpr)
+```
+
+```{r}
+saveTikzExpr(name = "model_t1_it_req-desc", height = 2.2, width = 3.45, expr = plotexpr)
+```
+
+
+
+
+```{r}
+plotexpr <- rlang::expr({
   layout(mat = matrix(data = c(1,2), nrow = 2), heights = c(4,5), widths = c(1,1))
   par(mar=c(3,3,1,0), family = "LM Roman 10")
   
