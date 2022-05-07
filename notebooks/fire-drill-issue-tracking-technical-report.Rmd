@@ -5155,6 +5155,65 @@ for (i in 1:4) {
 }
 ```
 
+### Normality and uniformity tests of the objectives
+
+In fact, let's check if any of the scores is normally or uniformly distributed.
+We will do two tests, the Shapiro--Wilk and the Kolmogorov--Smirnov tests for normality.
+
+```{r}
+ac_distr_test_it <- loadResultsOrCompute(file = "../results/ac_distr_test_it.rds", computeExpr = {
+  temp.grid <- expand.grid(list(
+    PM = levels(ac_grid_it$PM),
+    Var = unique(ac_grid_it$Var),
+    Seg = 1:10,
+    Metric = c("area", "corr", "jsd", "kl", "arclen", "sd", "var", "mae",
+               "rmse", "RMS", "Kurtosis", "Peak", "ImpulseFactor")
+  ))
+  
+  as.data.frame(doWithParallelCluster(numCores = min(parallel::detectCores(), 32), expr = {
+    foreach::foreach(
+      rn = rownames(temp.grid),
+      .combine = rbind,
+      .inorder = FALSE
+    ) %dopar% {
+      set.seed(1)
+      row <- temp.grid[rn,]
+      temp <- ac_extract_data(
+        pmName = row$PM, varName = row$Var, segIdx = row$Seg, metricName = row$Metric,
+        ac_grid = ac_grid_it, ac_grid_results = ac_grid_results_it)
+      
+      samp <- sample(x = temp, size = 5e3)
+      st <- if (length(unique(samp)) == 1) list("statistic" = 0, "p.value" = 0) else shapiro.test(samp)
+      
+      m <- mean(temp)
+      s <- sd(temp)
+      distFun_norm <- function(q) {
+        pnorm(q = q, mean = m, sd = s)
+      }
+      ks_norm <- ks.test(x = temp, y = distFun_norm)
+      
+      ab <- range(temp)
+      distFun_unif <- function(q) {
+        punif(q = q, min = ab[1], max = ab[2])
+      }
+      ks_unif <- ks.test(x = temp, y = distFun_unif)
+      
+      
+      `colnames<-`(x = matrix(data = c(
+        st$statistic, st$p.value, ks_norm$statistic, ks_norm$p.value, ks_unif$statistic, ks_unif$p.value
+      ), nrow = 1), value = c("shap.W", "shap.pval", "ks_norm.D", "ks_norm.pval", "ks_unif.D", "ks_unif.pval"))
+    }
+  }))
+})
+```
+
+Out of `r nrow(ac_distr_test_it)` ECDFs, __`r nrow(ac_distr_test_it[ac_distr_test_it$shap.pval > 0.05 | ac_distr_test_it$ks_norm.pval > 0.05,])`__ are normally distributed, and __`r nrow(ac_distr_test_it[ac_distr_test_it$ks_unif.pval > 0.05,])`__ are uniformly distributed.
+The highest p-values for either normally test are `r max(ac_distr_test_it$shap.pval)` and `r max(ac_distr_test_it$ks_norm.pval)`. The highest W-statistic was `r max(ac_distr_test_it$shap.W)`, and the lowest D-statistic was `r min(ac_distr_test_it$ks_norm.D)`.
+The highest p-value for the standard uniform test was `r max(ac_distr_test_it$ks_unif.pval)`, and the lowest D-statistic was `r min(ac_distr_test_it$ks_unif.D)`.
+It is fair to say that nothing here is normally or uniformly distributed.
+We now have reasonable evidence that justifies that conversion to linear behaving scores is required.
+
+
 
 ## Calculating scores
 
