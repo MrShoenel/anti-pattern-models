@@ -1090,12 +1090,12 @@ plotexpr <- rlang::expr({
   
   # t_1:
   abline(v = t1_wavg)
-  text(x = .47, y = .04, paste0("$\\hat{t}_1=", round(t1_wavg, 2), "$"))
-  abline(v = t_1, col = "#aaaaaa")
-  text(x = .32, y = .97, paste0("$t_1=", t_1, "$"))
+  abline(v = t_1, col = "#999999")
+  text(x = .3, y = .91, paste0("$t_1=", t_1, "$"), col = "#999999")
+  boxtext(x = .43, y = .11, labels = paste0("$\\hat{t}_1=", round(t1_wavg, 2), "$"), col.bg = "white", padding = c(0.1, 1.5))
   
-  legend(.74, .42, legend = c("upper CI", "lower CI", "REQ"),
-         col = "red", lty = c(3, 2, 1), lwd = c(1, 1, 2),
+  legend(.7, .5, legend = c("$\\mathrm{req}$", "$\\mathrm{CI}_{\\mathrm{req}}^{+}$", "$\\mathrm{CI}_{\\mathrm{req}}^{-}$"),
+         col = "red", lty = c(1, 3, 2), lwd = c(2, 1, 1),
          bg = "white", cex = .85)
   
   
@@ -1130,11 +1130,11 @@ plotexpr <- rlang::expr({
   abline(v = 1, col = "#888888")
   
   abline(v = t2_wavg)
-  text(x = .5, y = .98, paste0("$\\hat{t}_2=", round(t2_wavg, 2), "$"))
-  abline(v = t_2, col = "#aaaaaa")
-  text(x = .92, y = .32, paste0("$t_2=", t_2, "$"))
+  text(x = .47, y = .91, paste0("$\\hat{t}_2=", round(t2_wavg, 2), "$"))
+  abline(v = t_2, col = "#999999")
+  text(x = .74, y = .28, paste0("$t_2=", t_2, "$"), col = "#999999")
   
-  legend(.01, 1.01, legend = c("DEV upper CI", "DEV", "DESC"),
+  legend(.02, 1.0, legend = c("$\\mathrm{CI}_{\\mathrm{dev}}^{+}$", "$\\mathrm{dev}$", "$\\mathrm{desc}$"),
          col = c("blue", "blue", "forestgreen"), cex = .85,
          lty = c(3, 1, 1), lwd = c(1, 2, 2), bg = "white")
 })
@@ -1143,8 +1143,8 @@ eval(plotexpr)
 ```
 
 ```{r echo=FALSE, eval=FALSE}
-saveTikzExpr(name = "model_t2_it", height = 4.2, expr = plotexpr)
-saveEPSExpr(name = "model_t2_it", height = 4.2, expr = plotexpr)
+saveTikzExpr(name = "model_t2_it", height = 3.5, width = 3.33, expr = plotexpr)
+# saveEPSExpr(name = "model_t2_it", height = 4.2, expr = plotexpr)
 ```
 
 
