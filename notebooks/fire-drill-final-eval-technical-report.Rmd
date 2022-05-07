@@ -1299,15 +1299,16 @@ z_desc <- loadResultsOrCompute(file = "../results/ci_p3avg_z_desc.rds", computeE
 })
 
 plotexpr <- rlang::expr({
-  par(mfrow=c(3,1), mar=c(4,4,.8,.8), family = "LM Roman 10", cex.axis = 1.5)#, oma=rep(0,4))
+  par(mfrow=c(3,1), mar=c(2,4,1,.8), family = "LM Roman 10", cex.axis = 1.5, oma=rep(0,4))
+  
   
   tempz <- fields::interp.surface.grid(obj = z_req, grid.list = list(
-    x = seq(from = 0, to = 1, length.out = 60), y = seq(from = 0, to = 1, length.out = 80)))
+    x = seq(from = 0, to = 1, length.out = 90), y = seq(from = 0, to = 1, length.out = 90)))
   fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
     xlab = "", ylab = "",
     col = colorRampPalette(colors = c("#ffffff", "#ff6666"))(100), zlim = c(0,1),
     legend.shrink = .5, legend.lab = "Confidence", legend.line = 3)#, legend.cex = 1)
-  title(ylab = "Relative cum. time spent", line = 3, cex.lab = 1.5)
+  title(ylab = "Relative cum. time spent", line = 2.5, cex.lab = 1.2)
   grid()
   
   curve(req_p3, 0, 1, col = "red", add = TRUE)
@@ -1321,18 +1322,18 @@ plotexpr <- rlang::expr({
     curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
   }
   
-  legend(0.65, .37, legend = c("REQ (avg.)", "Weight $=0$", "Weight $>0$"), bg = "white",
-         col = c("red", rep("#00000033", 2)), lty = c(1, 3, 2), lwd = c(2.5, 2, 2), cex = 1.3)
+  legend(0.49, .42, legend = c("$\\overline{\\mathit{req}\\vphantom{X}}$", "Weight $=0$", "Weight $>0$"), bg = "white",
+         col = c("red", rep("#00000033", 2)), lty = c(1, 3, 2), lwd = c(2.5, 2, 2), cex = 1.2)
   
   
   
   tempz <- fields::interp.surface.grid(obj = z_dev, grid.list = list(
-    x = seq(from = 0, to = 1, length.out = 60), y = seq(from = 0, to = 1, length.out = 80)))
+    x = seq(from = 0, to = 1, length.out = 90), y = seq(from = 0, to = 1, length.out = 90)))
   fields::image.plot(x = tempz$x, y = tempz$y, z = tempz$z,
     xlab = "", ylab = "",
     col = colorRampPalette(colors = c("#ffffff", "#6666ff"))(100), zlim = c(0,1),
-    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
-  title(ylab = "Relative cum. time spent", line = 3, cex.lab = 1.5)
+    legend.shrink = .5, legend.lab = "Confidence", legend.line = 3)
+  title(ylab = "Relative cum. time spent", line = 2.5, cex.lab = 1.2)
   grid()
   curve(dev_p3, 0, 1, col = "blue", add = TRUE)
   
@@ -1345,8 +1346,8 @@ plotexpr <- rlang::expr({
     curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
   }
   
-  legend(0.01, .98, legend = c("DEV (avg.)"),
-         col = "blue", lty = 1, lwd = 2.5, cex = 1.3)
+  legend(0.01, .98, legend = c("$\\overline{\\mathit{dev}\\vphantom{X}}$"),
+         col = "blue", lty = 1, lwd = 2.5, bg = "white", cex = 1.2)
   
   
   tempz <- fields::interp.surface.grid(obj = z_desc, grid.list = list(
@@ -1356,7 +1357,7 @@ plotexpr <- rlang::expr({
     col = colorRampPalette(colors = c("#ffffff", "forestgreen"))(100),
     ylim = c(0, desc_ci_upper_p3avg(1) * 1.1), zlim = c(0, 1),
     legend.shrink = .5, legend.lab = "Confidence", legend.line = 3, legend.cex = 1)
-  title(xlab = "Relative project time", ylab = "Relative cum. time spent", line = 3, cex.lab = 1.5)
+  title(xlab = "Relative project time", ylab = "Relative cum. time spent", line = 2.5, cex.lab = 1.2)
   grid()
   curve(desc_p3, 0, 1, col = "forestgreen", add = TRUE)
   
@@ -1369,8 +1370,8 @@ plotexpr <- rlang::expr({
     curve(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
   }
   
-  legend(0.01, 0.98 * desc_ci_upper_p3avg(1) * 1.1, legend = c("DESC (avg.)"),
-         col = "forestgreen", lty = 1, lwd = 2.5, cex = 1.3)
+  legend(0.01, 0.98 * desc_ci_upper_p3avg(1) * 1.1, legend = c("$\\overline{\\mathit{desc}\\vphantom{X}}$"),
+         col = "forestgreen", lty = 1, lwd = 2.5, cex = 1.2, bg = "white")
 })
 
 eval(plotexpr)
@@ -1385,7 +1386,7 @@ dev.off()
 ```
 
 ```{r echo=FALSE, eval=FALSE}
-saveTikzExpr(name = "emp_ci_req_dev", height = 7.7, expr = plotexpr)
+saveTikzExpr(name = "emp_ci_req_dev", height = 4.9, width = 3.33, expr = plotexpr)
 ```
 
 
@@ -1432,7 +1433,7 @@ plotexpr <- rlang::expr({
     curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
   }
   
-  legend(0.01, .98, legend = c("A (avg.)", "Weight $=0$", "Weight $>0$"),# bg = "white",
+  legend(0.01, .98, legend = c("$\\overline{\\mathit{a}\\vphantom{X}}$", "Weight $=0$", "Weight $>0$"), bg = "white",
          col = c("red", rep("#00000033", 2)), lty = c(1, 3, 2), lwd = c(2.5, 2, 2), cex = 1.2)
   
   
@@ -1458,7 +1459,7 @@ plotexpr <- rlang::expr({
     curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
   }
   
-  legend(0.01, .98, legend = c("CP (avg.)"),
+  legend(0.01, .98, legend = c("$\\overline{\\mathit{cp}\\vphantom{X}}$"), bg = "white",
          col = "darkgreen", lty = 1, lwd = 2.5, cex = 1.2)
   
   
@@ -1484,7 +1485,7 @@ plotexpr <- rlang::expr({
     curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
   }
   
-  legend(0.01, .98, legend = c("FREQ (avg.)"),
+  legend(0.01, .98, legend = c("$\\overline{\\mathit{freq}\\vphantom{X}}$"), bg = "white",
          col = "blue", lty = 1, lwd = 2.5, cex = 1.2)
   
   
@@ -1510,7 +1511,7 @@ plotexpr <- rlang::expr({
     curve2(tempf, 0, 1, col="#00000033", lty=if (omega[i] == 0) 3 else 2, add=TRUE)
   }
   
-  legend(0.325, .2, legend = c("SCD (avg.)"),
+  legend(0.325, .2, legend = c("$\\overline{\\mathit{scd}\\vphantom{X}}$"), bg = "white",
          col = "purple", lty = 1, lwd = 2.5, cex = 1.2)
 })
 
@@ -1525,7 +1526,7 @@ dev.off()
 
 
 ```{r}
-saveTikzExpr(name = "emp_ci_req_dev_sc", height = 7, width = 3.525, expr = plotexpr)
+saveTikzExpr(name = "emp_ci_req_dev_sc", height = 6.7, width = 3.33, expr = plotexpr)
 ```
 
 
@@ -1972,7 +1973,7 @@ eval(plotexpr)
 saveTikzAndEps(ggInst = eval(plotexpr), name = "detect-it-corr", height = 4)
 ```
 ```{r}
-tikzDevice::tikz(file = paste0("temp", name, ".tex"), width = fe_fig_width, verbose = FALSE)
+tikzDevice::tikz(file = paste0("temp", name, ".tex"), width = 4.6859, verbose = FALSE)
 eval(plotexpr)
 dev.off()
 ```
