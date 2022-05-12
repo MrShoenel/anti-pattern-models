@@ -2816,7 +2816,8 @@ tempf1 <- function(x) 1 - tempf(x)
 ### Normality and uniformity tests of the objectives
 
 In fact, let's check if any of the scores is normally or uniformly distributed.
-We will do two tests, the Shapiro--Wilk and the Kolmogorov--Smirnov tests for normality.
+We will do three tests, the Shapiro--Wilk [@shapiro1965] and the Kolmogorov--Smirnov [@stephens1974] tests for normality, and the Kolmogorov--Smirnov test ofr uniformity.
+
 
 ```{r}
 ac_distr_test_sc <- loadResultsOrCompute(file = "../results/ac_distr_test_sc.rds", computeExpr = {
