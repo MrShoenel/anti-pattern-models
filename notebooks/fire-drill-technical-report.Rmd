@@ -2799,6 +2799,7 @@ for (i in 1:4) {
     "SegIdx=", temp.seg,
     ", Metric=", temp.metric
   ))
+  grid()
 }
 ```
 
@@ -3315,67 +3316,75 @@ So before we jump to the results of finding the weights (and thus the importance
 ac_sc_weights_varimp <- loadResultsOrCompute(file = "../results/ac_sc_weights_varimp.rds", computeExpr = {
   temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
   projNames <- names(append(project_signals, project_signals_2nd_batch))
-  temp <- matrix(nrow = length(projNames), ncol = 1 + nrow(ac_weight_grid))
-  temp[, ncol(temp)] <- temp.gt
+  templ <- list()
   
-  for (i in 1:length(projNames)) {
-    for (j in 1:nrow(ac_weight_grid)) {
-      params <- ac_weight_grid[j,]
-      params$Var <- as.character(params$Var)
-      params$Metric <- as.character(params$Metric)
-      
-      temp[i, j] <- ac_grid_projects_results_uniform[
-        ac_grid_projects_results_uniform$PM == "I" &
-        ac_grid_projects_results_uniform$Metric == params$Metric &
-        ac_grid_projects_results_uniform$Var == params$Var &
-        ac_grid_projects_results_uniform$SegIdx == params$SegIdx, projNames[i]]
+  for (pmName in levels(ac_grid$PM)) {
+    temp <- matrix(nrow = length(projNames), ncol = 1 + nrow(ac_weight_grid))
+    temp[, ncol(temp)] <- temp.gt
+    
+    for (i in 1:length(projNames)) {
+      for (j in 1:nrow(ac_weight_grid)) {
+        params <- ac_weight_grid[j,]
+        params$Var <- as.character(params$Var)
+        params$Metric <- as.character(params$Metric)
+        
+        temp[i, j] <- ac_grid_projects_results_uniform[
+          ac_grid_projects_results_uniform$PM == pmName &
+          ac_grid_projects_results_uniform$Metric == params$Metric &
+          ac_grid_projects_results_uniform$Var == params$Var &
+          ac_grid_projects_results_uniform$SegIdx == params$SegIdx, projNames[i]]
+      }
     }
+    
+    temp <- as.data.frame(temp)
+    colnames(temp) <- c(paste0("w", 1:nrow(ac_weight_grid)), "gt")
+    
+    templ[[pmName]] <- doWithParallelCluster(numCores = min(8, parallel::detectCores()), expr = {
+      library(caret, quietly = TRUE)
+      
+      set.seed(1)
+      control <- caret::trainControl(method = "repeatedcv", number = 10, repeats = 3)
+      modelFit <- caret::train(gt ~., data = temp, method = "rf", trControl = control)
+      imp <- caret::varImp(object = modelFit)
+      
+      list("fit" = modelFit, "imp" = imp)
+    })
   }
-  
-  temp <- as.data.frame(temp)
-  colnames(temp) <- c(paste0("w", 1:nrow(ac_weight_grid)), "gt")
-  
-  doWithParallelCluster(numCores = min(16, parallel::detectCores()), expr = {
-    library(caret, quietly = TRUE)
-    
-    set.seed(1)
-    control <- caret::trainControl(method = "repeatedcv", number = 10, repeats = 3)
-    modelFit <- caret::train(gt ~., data = temp, method = "rf", trControl = control)
-    imp <- caret::varImp(object = modelFit)
-    
-    list("fit" = modelFit, "imp" = imp)
-  })
+  templ
 })
 ```
 
-```{r echo=FALSE}
-if (interactive()) {
-  print(ac_sc_weights_varimp$fit$finalModel)
-} else {
-  # A little hack because otherwise it prints everything.
-  # The below is an exact copy of what is printed interactively.
-  cat("Call:
- randomForest(x = x, y = y, mtry = param$mtry) 
-               Type of random forest: regression
-                     Number of trees: 500
-No. of variables tried at each split: 2
-
-          Mean of squared residuals: 0.108315
-                    % Var explained: -22.71")
-}
+```{r echo=FALSE, eval=FALSE}
+randomForest:::print.randomForest(ac_sc_weights_varimp$I$fit$finalModel)
 ```
 
-The Random forest is overfit to the data, as the $R^2$ (explained variance) is negative, i.e., it is worse than a random guess.
-Therefore, it is hard to assess the validity of the obtained results for the variable importance.
-Let's take a look at the fitted model's performance (table \ref{tab:ac-sc-weights-varimp-mse}): It appears we are able to reach acceptable MSE's (last column), albeit not $\approx0$ for some reason. This model and the other fitted models cannot be used in prediction scenarios, as they do not generalize at all, the exercise was only to examine the variable importance.
+Let's take a look at the fitted model's performance (table \ref{tab:ac-sc-weights-varimp-mse})
+The Random forest overfits to the data, for each expectation.
+This is obvious as the explained variance is negative in all cases, i.e., it is worse than a random guess.
+Therefore, it is hard to assess the validity of the obtained results for variable importance purposes.
+It appears we are able to reach acceptable MSE's, albeit not $\approx0$ for some reason. This model and the other fitted models cannot be used in prediction scenarios, as they do not generalize at all, the exercise was only to examine the variable importance.
 
-```{r}
-ac_sc_weights_varimp$fit$results$MSE <- ac_sc_weights_varimp$fit$results$RMSE**2
+
+```{r echo=FALSE}
+temp.df <- NULL
+
+for (pmName in names(ac_sc_weights_varimp)) {
+  temp <- as.data.frame(ac_sc_weights_varimp[[pmName]]$fit$results)
+  temp$MSE <- temp$RMSE**2
+  temp <- head(temp[order(temp$RMSE), ], 1)
+  temp$VarExpl <- round(100 * tail(ac_sc_weights_varimp[[pmName]]$fit$finalModel$rsq, 1), 3)
+  
+  temp <- cbind(data.frame(PM = pmName), temp)
+  temp.df <- rbind(temp.df, temp)
+}
+colnames(temp.df) <- gsub(pattern = "Rsquared", replacement = "Rsq", x = colnames(temp.df))
+
+
 if (interactive()) {
-  ac_sc_weights_varimp$fit$results
+  temp.df
 } else {
   knitr::kable(
-    x = ac_sc_weights_varimp$fit$results,
+    x = cbind(data.frame(PM = temp.df$PM, mtry = temp.df$mtry), round(temp.df[, 3:ncol(temp.df)], 4)),
     booktabs = TRUE,
     caption = "Best models of fitting of a Random forest to the calibrated data in order to assess the variable importance.",
     label = "ac-sc-weights-varimp-mse"
