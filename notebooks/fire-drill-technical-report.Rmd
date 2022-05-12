@@ -3052,7 +3052,30 @@ ac_pmp_score <- function(pmName, projName, results_uniform, use_metrics) {
 ```
 
 
-In order to compare PMs, we will find out the following: Which PM produces the highest/lowest score for the best/worst PM, and what is the Brier(MSE)-/Log-score and correlation for all projects. The result is shown in table \ref{tab:ac-compare-pms-sc}.
+In order to compare PMs, we will find out the following: Which PM produces the highest/lowest score for the best/worst PM, and what is the Brier(MSE)-/Log-score and correlation for all projects.
+Also, we will compute the Kullback--Leibler divergence between the distributions of the ground truth and the predictions.
+The result is shown in table \ref{tab:ac-compare-pms-sc}.
+
+```{r}
+as.density <- function(x) {
+  temp <- stats::density(x)
+  `attributes<-`(x = stats::approxfun(x = temp$x, y = temp$y, yleft = 0, yright = 0), value = list("ab" = range(temp$x)))
+}
+
+kl_div <- function(vals1, vals2) {
+  f1 <- as.density(vals1)
+  f2 <- as.density(vals2)
+  r <- range(c(attr(f1, "ab"), attr(f2, "ab")))
+  x <- seq(from = r[1], to = r[2], length.out = 1e3)
+  v1 <- f1(x)
+  v2 <- f2(x)
+  unname(suppressMessages({
+    philentropy::distance(
+      method = "kullback-leibler", unit = "log", x = rbind(v1 / sum(v1), v2 / sum(v2)))
+  }))
+}
+```
+
 
 
 ```{r}
@@ -3070,12 +3093,17 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
-    Score_for_best = ac_pmp_score(
+    ScForBest = ac_pmp_score(
       use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("project_", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform),
-    Score_for_worst = ac_pmp_score(
+    ScForWorst = ac_pmp_score(
       use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform),
+    ScMax = max(temp.pred$pred),
+    ScMin = min(temp.pred$pred),
+    ScAvg = mean(temp.pred$pred),
+    KLdiv = kl_div(temp.gt, temp.pred$pred),
+    Corr = stats::cor(temp.gt, temp.pred$pred),
     RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -3088,7 +3116,7 @@ if (interactive()) {
   temp.df
 } else {
   knitr::kable(
-    x = temp.df,
+    x = cbind(data.frame(PM = temp.df$PM), round(temp.df[, 2:ncol(temp.df)], 4)),
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using source code for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus.",
     label = "ac-compare-pms-sc"
@@ -3104,12 +3132,21 @@ I suppose that more of the latter is true, since even the data-enhanced and espe
 Nonetheless, all these scores are close together, so picking a champion needs to be done with care. Also, the score from each PM is the unweighted aggregation across hundreds of objectives, and at this point we have yet to examine which objectives are the most important (next two sections).
 
 
+In the non-weighted approach we assume to know nothing about the observations, implicitly assuming that a) all observations exhibit the sought-after phenomenon, and b) that they do so to a similar degree.
+If this were true for our case, then the mean score of table \ref{tab:ac-compare-pms-sc} would give a perfectly usable score that we could pick a champion PM by (in any other case, the mean/best/worst scores are useless).
+This is not quite true for our case, as our ground truth ranges from zero to one (full spectrum).
+Therefore, a higher score is not just better, but rather a score that deviates less from the ground truth. So if we are fair and consider the ground truth, we need to measure the deviation from it using, e.g., the (R)MSE, correlation, or some divergence.
+Going by these, the correlation is perhaps most important, followed by the (R)MSE to estimate each PM's bias.
+The bias can be reduced when we additionally learning weights for all of the scores (see section \ref{ssec:ac-weights-optimized}).
+
+
+
 ### Weighted by expert decision maker
 
 The scores as of table \ref{tab:ac-compare-pms-sc} for best/worst are close together, too close perhaps. This is due to the massive amount of objectives that were used. Also, all of the available objectives were used, across all segments and variables.
 In reality however, an expert would almost certainly not configure a PM this way. Rather, they would choose specific objectives. We will simulate this scenario by choosing the metrics `area` and `corr`, as these are simple and comprehensible choices.
 As for the weights, they will be the same for each metric, and only vary between segments. The weights will simply increase exponentially towards the end of the project.
-The expression for the weights is $\frac{1}{4}+\frac{3x^3}{4}$.
+The expression for the weights is $\frac{1}{4}+\frac{3}{4}x^3$.
 
 We have a large number of weights, so it is important to be able to "address" them correctly.
 Therefore, we will use a grid as address register.
@@ -3176,14 +3213,19 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
-    Score_for_best = ac_pmp_score_weighted(
+    ScForBest = ac_pmp_score_weighted(
       results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.max(temp.gt)),
       weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert),
-    Score_for_worst = ac_pmp_score_weighted(
+    ScForWorst = ac_pmp_score_weighted(
       results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
       weightGrid = ac_weight_grid_expert, weightVector = ac_weight_vector_expert),
+    ScMax = max(temp.pred$pred),
+    ScMin = min(temp.pred$pred),
+    ScAvg = mean(temp.pred$pred),
+    KLdiv = kl_div(temp.gt, temp.pred$pred),
+    Corr = stats::cor(temp.gt, temp.pred$pred),
     RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -3193,8 +3235,9 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
 
 
 The results are shown in table \ref{tab:ac-compare-pms-sc-expert}. Apparently, our expert managed to improve almost all process model types. All types except type III(b, numInt=11) do not exhibit the inconsistency for best/worst project any longer, and type I's MSE is now significantly lower than the ZeroR's of $\approx0.137$ (still, it's quite bad).
-PM type III(avg) has an acceptable spread for best/worst now, but its scores do not look good.
-Going ahead with type I would probably the best choice, albeit with great care.
+PM type III(avg) has an acceptable spread for best/worst now, but its scores do not look good. However, its correlation improved significantly (actually, all correlations improved). If the expert-picked weights had resulted in a lower bias (i.e., lower (R)MSE), then we would have ended up with usable models.
+
+Depending on the criteria to select a PM, going forward with type I (lowest MSE) or type III(avg) (highest correlation) would probably be the best choice, albeit with great care.
 It appears our hypothetical expert made a choice that is slightly better than using all available objectives with same weight, as the MSE and all but the last two Log-scores for all PMs improved somewhat.
 
 
@@ -3203,7 +3246,7 @@ if (interactive()) {
   temp.df
 } else {
   knitr::kable(
-    x = temp.df,
+    x = cbind(data.frame(PM = temp.df$PM), round(temp.df[, 2:ncol(temp.df)], 4)),
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using source code for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using expert-picked objectives and weights.",
     label = "ac-compare-pms-sc-expert"
@@ -3212,7 +3255,7 @@ if (interactive()) {
 ```
 
 
-### Weighted by optimization
+### Weighted by optimization\label{ssec:ac-weights-optimized}
 
 Here we will attempt to find the best weights (variable importances, actually) by optimization.
 The interesting thing is, that the weights have a $1:1$ correlation to the principle of variable importance, since the objective is normalizing linear scalarizer, and and all objectives are scores with a linear co-domain of $[0,1]$.
@@ -3422,14 +3465,19 @@ for (pmName in c("I", "II", "III(avg)", "III(b,11)")) {
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
-    Score_for_best = ac_pmp_score_weighted(
+    ScForBest = ac_pmp_score_weighted(
       results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.max(temp.gt)),
       weightGrid = ac_weight_grid, weightVector = temp.weights),
-    Score_for_worst = ac_pmp_score_weighted(
+    ScForWorst = ac_pmp_score_weighted(
       results_uniform = ac_grid_projects_results_uniform,
       pmName = pmName, projName = paste0("project_", which.min(temp.gt)),
       weightGrid = ac_weight_grid, weightVector = temp.weights),
+    ScMax = max(temp.pred$pred),
+    ScMin = min(temp.pred$pred),
+    ScAvg = mean(temp.pred$pred),
+    KLdiv = kl_div(temp.gt, temp.pred$pred),
+    Corr = stats::cor(temp.gt, temp.pred$pred),
     RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -3442,7 +3490,7 @@ if (interactive()) {
   temp.df
 } else {
   knitr::kable(
-    x = temp.df,
+    x = cbind(data.frame(PM = temp.df[,]$PM), round(temp.df[, 2:ncol(temp.df)], 4)),
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using source code for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using some best set of weights per PM as found by optimization.",
     label = "ac-compare-pms-sc-optim"

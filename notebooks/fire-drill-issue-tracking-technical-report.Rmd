@@ -2995,6 +2995,27 @@ The scores from the automatically calibrated decision rule are shown in table \r
 
 We should also examine the scores more in detail for both configurations of weights, and find out what were the scores for the best/worst projects.
 
+```{r echo=FALSE}
+as.density <- function(x) {
+  temp <- stats::density(x)
+  `attributes<-`(x = stats::approxfun(x = temp$x, y = temp$y, yleft = 0, yright = 0), value = list("ab" = range(temp$x)))
+}
+
+kl_div <- function(vals1, vals2) {
+  f1 <- as.density(vals1)
+  f2 <- as.density(vals2)
+  r <- range(c(attr(f1, "ab"), attr(f2, "ab")))
+  x <- seq(from = r[1], to = r[2], length.out = 1e3)
+  v1 <- f1(x)
+  v2 <- f2(x)
+  unname(suppressMessages({
+    philentropy::distance(
+      method = "kullback-leibler", unit = "log", x = rbind(v1 / sum(v1), v2 / sum(v2)))
+  }))
+}
+```
+
+
 ```{r}
 temp.gt <- c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
 
@@ -3008,9 +3029,12 @@ for (confName in c("all_equal", "pref_reqt1")) {
   
   temp.df <- rbind(temp.df, data.frame(
     Config = confName,
-    Score_for_best = ac_p1_dr(signals = temp, projName = paste0("Project", which.max(temp.gt))),
-    Score_for_worst = ac_p1_dr(signals = temp, projName = paste0("Project", which.min(temp.gt))),
-    Score_mean = mean(temp.pred$pred),
+    ScForBest = ac_p1_dr(signals = temp, projName = paste0("Project", which.max(temp.gt))),
+    ScForWorst = ac_p1_dr(signals = temp, projName = paste0("Project", which.min(temp.gt))),
+    ScMax = max(temp.pred$pred),
+    ScMin = min(temp.pred$pred),
+    ScAvg = mean(temp.pred$pred),
+    KLdiv = kl_div(temp.gt, temp.pred$pred),
     RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -3022,7 +3046,7 @@ temp.df
 ```
 
 
-Next, we will check the correlation with the ground truth.
+Next, we will check the correlation with the ground truth, first for all-equal weights, then using the preference for `REQ`.
 
 ```{r}
 stats::cor.test(x = ac_it_dr_scores[, 1], c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score))
@@ -5385,15 +5409,17 @@ for (pmName in c("I", "II(a)", "III", "IV(I)", "IV(II(a))", "IV(III)")) {
   
   temp.df <- rbind(temp.df, data.frame(
     PM = pmName,
-    Score_for_worst = ac_pmp_score(
+    ScForWorst = ac_pmp_score(
       use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("Project", which.min(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
-    Score_for_best = ac_pmp_score(
+    ScForBest = ac_pmp_score(
       use_metrics = temp.Metric,
       pmName = pmName, projName = paste0("Project", which.max(temp.gt)), results_uniform = ac_grid_projects_results_uniform_it),
-    Score_low = min(temp.pred$pred),
-    Score_high = max(temp.pred$pred),
-    Score_mean = mean(temp.pred$pred),
+    ScMax = max(temp.pred$pred),
+    ScMin = min(temp.pred$pred),
+    ScAvg = mean(temp.pred$pred),
+    KLdiv = kl_div(temp.gt, temp.pred$pred),
+    Corr = stats::cor(temp.gt, temp.pred$pred),
     RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
     MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
     Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -5407,7 +5433,7 @@ if (interactive()) {
   temp.df
 } else {
   knitr::kable(
-    x = cbind(temp.df$PM, round(temp.df[, 2:ncol(temp.df)], 4)),
+    x = cbind(data.frame(PM = temp.df$PM), round(temp.df[, 2:ncol(temp.df)], 4)),
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using issue-tracking data for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus.",
     label = "ac-compare-pms-it"
@@ -5483,7 +5509,7 @@ ac_it_weights_optim <- function(pmName, useLog = FALSE) {
 #### Results PM vs. PM
 
 Now for the actual optimization of each type of process model.
-An overview of the optimization process on a per-project basis is shown in table \ref{tab:ac-sc-weights-optim-overview}.
+An overview of the optimization process on a per-project basis is shown in table \ref{tab:ac-it-weights-optim-overview}.
 
 ```{r}
 ac_it_weights_pm_I <- ac_it_weights_optim(pmName = "I")
@@ -5587,15 +5613,20 @@ for (useLog in c(FALSE, TRUE)) {
     
     temp.df <- rbind(temp.df, data.frame(
       PM = pmName,
-      Score_for_best = ac_pmp_score_weighted(
+      ScForBest = ac_pmp_score_weighted(
         results_uniform = ac_grid_projects_results_uniform_it,
         pmName = pmName, projName = paste0("Project", which.max(temp.gt)),
         weightGrid = ac_weight_grid_it, weightVector = temp.weights),
-      Score_for_worst = ac_pmp_score_weighted(
+      ScForWorst = ac_pmp_score_weighted(
         results_uniform = ac_grid_projects_results_uniform_it,
         pmName = pmName, projName = paste0("Project", which.min(temp.gt)),
         weightGrid = ac_weight_grid_it, weightVector = temp.weights),
+      ScMax = max(temp.pred$pred),
+      ScMin = min(temp.pred$pred),
+      ScAvg = mean(temp.pred$pred),
       Obj = if (useLog) "Log" else "MSE",
+      KLdiv = kl_div(temp.gt, temp.pred$pred),
+      Corr = stats::cor(temp.gt, temp.pred$pred),
       RMSE = sqrt(Metrics::mse(actual = temp.gt, predicted = temp.pred$pred)),
       MSE = Metrics::mse(actual = temp.gt, predicted = temp.pred$pred),
       Log = mean(scoring::logscore(object = ground_truth ~ pred, data = temp.pred))
@@ -5609,8 +5640,9 @@ if (interactive()) {
   temp.df
 } else {
   knitr::kable(
-    x = cbind(data.frame(
-      PM = temp.df$PM, Obj = temp.df$Obj), round(temp.df[, c(2:3, 5:6)], 4)),
+    x = cbind(
+      temp.df[, colnames(temp.df) %in% c("PM", "Obj")],
+      round(temp.df[, !(colnames(temp.df) %in% c("PM", "Obj"))], 4)),
     booktabs = TRUE,
     caption = "Comparison of continuous PMs using issue-tracking data for best/worst projects, as well as MSE- and Log-scores as average deviation from the ground truth consensus, using some best set of weights per PM as found by optimization.",
     label = "ac-compare-pms-it-optim"
