@@ -2894,7 +2894,7 @@ ac_itp1_devt2_ecdf <- stats::ecdf(abs(temp - stats::runif(n = 2e5)))
 ac_itp1_desc1_ecdf <- function(x) x
 ```
 
-```{r ac-calib-dec-rule, echo=FALSE, fig.height=5, fig.cap=""}
+```{r ac-calib-dec-rule, echo=FALSE, fig.height=5, fig.cap="The automatically calibrated scores (losses) of the decision rule."}
 par(mfrow = c(2,2))
 
 temp <- seq(from = 0, to = max(req(t_1), abs(1 - req(t_1))), length.out = 1e3)
@@ -5745,9 +5745,9 @@ if (interactive()) {
 ```
 
 
-#### Detailed results derivative models
+#### Detailed results for model type I
 
-If we inspect the metrics used in the picked champion model (III/MSE), we can make some very interesting observations (table \ref{tab:ac-it-details-pm-iii}).
+If we inspect the metrics used in model (I/MSE), we can make some very interesting observations (table \ref{tab:ac-it-details-pm-i}).
 Using only twelve objectives in total (5/3/4 usages for `REQ`/`DEV`/`DESC`), we see that the by far most important objective is the `ImpulseFactor` on the `DESC` variable in segment $9$. This seems plausible, as the de-scoping is an important indicator for a project going awry, but only towards project end.
 The impulse factor divides the process' peak by its average and is therefore sensitive to perturbations of the entire signal and not just its extremes. A difference between `Peak` and `ImpulseFactor` could indicate that in fact differences between process and model exist.
 The next two most (and equally) important objectives are the standard deviation and the variance in segment $4$.
@@ -5758,7 +5758,10 @@ Also, segments $\{2,3,6\}$ were not used and deemed unimportant. In other words,
 
 ```{r echo=FALSE}
 temp <- ac_weight_grid_it[ac_it_weights_pm_I$par > 0, ]
-temp$weight <- round(ac_it_weights_pm_I$par[ac_it_weights_pm_I$par > 0], 3)
+temp$weight <- ac_it_weights_pm_I$par[ac_it_weights_pm_I$par > 0]
+temp$weight <- temp$weight / max(temp$weight)
+temp$weight_rel <- temp$weight / sum(temp$weight)
+temp$weight_cum <- cumsum(temp$weight_rel) # keep order by segIdx
 
 if (interactive()) {
   temp
@@ -5767,33 +5770,37 @@ if (interactive()) {
     x = temp,
     booktabs = TRUE,
     row.names = FALSE,
-    caption = "The metrics used in PM III. All but one metric are metrics from signal theory.",
-    label = "ac-it-details-pm-iii"
+    caption = "The metrics used in PM I. All but one metric are metrics from signal theory.",
+    label = "ac-it-details-pm-i"
   )
 }
 ```
 
+#### Detailed results ordinary vs. derivative models
+
+Let's compare the performance of all ordinary PMs vs their derivative counterparts.
 
 ```{r echo=FALSE}
-#temp <- cbind(ac_weight_grid_it, data.frame(weight = ac_it_weights_pm_IV_I$par + ac_it_weights_pm_IV_IIa$par + ac_it_weights_pm_IV_III$par))
 temp <- cbind(ac_weight_grid_it, data.frame(
   weight =
+    1 / 6 * (
     ac_it_weights_pm_I$par +
     ac_it_weights_pm_IIa$par +
     ac_it_weights_pm_III$par +
     ac_it_weights_pm_I_Log$par +
     ac_it_weights_pm_IIa_Log$par +
-    ac_it_weights_pm_III_Log$par
+    ac_it_weights_pm_III_Log$par)
 ))
 
 temp.deriv <- cbind(ac_weight_grid_it, data.frame(
   weight =
+    1 / 6 *(
     ac_it_weights_pm_IV_I$par +
     ac_it_weights_pm_IV_IIa$par +
     ac_it_weights_pm_IV_III$par +
     ac_it_weights_pm_IV_I_Log$par +
     ac_it_weights_pm_IV_IIa_Log$par +
-    ac_it_weights_pm_IV_III_Log$par
+    ac_it_weights_pm_IV_III_Log$par)
 ))
 
 

@@ -3274,6 +3274,7 @@ nrow(ac_weight_grid)
 
 Now the objective for the optimization will search for weights that minimize the MSE between the weighted projects and the ground truth.
 We will optimize the weights once for each process model, and then follow this up by a closer inspection of the champion model (the model with the lowest MSE).
+We will run the optimization using a local search, facilitating a parallel version of the L-BFGS-B algorithm [@byrd1995lbfgsb] [@gerber2019], using a numerical gradient.
 
 
 ```{r}
@@ -3535,6 +3536,7 @@ It is also worth noting that in this scenario we are using all available metrics
 temp <- cbind(ac_weight_grid, data.frame(weight = ac_sc_weights_pm_IIIb11$par))
 temp <- temp[temp$weight > 0,]
 temp <- temp[order(-temp$weight),]
+temp$weight_percent <- paste0(round(temp$weight / sum(temp$weight) * 100, 2), "%")
 
 if (interactive()) {
   temp
@@ -3551,6 +3553,7 @@ if (interactive()) {
 
 Before the analysis, let's show all the weights that are $>0$ for PM type III(b, numInt=11) in table \ref{tab:ac-sc-weights-detailed}.
 The first obvious fact that we observe is that the not all segments are used (cannot be used). Segments $\{6,7,8,10\}$ are not used (important) at all in this model, while segments $\{1,5\}$ have been used twice to take measurements.
+The first four most important weights account for $\approx86.7$% of the total variable importance.
 In terms of metrics, half of all measurements come from signal theory. The other half is one correlation and three arclen-ratios.
 The least important variables in this type of model are `CP` and `FREQ` (one usage), followed by `A` (two usages), and trumped by `SCD` (four or half of all usages).
 In conclusion, these results are a bit astounding, since they mean that with only $8$ objectives, it is already quite possible to indicate the degree to which the Fire Drill is present in a project, without even inspecting $40$% of it.
