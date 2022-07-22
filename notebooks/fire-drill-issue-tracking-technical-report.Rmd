@@ -2993,7 +2993,7 @@ if (interactive()) {
 
 The scores from the automatically calibrated decision rule are shown in table \ref{tab:ac-it-dr-scores}.
 
-We should also examine the scores more in detail for both configurations of weights, and find out what were the scores for the best/worst projects.
+We should also examine the scores more in detail for both configurations of weights, and find out what were the scores for the best/worst projects (table \ref{tab:ac-it-dr-scores-2-confs}).
 
 ```{r echo=FALSE}
 as.density <- function(x) {
@@ -3042,7 +3042,19 @@ for (confName in c("all_equal", "pref_reqt1")) {
 }
 
 rownames(temp.df) <- NULL
-temp.df
+```
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp.df
+} else {
+  knitr::kable(
+    x = cbind(temp.df[, 1], round(temp.df[, 2:10], 4)),
+    booktabs = TRUE,
+    caption = "Scores and scoring rules for two configurations as calculated by the decision rule for two different configurations.",
+    label = "ac-it-dr-scores-2-confs"
+  )
+}
 ```
 
 
@@ -3114,7 +3126,7 @@ if (interactive()) {
 
 
 It appears, for example, that we should not put any weight on the indicator for the `DESC`-variable at $t=1$.
-Let's use the weights:
+Let's use the weights (see table \ref{tab:ac-it-dr-opt-scores-with-weights}):
 
 ```{r}
 temp <- append(all_signals, all_signals_2nd_batch)
@@ -3125,7 +3137,20 @@ temp <- `colnames<-`(`rownames<-`(matrix(ncol = 2, nrow = length(temp), byrow = 
     w_devt2 = res$solution[3], w_desc1 = res$solution[4])),
   c(ground_truth$consensus_score, ground_truth_2nd_batch$consensus_score)
 )), names(temp)), c("optimized", "ground_truth"))
-temp
+```
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Using the optimized weights for the decision rule to demonstrate the deviation from the ground truth.",
+    label = "ac-it-dr-opt-scores-with-weights"
+  )
+}
 ```
 
 Brier-score (MSE) and correlation are:
@@ -3622,11 +3647,15 @@ temp <- data.frame(
 # ci_req + ci_dev + area_desc gives ~0.962
 p3_avg_lm <- stats::lm(formula = gt_consensus ~ ci_req + ci_dev + area_desc, data = temp)
 stats::coef(p3_avg_lm)
+```
+
+
+```{r ac-it-lm-fit2, echo=FALSE, fig.cap="Residuals and QQ-plot of the automatically calibrated decision rule that was fitted using a linear model."}
 par(mfrow=c(1,2))
 plot(p3_avg_lm, ask = FALSE, which = 1:2)
 ```
 
-Using the approximate coefficients of the linear model, we can define the detector as follows:
+Using the approximate coefficients of the linear model (figure \ref{fig:ac-it-lm-fit2}), we can define the detector as follows:
 
 $$
 \begin{aligned}
@@ -5449,7 +5478,7 @@ The mean score in each family tells us which the best model is. Here, it is type
 However, looking at the spread of best/worst scores, it seems that there is room for improvement in terms of selecting the right objectives (weights).
 
 
-### Weighted by optimization
+### Weighted by optimization\label{sssec:weighted-by-opt}
 
 ```{r}
 ac_weight_grid_it <- expand.grid(list(
