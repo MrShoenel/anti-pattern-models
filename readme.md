@@ -13,11 +13,14 @@ find:
     users to reproduce our results. All results are included, such that
     the notebooks will only recompute them if you delete them. The
     notebooks are very detailed and document all steps necessary. See
-    (Hönel 2021) for a pre-rendered PDF.
+    (Hönel 2022) for a pre-rendered PDF.
 -   [**Data** (CSV)](./data) and (precomputed) [**Results**
     (RDS)](./results) - All data required for reproduction is included.
     All the results, too. Some of them take days to compute, so be
     aware. Also see (Hönel et al. 2022).
+
+There is a case study that makes extensive use of the data and models
+(Picha et al. 2022).
 
 # Abstract
 
@@ -30,23 +33,23 @@ and events such as logged time or maintenance activities, which are
 mined from the underlying source code or issue-tracking data, thus
 making the description objective as it becomes data-based. Secondly, we
 demonstrate a novel method to quantify and score the deviations of
-real-world projects to data-based AP descriptions. Using nine real-world
-projects that exhibit a Fire Drill to some degree, we show how to
-further enhance the translated AP. The ground truth in these projects
-was extracted from two individual experts and consensus was found
-between them. Our evaluation spans three kinds of pattern, where the
-first is purely derived from description, the second type is enhanced by
-data, and the third kind is derived from data only. The Fire Drill AP as
-translated from description only for either, source code- or
-issue-tracking-based detection, shows weak potential of confidently
-detecting the presence of the anti-pattern in a project. Enriching the
-AP with data from real-world projects significantly improves detection.
-Using patterns derived from data only leads to almost perfect
-correlations of the scores with the ground truth. Some APs share
-symptoms with the Fire Drill AP, and we conclude that the presence of
-similar patterns is most certainly detectable. Furthermore, any pattern
-that can be characteristically modeled using the proposed approach is
-potentially well detectable.
+real-world projects to data-based AP descriptions. Using fifteen
+real-world projects that exhibit a Fire Drill to some degree, we show
+how to further enhance the translated AP. The ground truth in these
+projects was extracted from two individual experts and consensus was
+found between them. Our evaluation spans four kinds of patterns, where
+the first is purely derived from description, the second type is
+enhanced by data, and the third kind is derived from data only. The
+fourth type then is a derivative meta-process pattern. We introduce a
+novel method called automatic calibration, that optimizes a pattern such
+that only necessary and important scores remain that suffice to
+confidently detect the degree to which the AP is present. Without
+automatic calibration, the proposed patterns show only weak potential
+for detecting the presence. Enriching the AP with data from real-world
+projects significantly improves the potential. We conclude that the
+presence of similar patterns is most certainly detectable. Furthermore,
+any pattern that can be characteristically modeled using the proposed
+approach is potentially well detectable.
 
 # References
 
@@ -54,9 +57,9 @@ potentially well detectable.
 
 <div id="ref-honel2021technical" class="csl-entry">
 
-Hönel, Sebastian. 2021. “Technical Reports Compilation: Detecting the
+Hönel, Sebastian. 2022. “Technical Reports Compilation: Detecting the
 Fire Drill Anti-Pattern Using Source Code and Issue-Tracking Data.”
-*CoRR*. <https://doi.org/10.13140/RG.2.2.35805.33766/2>.
+*CoRR*. <https://doi.org/10.48550/arXiv.2104.15090>.
 
 </div>
 
@@ -66,6 +69,16 @@ Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
 “Detection of the Fire Drill Anti-Pattern: 15 Real-World Projects with
 Ground Truth, Issue-Tracking Data, Source Code Density, Models and
 Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
+
+</div>
+
+<div id="ref-picha2022Firedrill" class="csl-entry">
+
+Picha, Petr, Sebastian Hönel, Premek Brada, Morgan Ericsson, Welf Löwe,
+Anna wingkvist, and Jakub Danek. 2022. “Process Anti-Pattern Detection
+in Student Projects – a Case Study.” In *EuroPLoP’22: European
+Conference on Pattern Languages of Programs 2022, Irsee, Deutschland,
+July 6 - 10, 2022*. ACM.
 
 </div>
 
