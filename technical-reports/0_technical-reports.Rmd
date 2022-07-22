@@ -1,5 +1,5 @@
 ---
-title: "Technical Reports Compilation: Detecting the Fire Drill anti-pattern using Source Code and issue-tracking data"
+title: "Technical Reports Compilation: Detecting the Fire Drill Anti-pattern Using Source Code and Issue-Tracking Data"
 author: "Sebastian Hönel"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 bibliography: ../inst/REFERENCES.bib
