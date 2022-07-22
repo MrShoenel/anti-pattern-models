@@ -252,7 +252,7 @@ models_sl <- loadResultsOrCompute(file = "../results/models_sl.rds", computeExpr
 
 
 
-As for predicting on validation data, we will use the models that were fit to the entire training data.
+As for predicting on validation data, we will use the models that were fit to the entire training data (see table \ref{tab:overview1}).
 
 ```{r echo=FALSE}
 # Let's define a function to generate a tabular overview
@@ -260,7 +260,8 @@ As for predicting on validation data, we will use the models that were fit to th
 generateModelOverview <- function(
   modelListTrain, modelListFinal,
   modelNames = intersect(names(modelListTrain), names(modelListFinal)),
-  validationData)
+  validationData,
+  label = NULL, caption = NULL)
 {
   overview <- NULL
   
@@ -298,28 +299,28 @@ generateModelOverview <- function(
     ))
   }
   
-  return(overview)
+  if (interactive()) {
+    overview
+  } else {
+    for (cn in colnames(overview)) {
+      if (is.numeric(overview[[cn]])) {
+        overview[[cn]] <- round(overview[[cn]], 4)
+      }
+    }
+    
+    knitr::kable(
+      x = overview,
+      booktabs = TRUE,
+      caption = caption,
+      label = label
+    )
+  }
 }
-
 ```
 
 
 ```{r warning=FALSE, eval=interactive()}
-generateModelOverview(results_sl, models_sl, validationData = valid_sl)
-```
-
-```{r echo=FALSE, eval=!interactive()}
-temp <- generateModelOverview(results_sl, models_sl, validationData = valid_sl)
-for (cn in colnames(temp)) {
-  if (is.numeric(temp[[cn]])) {
-    temp[[cn]] <- round(temp[[cn]], 4)
-  }
-}
-
-knitr::kable(
-  x = temp,
-  booktabs = TRUE
-)
+generateModelOverview(results_sl, models_sl, validationData = valid_sl, label = "overview1", caption = "Overview of trained models and their performance using validation data.")
 ```
 
 
@@ -464,29 +465,14 @@ models_ms <- loadResultsOrCompute(file = "../results/models_ms.rds", computeExpr
 })
 ```
 
-Now show the overview:
+Now show the overview (table \ref{tab:overview2}):
 
 ```{r eval=interactive()}
-generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
-```
-
-```{r echo=FALSE, eval=!interactive()}
-temp <- generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl)
-for (cn in colnames(temp)) {
-  if (is.numeric(temp[[cn]])) {
-    temp[[cn]] <- round(temp[[cn]], 4)
-  }
-}
-
-knitr::kable(
-  x = temp,
-  booktabs = TRUE
-)
+generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl, label = "overview2", caption = "Results of using a manual stacking of models.")
 ```
 
 
-
-The overview for all models, using oversampled training data, was this:
+The overview for all models, using oversampled training data, was this (table \ref{tab:overview3}):
 
 ```{r}
 results_ms_all <- readRDS("../results/ms_all.rds")
@@ -494,22 +480,9 @@ models_ms_all <- readRDS("../results/models_ms_all.rds")
 ```
 
 ```{r eval=interactive()}
-generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
+generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl, label = "overview3", caption = "Results of using all models and using oversampled data.")
 ```
 
-```{r echo=FALSE, eval=!interactive()}
-temp <- generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl)
-for (cn in colnames(temp)) {
-  if (is.numeric(temp[[cn]])) {
-    temp[[cn]] <- round(temp[[cn]], 4)
-  }
-}
-
-knitr::kable(
-  x = temp,
-  booktabs = TRUE
-)
-```
 
 ```{r echo=FALSE}
 results_ms_all <- NULL
