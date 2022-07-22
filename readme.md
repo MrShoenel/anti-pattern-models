@@ -1,4 +1,4 @@
-# Detecting the Fire Drill anti-pattern using Source Code and issue-tracking data
+# Detecting the Fire Drill Anti-pattern Using Source Code and Issue-Tracking Data [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6884866.svg)](https://doi.org/10.5281/zenodo.6884866)
 
 In this repository, we develop methods that can model and detect the
 presence of so-called anti-patterns (AP). In this repository, you will
@@ -13,14 +13,17 @@ find:
     users to reproduce our results. All results are included, such that
     the notebooks will only recompute them if you delete them. The
     notebooks are very detailed and document all steps necessary. See
-    (Hönel 2022) for a pre-rendered PDF.
+    (Hönel 2022b) for a pre-rendered PDF.
 -   [**Data** (CSV)](./data) and (precomputed) [**Results**
     (RDS)](./results) - All data required for reproduction is included.
     All the results, too. Some of them take days to compute, so be
     aware. Also see (Hönel et al. 2022).
 
 There is a case study that makes extensive use of the data and models
-(Picha et al. 2022).
+(Picha et al. 2022). This repository has a release on Zenodo (Hönel
+2022a). From version seven and onwards, each technical reports
+compilation will be paired with a separate release of this repository on
+Zenodo.
 
 # Abstract
 
@@ -55,11 +58,18 @@ approach is potentially well detectable.
 
 <div id="refs" class="references csl-bib-body hanging-indent">
 
+<div id="ref-sselnu2022repo" class="csl-entry">
+
+Hönel, Sebastian. 2022a. “Sse-Lnu/Anti-Pattern-Models: Arxiv-V7,” July.
+<https://doi.org/10.5281/zenodo.6884867>.
+
+</div>
+
 <div id="ref-honel2021technical" class="csl-entry">
 
-Hönel, Sebastian. 2022. “Technical Reports Compilation: Detecting the
-Fire Drill Anti-Pattern Using Source Code and Issue-Tracking Data.”
-*CoRR*. <https://doi.org/10.48550/arXiv.2104.15090>.
+———. 2022b. “Technical Reports Compilation: Detecting the Fire Drill
+Anti-Pattern Using Source Code and Issue-Tracking Data.” *CoRR*.
+<https://doi.org/10.48550/arXiv.2104.15090>.
 
 </div>
 

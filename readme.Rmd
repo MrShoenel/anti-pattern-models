@@ -8,7 +8,8 @@ output:
     variant: gfm
 ---
 
-# Detecting the Fire Drill anti-pattern using Source Code and issue-tracking data
+# Detecting the Fire Drill Anti-pattern Using Source Code and Issue-Tracking Data [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6884866.svg)](https://doi.org/10.5281/zenodo.6884866)
+
 
 In this repository, we develop methods that can model and detect the presence of so-called anti-patterns (AP). In this repository, you will find:
 
@@ -18,6 +19,7 @@ In this repository, we develop methods that can model and detect the presence of
 
 
 There is a case study that makes extensive use of the data and models [@picha2022Firedrill].
+This repository has a release on Zenodo [@sselnu2022repo]. From version seven and onwards, each technical reports compilation will be paired with a separate release of this repository on Zenodo.
 
 
 # Abstract
