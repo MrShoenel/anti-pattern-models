@@ -1,0 +1,9 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Joe
+    given-names: Johnson
+    orcid: https://orcid.org/0000-0000-0000-0000
+title: sse-lnu/anti-pattern-models: arxiv-v7
+version: arxiv-v7
+date-released: 2022-07-22
