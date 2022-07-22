@@ -5917,6 +5917,29 @@ This is interesting, as these metrics are comparatively cheap to compute.
 For the ordinary models it does not seem important by how much PM/P actually differ in absolute terms. In other words, it appears that it is more important to quantify deviation and resemblance by metrics other than `area`/`mae` or `rmse`. Instead, it makes apparently more sense to compare PM/P as signals (ratios), as well as by how their _shape_ diverges (`corr`, `sd`/`var` are sensitive to these).
 
 
+## Comparing process models
+
+Figure \ref{fig:compare-pms} summarizes the workflow for comparing two or more process models.
+This may be done with or with (labeled) observations.
+Without observations but some compatibility, one of the PMs' configurations can be calibrated, in order to quantify how and by how much the other PM deviates from it.
+Even without a ground truth, we can learn something about the PMs if we were to calibrate them, and that is which of the two better resembles the observations, given the chosen configuration.
+This however is only a valid procedure under the assumptions that a) all observations exhibit the sought-after phenomenon, and b) they all do so to a similar degree.
+If both PMs are in the same family, then we will obtain a perfect goodness score that allows to choose a champion PM within the family.
+The champion PM is the one that incurs the lowest loss (or highest scores) across all unlabeled observations, which means that the champion resembles the observations best, given the same configuration as used within the family.
+
+
+Another interesting case arises from having access to a somewhat richer corpus of ground truth, as we can then learn the variable importances (here: how important each calibrated score is) of a PM (see section \ref{sssec:weighted-by-opt}).
+These allow us to inspect in detail, which the scores of importance are. For example, one might learn that a certain score or segment is irrelevant for capturing the phenomenon the PM describes.
+Variable importances can also be further facilitated in a regression model for future observations.
+
+
+```{r compare-pms, echo=FALSE, out.width="95%", fig.cap="Workflow for examining differences between two PMs. Automatic calibration allows to gain detailed insights into each PM and the used configuration.", fig.align="center", fig.pos="ht!"}
+knitr::include_graphics(
+  path = "../figures/compare-pms.png",
+  )
+```
+
+
 
 # References {-}
 
