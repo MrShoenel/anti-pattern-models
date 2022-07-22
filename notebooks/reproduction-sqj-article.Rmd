@@ -76,7 +76,8 @@ if (!endsWith(getwd(), "notebooks")) {
 
 ```{r}
 # Available width in inch in the article's template
-FIG_WIDTH <- 4.6859
+FIG_WIDTH <- 7.22433 * 0.95 # we'll only occupy 95%
+FIG_WIDTH_1COL <- 3.4876
 
 # Common style for all ggplot2 plots
 gg2_style <- function(facets = FALSE) {
@@ -176,7 +177,7 @@ For issue-tracking data, we have the correlation of scores on a per-variable bas
 
 ```{r}
 scores <- unique(gsub(pattern = "^(REQ|DEV|DESC)_", replacement = "", x = colnames(p3_it_scores)))
-# Remove mean absolute error (mae), as it's the same as area in our case, since the segment length equaled 1.
+# Remove the mean absolute error, as it's the same as area in our case, since the segment length equaled 1.
 scores <- scores[!(scores %in% "mae")]
 scores
 ```
@@ -206,6 +207,7 @@ Now with this data, we can show a correlation plot:
 
 ```{r corr-it, fig.cap="Correlation of scores using process model type 3 and issue-tracking data."}
 plotexpr <- expression({
+  par(family = "LM Roman 10")
   temp <- stats::cor(cbind(data.frame(GroundTruth = ground_truth$consensus_score), p3_it_scores_mean[,]))
   temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
   corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90,
@@ -220,6 +222,13 @@ png(filename = "../figures/reproduction/rq1_corr_it.png", width = 400, height = 
 eval(plotexpr)
 invisible(dev.off())
 ```
+
+```{r}
+tikzDevice::tikz("../figures/reproduction/rq1_corr_it.tex", width = 0.5 * FIG_WIDTH, height = 3.5)
+eval(plotexpr)
+dev.off()
+```
+
 
 
 Let's load the scores for Source code. Note that these were previously aggregated once using the mean (suffix `_m`) and once using the product (`_p`) across __all__ variables. We will keep the mean for now, and then rename the columns.
@@ -251,6 +260,7 @@ if (interactive()) {
 
 ```{r corr-sc, fig.cap="Correlation of scores using process model type 3 (avg, no align) and source code data."}
 plotexpr <- expression({
+  par(family = "LM Roman 10")
   temp <- stats::cor(cbind(data.frame("GroundTruth" = ground_truth$consensus_score), p3_sc_scores[,]))
   temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
   
@@ -265,6 +275,12 @@ eval(plotexpr)
 png(filename = "../figures/reproduction/rq1_corr_sc.png", width = 400, height = 400)
 eval(plotexpr)
 invisible(dev.off())
+```
+
+```{r eval=interactive(), echo=FALSE}
+tikzDevice::tikz("../figures/reproduction/rq1_corr_sc.tex", width = 0.5 * FIG_WIDTH, height = 3.5)
+eval(plotexpr)
+dev.off()
 ```
 
 

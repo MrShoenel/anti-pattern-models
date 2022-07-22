@@ -1053,7 +1053,7 @@ eval(plotexpr)
 
 
 ```{r echo=FALSE, eval=FALSE}
-saveTikzExpr(name = "model_t1_comb", height = 3.5, expr = plotexpr, width = 3)
+saveTikzExpr(name = "model_t1_comb", height = 3.5, expr = plotexpr, width = 3.4876)
 ```
 
 
@@ -1944,6 +1944,9 @@ plotexpr <- expression({
   ))
   temp <- temp[, rev(colnames(temp))]
   
+  # Remove 'mae' and leave in 'are':
+  temp <- temp[!grepl(pattern = "_mae$", rownames(temp)),]
+  
   rownames(temp) <- sapply(X = rownames(temp), function(n) {
     sp <- strsplit(x = n, split = "_")[[1]]
     paste0("$\\mathsf{", sp[1], "}_{\\mathrm{", sp[2], "}}$")
@@ -1975,8 +1978,8 @@ saveTikzAndEps(ggInst = eval(plotexpr), name = "detect-it-corr", height = 4)
 ```
 
 ```{r}
-# 806:323 ~ 2.52
-tikzDevice::tikz(file = paste0("../figures/fig_fdfe_", "corr-all-it", ".tex"), width = 6.3, verbose = FALSE, height = 2.5)
+# 806:323
+tikzDevice::tikz(file = paste0("../figures/fig_fdfe_", "corr-all-it", ".tex"), width = FIG_WIDTH, verbose = FALSE, height = 2.7)
 eval(plotexpr)
 dev.off()
 #saveTikzExpr(name = "corr-all-it", height = 2.5, width = 6.3, expr = eval(plotexpr))

@@ -78,20 +78,22 @@ curve(dens_c, from = attributes(dens_c)$min, to = attributes(dens_c)$max, add = 
 curve(dens_p, from = attributes(dens_p)$min, to = attributes(dens_p)$max, add = TRUE)
 ```
 ```{r}
+use_acp_attr <- c("min", "max", "ratio", "ymax")
 acp_attr <- rbind(
-  data.frame(attributes(dens_a)),
-  data.frame(attributes(dens_c)),
-  data.frame(attributes(dens_p)))
+  data.frame(attributes(dens_a)[use_acp_attr]),
+  data.frame(attributes(dens_c)[use_acp_attr]),
+  data.frame(attributes(dens_p)[use_acp_attr]))
 
 # Aggregate corrective+perfective:
 dens_cp <- function(x) dens_c(x) + dens_p(x)
 dens_acp <- densitySafe(sp$AuthorTimeUnixEpochSecs, ratio = 1)
 
-ggplot(data.frame(x = range(acp_attr)), aes(x)) +
+ggplot(data.frame(x = range(c(acp_attr$min, acp_attr$max))), aes(x)) +
   stat_function(fun = dens_a, aes(color="A"), size = 1, n = 1e3) +
-  stat_function(fun = dens_acp, aes(color="A+C+P"), size = 1, n = 1e3) +
   stat_function(fun = dens_c, aes(color="C"), size = 1, n = 1e3) +
   stat_function(fun = dens_p, aes(color="P"), size = 1, n = 1e3) +
+  #stat_function(fun = dens_cp, aes(color="A+C+P"), size = 1, n = 1e3) +
+  #stat_function(fun = dens_acp, aes(color="A+C+P"), size = 1, n = 1e3) +
   scale_color_brewer("Patterns", palette = "Dark2") +
   #scale_color_manual("Patterns", values = c("black", "red", "blue", "green")) +
   theme_light() +
