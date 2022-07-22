@@ -3559,30 +3559,46 @@ The least important variables in this type of model are `CP` and `FREQ` (one usa
 In conclusion, these results are a bit astounding, since they mean that with only $8$ objectives, it is already quite possible to indicate the degree to which the Fire Drill is present in a project, without even inspecting $40$% of it.
 
 
+
 ```{r echo=FALSE}
-temp <- cbind(ac_weight_grid, data.frame(weight = ac_sc_weights_pm_I$par))
+temp <- cbind(ac_weight_grid, data.frame(
+  weight = 1 / 4 *
+    ac_sc_weights_pm_I$par +
+    ac_sc_weights_pm_II$par +
+    ac_sc_weights_pm_IIIavg$par +
+    ac_sc_weights_pm_IIIb11$par))
+
 #temp$weight <- temp$weight / max(temp$weight) # let's normalize this again
 temp <- temp[temp$weight > 0,]
 temp <- temp[order(-temp$weight),]
 ```
 
 
-Let's look at the average importance per segment, variable, and metric across __all__ projects (figure \ref{fig:ac-sc-weights-detailed-plot}).
+Let's look at the average importance per segment, variable, and metric averaged across __all__ projects (figure \ref{fig:ac-sc-weights-detailed-plot}).
 
 ```{r ac-sc-weights-detailed-plot, echo=FALSE, fig.height=8, fig.cap="Average and total importances of scores per segment, variable, and metric, for process model type I."}
-layout(mat = matrix(data = c(1,3,2,4,5,5,6,6), ncol = 2, byrow = TRUE))
+layout(mat = matrix(data = c(1,3,2,4,5,5,6,6), ncol = 2, byrow = TRUE), widths = c(2.3, 1))
+par(oma = rep(0, 4))
+
+set.seed(1)
+pal_6 <- sample(RColorBrewer::brewer.pal(7, "Set3"))
+pal_13 <- c(pal_6[7], pal_6[1], rep(pal_6[2], 2), pal_6[3], rep(pal_6[4], 2), rep(pal_6[5], 2), rep(pal_6[6], 4))
+
+pal_10 <- viridis::viridis(10)
+pal_acfs <- scales::hue_pal()(4)
+
 
 temp.seg <- `names<-`(sapply(X = 1:10, FUN = function(si) {
   weights <- temp[temp$SegIdx == si,]$weight
   if (length(weights) == 0) 0 else mean(weights)
 }), paste0(1:10))
-barplot(temp.seg, main = "Average importance per segment")
+barplot(temp.seg, main = "Average importance per segment", col = pal_10, angle = 30, density = 15+50 * temp.seg / max(temp.seg))
 grid()
 temp.seg <- `names<-`(sapply(X = 1:10, FUN = function(si) {
   weights <- temp[temp$SegIdx == si,]$weight
   if (length(weights) == 0) 0 else sum(weights)
 }), paste0(1:10))
-barplot(temp.seg, main = "Total importance per segment")
+barplot(temp.seg, main = "Total importance per segment", col = pal_10, angle = 30, density = 15+50 * temp.seg / max(temp.seg))
 grid()
 
 
@@ -3590,13 +3606,13 @@ temp.var <- `names<-`(sapply(X = sort(unique(temp$Var)), function(var) {
   weights <- temp[temp$Var == var,]$weight
   if (length(weights) == 0) 0 else mean(weights)
 }), sort(unique(temp$Var)))
-barplot(temp.var, main = "Average importance per variable")
+barplot(temp.var, main = "Average importance per variable", col = pal_acfs, angle = 30, density = 15+50 * temp.var / max(temp.var))
 grid()
 temp.var <- `names<-`(sapply(X = sort(unique(temp$Var)), function(var) {
   weights <- temp[temp$Var == var,]$weight
   if (length(weights) == 0) 0 else sum(weights)
 }), sort(unique(temp$Var)))
-barplot(temp.var, main = "Total importance per variable")
+barplot(temp.var, main = "Total importance per variable", col = pal_acfs, angle = 30, density = 15+50 * temp.var / max(temp.var))
 grid()
 
 
@@ -3610,7 +3626,7 @@ names(temp.metric) <- sapply(names(temp.metric), function(m) {
   if (m == "ImpulseFactor") return("ImpFac")
   m
 })
-barplot(temp.metric, main = "Average importance per metric")
+barplot(temp.metric, main = "Average importance per metric", col = pal_13, angle = 30, density = 15+50 * temp.metric / max(temp.metric))
 grid()
 
 
@@ -3624,19 +3640,19 @@ names(temp.metric) <- sapply(names(temp.metric), function(m) {
   if (m == "ImpulseFactor") return("ImpFac")
   m
 })
-barplot(temp.metric, main = "Total importance per metric")
+barplot(temp.metric, main = "Total importance per metric", col = pal_13, angle = 30, density = 15+50 * temp.metric / max(temp.metric))
 grid()
 ```
 
 
 We may also show the most frequented segments, variables, and metrics:
 
-```{r ac-sc-weights-detailed-plot-counts, echo=FALSE, fig.height=5.5, fig.cap="Number of score usages per segment, variable, and metric for process model type I."}
+```{r ac-sc-weights-detailed-plot-counts, echo=FALSE, fig.height=5.5, fig.width=8, fig.cap="Number of score usages per segment, variable, and metric for process model type I."}
 layout(mat = matrix(data = c(1,2,3,3), ncol = 2, byrow = TRUE))
 
-barplot(table(temp$SegIdx), main = "No. of scores used per segment")
+barplot(table(temp$SegIdx), main = "No. of scores used per segment", col = pal_10, angle = 30, density = 20 + table(temp$SegIdx))
 grid()
-barplot(table(temp$Var)[levels(temp$Var)], main = "No. of scores used per variable")
+barplot(table(temp$Var)[levels(temp$Var)], main = "No. of scores used per variable", col = pal_acfs, angle = 30, density = 15 + 0.75 * table(temp$Var)[levels(temp$Var)])
 grid()
 
 temp.metric <- table(temp$Metric)
@@ -3645,7 +3661,7 @@ names(temp.metric) <- sapply(names(temp.metric), function(m) {
   if (m == "ImpulseFactor") return("ImpFac")
   m
 })
-barplot(temp.metric, main = "No. of usages per type of score")
+barplot(temp.metric, main = "No. of usages per type of score", col = pal_13, angle = 30, density = 15+50 * temp.metric / max(temp.metric))
 grid()
 ```
 
