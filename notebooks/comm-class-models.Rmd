@@ -319,7 +319,7 @@ generateModelOverview <- function(
 ```
 
 
-```{r warning=FALSE, eval=interactive()}
+```{r warning=FALSE}
 generateModelOverview(results_sl, models_sl, validationData = valid_sl, label = "overview1", caption = "Overview of trained models and their performance using validation data.")
 ```
 
@@ -467,7 +467,7 @@ models_ms <- loadResultsOrCompute(file = "../results/models_ms.rds", computeExpr
 
 Now show the overview (table \ref{tab:overview2}):
 
-```{r eval=interactive()}
+```{r}
 generateModelOverview(results_ms, models_ms, validationData = data_stack_valid_sl, label = "overview2", caption = "Results of using a manual stacking of models.")
 ```
 
@@ -479,7 +479,7 @@ results_ms_all <- readRDS("../results/ms_all.rds")
 models_ms_all <- readRDS("../results/models_ms_all.rds")
 ```
 
-```{r eval=interactive()}
+```{r}
 generateModelOverview(results_ms_all, models_ms_all, validationData = data_stack_valid_sl, label = "overview3", caption = "Results of using all models and using oversampled data.")
 ```
 
