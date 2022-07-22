@@ -2488,6 +2488,7 @@ With this linear model, we can report a high correlation with the consensus, too
 This is a new section in the seventh iteration of this report.
 "Automatic calibration" refers to a new approach of gauging a continuous PM, so that it can compute true scores for any process, also scores that are __comparable__ across PMs, given the same configuration (segments, objectives, regularizers) was used (we say that PMs using the same configuration are part of a _family_).
 This approach is based on the idea of __rectification of scores__[^3]. The goal is to learn for every objective a __uniform__ score, where uniform refers to both, a uniform distribution _and_ a codomain of $[0,1]$. With such scores, a normalizing linear scalarizer will produce a score with the __same__ properties, and that means we will be able to compare the continuous process models we formulated so far!
+This process has been more formalized in the meantime, since it has applications in multi-objective optimization [@honel2022pareto].
 Even beyond that, we can use this score similar to a probabilistic measure of how well a process matches the PM, so in our case we can translate this information into the degree to which a Fire Drill is present in a project, according to the process model in question. We will also be able to compute the Brier- and Logarithmic scoring rules, and compare against the results that we got using the binary decision rule.
 
 [^3]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/rectify-score.md
