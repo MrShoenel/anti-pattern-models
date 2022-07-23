@@ -85,7 +85,7 @@ Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
 <div id="ref-picha2022Firedrill" class="csl-entry">
 
 Picha, Petr, Sebastian Hönel, Premek Brada, Morgan Ericsson, Welf Löwe,
-Anna wingkvist, and Jakub Danek. 2022. “Process Anti-Pattern Detection
+Anna Wingkvist, and Jakub Danek. 2022. “Process Anti-Pattern Detection
 in Student Projects – a Case Study.” In *EuroPLoP’22: European
 Conference on Pattern Languages of Programs 2022, Irsee, Deutschland,
 July 6 - 10, 2022*. ACM.
