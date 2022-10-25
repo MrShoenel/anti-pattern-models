@@ -740,11 +740,20 @@ grid$model_type <- as.character(grid$model_type)
 library(foreach)
 res_grid <- loadResultsOrCompute(file = "../results/rob-reg_res-grid.rds", computeExpr = {
   doWithParallelCluster(numCores = min(parallel::detectCores(), 123), expr = {
+    pb <- utils::txtProgressBar(min = 1, max = nrow(grid), style = 3)
+    progress <- function(n) {
+      if (0 == (n %% 10)) {
+        print(n)
+      }
+      utils::setTxtProgressBar(pb = pb, value = n)
+    }
+    
     foreach::foreach(
       rn = rownames(grid),
       .combine = rbind,
       .inorder = FALSE,
-      .verbose = TRUE
+      .verbose = TRUE,
+      .options.snow = list(progress = progress)
     ) %dopar% {
       tryCatch({
         row <- grid[rn,]
@@ -755,6 +764,7 @@ res_grid <- loadResultsOrCompute(file = "../results/rob-reg_res-grid.rds", compu
         NULL # Return an empty result that will not disturb .combine
       })
     }
+    close(pb)
   })
 })
 ```
