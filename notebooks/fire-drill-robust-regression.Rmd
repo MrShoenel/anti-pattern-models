@@ -777,56 +777,6 @@ ggplot(temp1, aes(x = rmse_valid, y = num_train, fill = ..x..)) +
 ```
 
 
-## Rank Model
-
-```{r}
-grid <- expand.grid(list(
-  seed = 6:25,
-  num_train = c(2:9, seq(from = 10, to = 20, by = 2), seq(from = 23, to = 50, by = 3)),
-  do_pca = c(TRUE, FALSE),
-  model_type = c("rank")
-))
-grid$model_type <- as.character(grid$model_type)
-
-res_rank3 <- loadResultsOrCompute(file = "../results/rob-reg_rank3.rds", computeExpr = {
-  doWithParallelCluster(expr = {
-    foreach::foreach(
-      rn = rownames(grid),
-      .combine = rbind,
-      .inorder = FALSE,
-      .verbose = TRUE
-    ) %dopar% {
-      row <- grid[rn,]
-      adaptive_training_caret(org_dataset = dataset_sc_oversampled, seeds = row$seed, model_type = row$model_type, num_train = row$num_train, do_pca = row$do_pca)
-    }
-  })
-})
-```
-
-```{r}
-temp <- res_rank3 %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
-plot(temp$Mean, type="l", ylim = c(0, max(c(temp$Mean, temp$Max, temp$Min))))
-grid()
-lines(temp$Max, col="blue")
-lines(temp$Min, col="red")
-```
-
-```{r fig.height=10, fig.width=8}
-temp1 <- res_rank3[order(res_rank3$num_train),]
-temp1 <- data.frame(
-  num_train = factor(x = as.character(temp1$num_train), levels = as.character(rev(sort(unique(temp1$num_train)))), ordered = TRUE),
-  rmse_valid = temp1$rmse_valid)
-
-ggplot(temp1, aes(x = rmse_valid, y = num_train, fill = ..x..)) +
-  #stat_density_ridges(quantile_lines = TRUE) +
-  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
-  scale_fill_viridis_c(option = "C") +
-  theme_ridges() + 
-  theme(legend.position = "none")
-```
-
-
-
 
 
 # OLD (REMOVE)
