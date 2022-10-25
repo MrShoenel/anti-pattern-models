@@ -187,4 +187,29 @@ curve2 <- function(func, from, to, col = "black", lty = 1, lwd = 1, add = FALSE,
 }
 
 
+make_smooth_ecdf <- function(values, slope = 0.025, inverse = FALSE) {
+  r <- range(values)
+  e <- stats::ecdf(values)
+  x <- sort(unique(values))
+  y <- e(x)
+  if (slope > 0) {
+    ext <- r[2] - r[1]
+    # Add a slight slope before and after for numeric stability.
+    x <- c(r[1] - ext, x, r[2] + ext)
+    y <- c(0 - slope, y, 1 + slope)
+  }
+  
+  # Note that the inversed ECDF (the EPPF,) will have an x-range of [0-slope, 1+slope].
+  # We do it this way so that we allow the PPF to be called outside its range which may
+  # be useful for new, unseen data that is outside of the known range.
+  `attributes<-`(x = stats::approxfun(x = if (inverse) y else x, y = if (inverse) x else y, yleft = if (inverse) min(x) else y[1], yright = if (inverse) max(x) else y[length(y)]), value = list(
+    "min" = min(values),
+    "max" = max(values),
+    "range" = range(values),
+    
+    "slope_min" = min(x),
+    "slope_max" = max(x),
+    "slope_range" = range(x)
+  ))
+}
 
