@@ -1,7 +1,5 @@
-library(RMariaDB)
-
-
 getExperimentConn = function(cnfFile = "../my.cnf") {
+  library(RMariaDB)
   return(dbConnect(
     RMariaDB::MariaDB(),
     default.file = cnfFile,
