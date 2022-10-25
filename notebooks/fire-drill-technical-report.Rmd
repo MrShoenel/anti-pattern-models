@@ -370,6 +370,10 @@ for (pId in levels(student_projects$project)) {
     name = paste(pId, "SCD", sep = "_"), func = dens_scd,
     support = c(0, 1), isWp = FALSE)
 }
+
+loadResultsOrCompute(file = "../results/project_signals_sc.rds", computeExpr = {
+  project_signals
+})
 ```
 
 Let's plot all the projects:
@@ -2003,6 +2007,10 @@ for (pId in levels(student_projects_2nd_batch$project)) {
     name = paste(pId, "SCD", sep = "_"), func = dens_scd,
     support = c(0, 1), isWp = FALSE)
 }
+
+loadResultsOrCompute(file = "../results/project_signals_2nd_batch_sc.rds", computeExpr = {
+  project_signals_2nd_batch
+})
 ```
 
 The second batch of projects and their variables are shown in figure \ref{fig:project-vars-2nd-batch}.
