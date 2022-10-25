@@ -52,6 +52,9 @@ source(file = "./common-funcs.R")
 source(file = "../models/modelsR6.R")
 source(file = "../models/SRBTW-R6.R")
 
+devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/helpers.R")
+devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/rank-model.R")
+
 library(ggplot2)
 library(ggridges)
 library(ggpubr)
@@ -679,9 +682,6 @@ adaptive_training_caret <- function(
     pred_valid <- c()
     tryCatch({
       if (model_type == "rankModel") {
-        devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/helpers.R")
-        devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/rank-model.R")
-        
         # We're gonna have a small grid, so that each model is fit a few times.
         use_grid <- expand.grid(list(
           cdf_type = c("auto", "gauss", "ecdf"),
