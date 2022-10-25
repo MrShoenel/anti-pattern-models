@@ -6,3 +6,4 @@
 *.html
 my.cnf
 **/__pycache__/*
+results/rob-reg_res-grid_*.rds
