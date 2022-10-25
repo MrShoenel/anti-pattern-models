@@ -157,6 +157,9 @@ all_signals <- list()
 for (pId in paste0("Project", 1:9)) {
   all_signals[[pId]] <- load_project_issue_data(pId = pId)
 }
+loadResultsOrCompute(file = "../results/project_signals_it.rds", computeExpr = {
+  all_signals
+})
 ```
 
 ```{r echo=FALSE}
@@ -330,6 +333,18 @@ Next we define the upper confidence interval for the variable `DEV`, then the va
 ```{r}
 dev_ci_upper <- function(x) 0.07815904 * x + 0.6222767 * x^2 + 0.2995643 * x^3
 desc <- function(x) 0.01172386 * x + 0.0933415 * x^2 + 0.04493464 * x^3
+```
+
+```{r echo=FALSE}
+temp <- seq(from = 0, to = 1, length.out = 1e4)
+pattern_it <- list(
+  REQ = stats::approxfun(x = temp, y = req(temp), rule = 2),
+  DEV = stats::approxfun(x = temp, y = dev(temp), rule = 2),
+  DESC = stats::approxfun(x = temp, y = desc(temp), rule = 2))
+
+loadResultsOrCompute(file = "../results/pattern_I_it.rds", computeExpr = {
+  pattern_it
+})
 ```
 
 
@@ -878,11 +893,12 @@ CI_req_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_REQ, f
 CI_dev_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DEV, f_ci_upper = dev_ci_upper_p3avg, f_ci_lower = dev_ci_lower_p3avg, gbar = dev_p3, omega = omega)
 CI_desc_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DESC, f_ci_upper = desc_ci_upper_p3avg, f_ci_lower = desc_ci_lower_p3avg, gbar = desc_p3, omega = omega)
 
-saveRDS(object = list(
+loadResultsOrCompute(file = "../data/CI_p3avg_funcs.rds", computeExpr = {
+list(
   CI_req_p3avg = CI_req_p3avg,
   CI_dev_p3avg = CI_dev_p3avg,
-  CI_desc_p3avg = CI_desc_p3avg
-), file = "../data/CI_p3avg_funcs.rds")
+  CI_desc_p3avg = CI_desc_p3avg)
+})
 ```
 
 
@@ -2753,6 +2769,10 @@ all_signals_2nd_batch <- list()
 for (pId in paste0("Project", 10:15)) {
   all_signals_2nd_batch[[pId]] <- load_project_issue_data(pId = pId)
 }
+
+loadResultsOrCompute(file = "../results/project_signals_2nd_batch_it.rds", computeExpr = {
+  all_signals_2nd_batch
+})
 ```
 
 
