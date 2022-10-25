@@ -679,21 +679,40 @@ adaptive_training_caret <- function(
     pred_valid <- c()
     tryCatch({
       if (model_type == "rankModel") {
+        devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/helpers.R")
         devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/rank-model.R")
-        temp1 <- create_model(df_train = df_train, x_cols = use_cn_x, y_col = "gt", cdf_type = "gauss")
-        tempf <- function(x) model_loss(model = temp1, x = x, df = df_train, y_col = "gt")
         
-        num_params <- 2 + 3 * length(use_cn_x)
-        opt_res <- nloptr::nloptr(
-          x0 = runif(n = num_params),
-          eval_f = tempf,
-          eval_grad_f = function(x) pracma::grad(f = tempf, x0 = x),
-          lb = rep(-1e3, num_params),
-          ub = rep( 1e3, num_params),
-          opts = list(algorithm = "NLOPT_LD_TNEWTON", xtol_rel=1e-3, maxeval=250))
-
-        pred_train <- temp1(x = opt_res$solution, df = df_train)
-        pred_valid <- temp1(x = opt_res$solution, df = df_valid)
+        # We're gonna have a small grid, so that each model is fit a few times.
+        use_grid <- expand.grid(list(
+          cdf_type = c("auto", "gauss", "ecdf"),
+          attempt = 1:5 # This is basically a dummy.
+        ))
+        use_grid$cdf_type <- as.character(use_grid$cdf_type)
+        
+        best_rm <- 1e30
+        for (rn in rownames(use_grid)) {
+          row <- use_grid[rn,]
+          temp1 <- create_model(df_train = df_train, x_cols = use_cn_x, y_col = "gt", cdf_type = row$cdf_type)
+          tempf <- function(x) model_loss(model = temp1, x = x, df = df_train, y_col = "gt")
+          
+          # Let's fit the model!
+          num_params <- 2 + 3 * length(use_cn_x)
+          opt_res <- nloptr::nloptr(
+            x0 = runif(n = num_params),
+            eval_f = tempf,
+            eval_grad_f = function(x) pracma::grad(f = tempf, x0 = x),
+            lb = rep(-1e3, num_params),
+            ub = rep( 1e3, num_params),
+            opts = list(algorithm = "NLOPT_LD_TNEWTON", xtol_rel=5e-4, maxeval=250))
+          
+          temp_pred_valid <- temp1(x = opt_res$solution, df = df_valid)
+          temp_best_rm <- Metrics::rmse(actual = df_valid$gt, predicted = temp_pred_valid)
+          if (temp_best_rm < best_rm) {
+            best_rm <- temp_best_rm
+            pred_valid <- temp_pred_valid
+            pred_train <- temp1(x = opt_res$solution, df = df_train)
+          }
+        }
       } else if (model_type == "gbm") {
         use_grid <- expand.grid(list(
           n.trees = c(2:10, seq(from = 12, to = 30, by = 2), seq(from = 35, to = 80, by = 5), 90, 100),
@@ -763,7 +782,7 @@ grid <- expand.grid(list(
   num_train = 2:50,
   do_pca = c(TRUE, FALSE)
 ))
-model_types <- c("avNNet", "gbm", "glm", "M5", "rf", "svmPoly", "treebag")
+model_types <- c("avNNet", "gbm", "glm", "M5", "rf", "svmPoly", "treebag", "rankModel")
 use_datasets <- c("dataset_it_oversampled", "dataset_sc_oversampled", "dataset_sc_cdf_oversampled")
 
 
