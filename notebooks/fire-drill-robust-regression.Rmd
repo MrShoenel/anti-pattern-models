@@ -731,8 +731,7 @@ adaptive_training_caret <- function(
 grid <- expand.grid(list(
   seed = 1:25,
   num_train = 2:50,
-  do_pca = c(TRUE, FALSE),
-  model_type = c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag", "xgbTree")
+  do_pca = c(TRUE, FALSE)
 ))
 grid$model_type <- as.character(grid$model_type)
 
