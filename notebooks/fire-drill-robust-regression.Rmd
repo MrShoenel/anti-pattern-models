@@ -733,64 +733,81 @@ grid <- expand.grid(list(
   num_train = 2:50,
   do_pca = c(TRUE, FALSE)
 ))
+model_types <- c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag")
+use_datasets <- c("dataset_it_oversampled", "dataset_sc_oversampled", "dataset_sc_cdf_oversampled")
 
 
 library(foreach)
 res_grid <- loadResultsOrCompute(file = "../results/rob-reg_res-grid.rds", computeExpr = {
-  doWithParallelCluster(numCores = min(parallel::detectCores(), 123), expr = {
-    res <- NULL
-    for (model_type in c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag", "xgbTree")) {
-      temp <- foreach::foreach(
-        rn = rownames(grid),
-        .combine = rbind,
-        .inorder = FALSE,
-        .verbose = TRUE,
-        .options.snow = list(progress = progress)
-      ) %dopar% {
-        tryCatch({
-          row <- grid[rn,]
-          adaptive_training_caret(
-            org_dataset = dataset_sc_oversampled, seeds = row$seed, model_type = model_type,
-            num_train = row$num_train, do_pca = row$do_pca)
-        }, error = function(cond) {
-          NULL # Return an empty result that will not disturb .combine
+  res <- NULL
+  
+  for (use_dataset in use_datasets) {
+    dataset <- get(use_dataset)
+    
+    for (model_type in model_types) {
+      
+      the_file <- paste0("../results/rob-reg_res-grid_", model_type, "_", use_dataset, ".rds")
+      temp <- as.data.frame(loadResultsOrCompute(file = the_file, computeExpr = {
+        temp1 <- doWithParallelCluster(numCores = min(parallel::detectCores(), 123), expr = {
+          foreach::foreach(
+            rn = rownames(grid),
+            .combine = rbind,
+            .inorder = FALSE,
+            .verbose = TRUE
+          ) %dopar% {
+            tryCatch({
+              row <- grid[rn,]
+              adaptive_training_caret(
+                org_dataset = dataset, seeds = row$seed, model_type = model_type,
+                num_train = row$num_train, do_pca = row$do_pca)
+            }, error = function(cond) {
+              NULL # Return an empty result that will not disturb .combine
+            })
+          }
         })
-      }
-      saveRDS(object = temp, file = paste0("../results/rob-reg_res-grid_", model_type, ".rds"))
+        saveRDS(object = temp1, file = the_file)
+        temp1
+      }))
+      temp$dataset <- rep(use_dataset, nrow(temp))
+      
       res <- rbind(res, temp)
     }
-    
-    close(pb)
-    res
-  })
+  }
+
+  res$dataset <- factor(res$dataset)
+  res
 })
 ```
 
-Let's show some results for the Random forest:
+Let's show some results for the Random forest (figure \ref{fig:rob-reg-rf1}).
+In figure \ref{fig:rob-reg-rf2} we show the distribution of validation errors depending on the number of training instances (same setup as in figure \ref{fig:rob-reg-rf1}).
 
-```{r}
-temp <- res_grid[res_grid$model_type == "rf",]
+```{r rob-reg-rf1, echo=FALSE, fig.cap="Robust regression using a Random forest, no PCA, and the oversampled source code dataset.", fig.align="top", fig.pos="ht!"}
+temp <- res_grid[res_grid$model_type == "rf" & !res_grid$do_pca & res_grid$dataset == "dataset_sc_oversampled",]
 temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
-plot(temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", ylim = c(0, max(c(temp$Mean, temp$Max, temp$Min))))
+use_ylim <- c(0, max(c(temp$Mean, temp$Max, temp$Min)))
+plot(temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", ylim = use_ylim)
 grid()
 lines(temp$Max, col="blue")
 lines(temp$Min, col="red")
-legend(x = 40, y = 4.5, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
+legend(x = 38, y = 4.25, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
 ```
 
-```{r fig.height=10, fig.width=8}
-temp <- res_grid[res_grid$model_type == "rf",]
+```{r rob-reg-rf2, echo=FALSE, message=FALSE, fig.height=8, fig.width=6, fig.cap="Ridge plot of distributions of RMSEs on validation data, dependent on the number of training samples.", fig.align="top", fig.pos="ht!"}
+temp <- res_grid[res_grid$model_type == "rf" & res_grid$do_pca & res_grid$dataset == "dataset_sc_oversampled",]
 temp1 <- temp[order(temp$num_train),]
 temp1 <- data.frame(
   num_train = factor(x = as.character(temp1$num_train), levels = as.character(rev(sort(unique(temp1$num_train)))), ordered = TRUE),
   rmse_valid = temp1$rmse_valid)
 
+# https://cran.r-project.org/web/packages/ggridges/vignettes/introduction.html
 ggplot(temp1, aes(x = rmse_valid, y = num_train, fill = ..x..)) +
   #stat_density_ridges(quantile_lines = TRUE) +
-  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+  geom_density_ridges_gradient(scale = 2, rel_min_height = 0.01) +
   scale_fill_viridis_c(option = "C") +
   theme_ridges() + 
-  theme(legend.position = "none")
+  theme(legend.position = "none") +
+  xlab("RMSE (validation data)") + ylab("Number of training instances")
 ```
 
 
