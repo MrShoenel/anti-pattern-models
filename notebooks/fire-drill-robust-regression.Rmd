@@ -733,7 +733,6 @@ grid <- expand.grid(list(
   num_train = 2:50,
   do_pca = c(TRUE, FALSE)
 ))
-grid$model_type <- as.character(grid$model_type)
 
 
 library(foreach)
