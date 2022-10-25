@@ -1507,7 +1507,7 @@ Another advantage is that integration intervals simplify to $[0,1]$ \eqref{eq:kl
 \end{align}
 
 
-## $m$-dimensional relative continuous Pearson sample correlation coefficient
+## $m$-dimensional relative continuous Pearson sample correlation coefficient\label{ssec:m-dim-pearson}
 
 First, here is the formula:
 
@@ -1519,7 +1519,7 @@ $$
   \\[1ex]
   \overline{f}=\mathrm{E}[f]=&\;\left[\int_{a_{1,1}}^{a_{1,2}}\dots\int_{a_{m,1}}^{a_{m,2}}\,f(x_1,\dots,x_m)\,dx_1\dots dx_m\right]
   \\[0ex]
-  &\;\;\times\prod_{i=1}^{m}\,(a_{i,1}-a_{i,2})^{-1}\,\text{, (equivalently for}\;\overline{g}\;\text{using}\;\bm{\mathit{S}}_g\text{),}
+  &\;\;\times\prod_{i=1}^{m}\,(a_{i,1}-a_{i,2})^{-1}\,\text{, (analogously for}\;\overline{g}\;\text{using}\;\bm{\mathit{S}}_g\text{),}
   \\[1ex]
   =&\;\int_0^1\dots\int_0^1\,f(\mathsf{T}(a_{1,1},a_{1,2},x_1),\,\dots\,,\mathsf{T}(a_{m,1},a_{m,2},x_m))\,dx_1\,\dots\,dx_m\,\text{,}
   \\[1em]
