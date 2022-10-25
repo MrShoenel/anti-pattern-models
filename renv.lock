@@ -2233,10 +2233,10 @@
     },
     "rootSolve": {
       "Package": "rootSolve",
-      "Version": "1.8.2.1",
+      "Version": "1.8.2.3",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "d62eb8dc158952de565c611ea8498e4c",
+      "Hash": "b8fbe639ed0e0e4f4c80498f4411ec5f",
       "Requirements": []
     },
     "roxygen2": {
