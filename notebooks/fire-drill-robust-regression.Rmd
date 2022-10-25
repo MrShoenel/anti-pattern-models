@@ -730,40 +730,50 @@ adaptive_training_caret <- function(
 ```{r}
 grid <- expand.grid(list(
   seed = 1:25,
-  num_train = 3:50,
+  num_train = 2:50,
   do_pca = c(TRUE, FALSE),
-  model_type = c("rf")
+  model_type = c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag", "xgbTree")
 ))
 grid$model_type <- as.character(grid$model_type)
 
 
 library(foreach)
-res_rf <- loadResultsOrCompute(file = "../results/rob-reg_rf.rds", computeExpr = {
-  doWithParallelCluster(expr = {
+res_grid <- loadResultsOrCompute(file = "../results/rob-reg_res-grid.rds", computeExpr = {
+  doWithParallelCluster(numCores = min(parallel::detectCores(), 123), expr = {
     foreach::foreach(
       rn = rownames(grid),
       .combine = rbind,
       .inorder = FALSE,
       .verbose = TRUE
     ) %dopar% {
-      row <- grid[rn,]
-      adaptive_training_caret(org_dataset = dataset_sc_oversampled, seeds = row$seed, model_type = row$model_type, num_train = row$num_train, do_pca = row$do_pca)
+      tryCatch({
+        row <- grid[rn,]
+        adaptive_training_caret(
+          org_dataset = dataset_sc_oversampled, seeds = row$seed, model_type = row$model_type,
+          num_train = row$num_train, do_pca = row$do_pca)
+      }, error = function(cond) {
+        NULL # Return an empty result that will not disturb .combine
+      })
     }
   })
 })
 ```
 
+Let's show some results for the Random forest:
 
 ```{r}
-temp <- res_rf %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
-plot(temp$Mean, type="l", ylim = c(0, max(c(temp$Mean, temp$Max, temp$Min))))
+temp <- res_grid[res_grid$model_type == "rf",]
+temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
+plot(temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", ylim = c(0, max(c(temp$Mean, temp$Max, temp$Min))))
 grid()
 lines(temp$Max, col="blue")
 lines(temp$Min, col="red")
+legend(x = 40, y = 4.5, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
 ```
 
 ```{r fig.height=10, fig.width=8}
-temp1 <- res_rf[order(res_rf$num_train),]
+temp <- res_grid[res_grid$model_type == "rf",]
+temp1 <- temp[order(temp$num_train),]
 temp1 <- data.frame(
   num_train = factor(x = as.character(temp1$num_train), levels = as.character(rev(sort(unique(temp1$num_train)))), ordered = TRUE),
   rmse_valid = temp1$rmse_valid)
