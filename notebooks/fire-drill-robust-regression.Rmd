@@ -809,22 +809,29 @@ res_grid <- loadResultsOrCompute(file = "../results/rob-reg_res-grid.rds", compu
 })
 ```
 
-Let's show some results for the Random forest (figure \ref{fig:rob-reg-rf1}).
-In figure \ref{fig:rob-reg-rf2} we show the distribution of validation errors depending on the number of training instances (same setup as in figure \ref{fig:rob-reg-rf1}).
+Let's show some results for the Gradient Boosting Machine (figure \ref{fig:rob-reg-gbm1}).
+It appears that the GBM needs at least $7$ training examples to work at all.
+With $\approx25$ training examples, the expected generalization error (using the RMSE) is $\approx1$, and with about $15$ examples it is $\approx1.5$, both of which might be acceptable in a real-world scenario.
 
-```{r rob-reg-rf1, echo=FALSE, fig.cap="Robust regression using a Random forest, no PCA, and the oversampled source code dataset.", fig.align="top", fig.pos="ht!"}
-temp <- res_grid[res_grid$model_type == "rf" & !res_grid$do_pca & res_grid$dataset == "dataset_sc_oversampled",]
+
+```{r rob-reg-gbm1, echo=FALSE, fig.cap="Robust regression using a Gradient Boosting Machine, PCA, and the oversampled issue-tracking dataset.", fig.align="top", fig.pos="ht!"}
+temp <- res_grid[res_grid$model_type == "gbm" & res_grid$do_pca & res_grid$dataset == "dataset_it_oversampled",]
+temp <- temp[stats::complete.cases(temp),]
 temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
 use_ylim <- c(0, max(c(temp$Mean, temp$Max, temp$Min)))
-plot(temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", ylim = use_ylim)
+plot(x = temp$num_train, y = temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", xlim = c(5, 50), ylim = use_ylim)
 grid()
-lines(temp$Max, col="blue")
-lines(temp$Min, col="red")
-legend(x = 38, y = 4.25, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
+lines(x = temp$num_train, y = temp$Max, col="blue")
+lines(x = temp$num_train, y = temp$Min, col="red")
+legend(x = 32, y = 4.25, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
 ```
 
-```{r rob-reg-rf2, echo=FALSE, message=FALSE, fig.height=8, fig.width=6, fig.cap="Ridge plot of distributions of RMSEs on validation data, dependent on the number of training samples.", fig.align="top", fig.pos="ht!"}
-temp <- res_grid[res_grid$model_type == "rf" & res_grid$do_pca & res_grid$dataset == "dataset_sc_oversampled",]
+In figure \ref{fig:rob-reg-gbm2} we show the distribution of validation errors depending on the number of training instances (same setup as in figure \ref{fig:rob-reg-gbm1}).
+
+
+```{r rob-reg-gbm2, echo=FALSE, message=FALSE, fig.height=8, fig.width=6, fig.cap="Ridge plot of distributions of RMSEs on validation data, dependent on the number of training samples.", fig.align="top", fig.pos="ht!"}
+temp <- res_grid[res_grid$model_type == "gbm" & res_grid$do_pca & res_grid$dataset == "dataset_it_oversampled",]
+temp <- temp[stats::complete.cases(temp),]
 temp1 <- temp[order(temp$num_train),]
 temp1 <- data.frame(
   num_train = factor(x = as.character(temp1$num_train), levels = as.character(rev(sort(unique(temp1$num_train)))), ordered = TRUE),
