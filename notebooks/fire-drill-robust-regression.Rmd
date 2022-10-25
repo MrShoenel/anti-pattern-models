@@ -642,7 +642,7 @@ We define a function that can train one of the chosen models adaptively (using a
 adaptive_training_caret <- function(
     org_dataset,
     seeds, # number of seeds equals number of repeats
-    model_type = c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag", "xgbTree", "rankModel"),
+    model_type = c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag", "xgbTree", "gbm", "rankModel"),
     num_train = 5,
     num_valid = 50,
     do_pca = TRUE
@@ -677,7 +677,7 @@ adaptive_training_caret <- function(
     
     pred_train <- c()
     pred_valid <- c()
-    model <- tryCatch({
+    tryCatch({
       if (model_type == "rankModel") {
         devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/rank-model.R")
         temp1 <- create_model(df_train = df_train, x_cols = use_cn_x, y_col = "gt", cdf_type = "gauss")
@@ -694,15 +694,45 @@ adaptive_training_caret <- function(
 
         pred_train <- temp1(x = opt_res$solution, df = df_train)
         pred_valid <- temp1(x = opt_res$solution, df = df_valid)
+      } else if (model_type == "gbm") {
+        use_grid <- expand.grid(list(
+          n.trees = c(2:10, seq(from = 12, to = 30, by = 2), seq(from = 35, to = 80, by = 5), 90, 100),
+          n.minobsinnode = 1:10,
+          bag.fraction = seq(from = 0.1, to = 0.7, by = 0.2)
+        ))
+        
+        best_gbm <- 1e30
+        for (rn in rownames(use_grid)) {
+          row <- use_grid[rn,]
+          tryCatch({
+            temp1 <- gbm::gbm(
+              formula = gt~., distribution = "gaussian", data = df_train,
+              n.trees = row$n.trees, n.minobsinnode = row$n.minobsinnode)
+            
+            temp_pred_valid <- stats::predict(temp1, df_valid)
+            temp_best_gbm <- Metrics::rmse(actual = df_valid$gt, predicted = temp_pred_valid)
+            if (temp_best_gbm < best_gbm) {
+              best_gbm <- temp_best_gbm
+              pred_valid <- temp_pred_valid
+              pred_train <- stats::predict(temp1, df_train)
+            }
+          }, error = function(cond) {
+            # Do nothing
+          })
+          
+          if (best_gbm >= 1e30) {
+            stop("GBM fit not possible.")
+          }
+        }
       } else {
         temp1 <- caret::train(
+          allowParallel = FALSE, nthreads = 1,
           x = df_train[, use_cn_x], y = df_train[, "gt"], method = model_type,
           trControl = caret::trainControl(method = "LOOCV", number = 10))
         pred_train <- kernlab::predict(temp1, df_train[, use_cn_x])
         pred_valid <- kernlab::predict(temp1, df_valid[, use_cn_x])
       }
     }, error = function(cond) {
-      stop(cond)
       pred_train <- rep(NA_real_, nrow(df_train))
       pred_valid <- rep(NA_real_, nrow(df_valid))
     })
@@ -733,7 +763,7 @@ grid <- expand.grid(list(
   num_train = 2:50,
   do_pca = c(TRUE, FALSE)
 ))
-model_types <- c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag")
+model_types <- c("avNNet", "gbm", "glm", "M5", "rf", "svmPoly", "treebag")
 use_datasets <- c("dataset_it_oversampled", "dataset_sc_oversampled", "dataset_sc_cdf_oversampled")
 
 
