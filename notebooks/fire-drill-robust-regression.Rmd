@@ -645,7 +645,7 @@ We define a function that can train one of the chosen models adaptively (using a
 adaptive_training_caret <- function(
     org_dataset,
     seeds, # number of seeds equals number of repeats
-    model_type = c("avNNet", "glm", "M5", "rf", "svmPoly", "treebag", "xgbTree", "gbm", "rankModel"),
+    model_type = c("avNNet", "gbm", "glm", "M5", "rankModel", "rf", "svmPoly", "treebag", "xgbTree"),
     num_train = 5,
     num_valid = 50,
     do_pca = TRUE
@@ -675,8 +675,9 @@ adaptive_training_caret <- function(
     df_valid <- org_dataset[idx[(num_train + 1):(num_train + num_valid)],]
     df_valid <- stats::predict(pre_proc, newdata = df_valid)
     
-    # Colnames change to PC1, PC2, ...
-    use_cn_x <- if (do_pca) paste0("PC", 1:(ncol(df_train) - 1)) else cn_x
+    # Colnames change to PC1, PC2, ..., if PCA, otherwise they will be a subset
+    # of the original column names (because of (N)ZV):
+    use_cn_x <- if (do_pca) paste0("PC", 1:(ncol(df_train) - 1)) else colnames(df_train)
     
     pred_train <- c()
     pred_valid <- c()
