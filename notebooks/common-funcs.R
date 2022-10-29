@@ -1773,7 +1773,7 @@ plot_project_data <- function(data, boundaries = c()) {
 }
 
 
-plot_var_imp <- function(data, col_feat = "Feature", col_imp = "Overall") {
+plot_var_imp <- function(data, col_feat = "Feature", col_imp = "Overall", relative = FALSE) {
   if ("varImp.train" %in% class(data)) {
     data <- data$importance
   }
@@ -1785,16 +1785,24 @@ plot_var_imp <- function(data, col_feat = "Feature", col_imp = "Overall") {
   data <- data[order(-data[[col_imp]]), , drop=FALSE]
   data[[col_feat]] <- factor(x = data[[col_feat]], levels = rev(data[[col_feat]]), ordered = TRUE)
   
+  use_scale <- scale_y_continuous(breaks = seq(from=0, to=100, by=10), labels = seq(from=0, to=100, by=10))
+  if (relative) {
+    data[["rel"]] <- data[[col_imp]] / sum(data[[col_imp]])
+    col_imp <- "rel"
+    use_scale <- scale_y_continuous()
+  }
+  
   ggplot(data = data, mapping = aes_string(x = col_feat, y = col_imp)) +
     geom_bar(stat = "identity", color="red", width = 0) +
     geom_point(color="blue") +
-    scale_y_continuous(breaks = seq(from=0, to=100, by=10), labels = seq(from=0, to=100, by=10)) +
+    use_scale + 
     coord_flip() +
     theme_light() +
     theme(
       legend.position = "bottom",
       strip.background = element_rect(fill="#dfdfdf"),
-      strip.text = element_text(color="black"))
+      strip.text = element_text(color="black")) +
+    ylab(if (relative) "Relative Importance" else "Overall Importance")
 }
 
 
