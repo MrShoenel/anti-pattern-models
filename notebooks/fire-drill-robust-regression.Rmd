@@ -561,6 +561,8 @@ The first we will do is to synthetically oversample our dataset using SMOTE for 
 SMOTE is a well-established technique that has been proven to significantly increase model performance.
 Since our label is numeric (we do regression), we will have to oversample instances such that new data points are generated that can be imputed and fill up the numeric labels.
 While ordinary SMOTE cannot oversample unseen classes, the technique works differently for regression and allows us to generate synthetic samples with a previously unseen numeric label.
+To reduce the amount of features, we will eliminate those with zero or near-zero variance.
+Then, optionally, we further reduce the feature space's dimensionality by applying a principal component analysis (PCA).
 
 
 ```{r gt-label-hist, echo=FALSE, fig.cap="Histogram of the ground truth consensus for all 15 projects.", fig.align="top", fig.pos="ht!"}
@@ -611,7 +613,7 @@ balance_num_labels <- function(dataset, num = 10) {
 ```
 
 
-
+And here we create the oversampled datasets.
 
 ```{r}
 min_rows <- 15 # Number of rows we want to end up with per numeric label
@@ -625,6 +627,7 @@ dataset_sc_cdf_oversampled <- balance_num_labels(dataset = dataset_sc_cdf_oversa
 dataset_it_oversampled <- cbind(dataset_it, data.frame(gt = ground_truth$consensus))
 dataset_it_oversampled <- balance_num_labels(dataset = dataset_it_oversampled, num = min_rows)
 ```
+
 
 So, as we see in the following overview for all three datasets, we have the same amount of instances for each numeric label ($0$ through $10$):
 
@@ -746,7 +749,6 @@ adaptive_training_caret <- function(
         }
       } else {
         temp1 <- caret::train(
-          allowParallel = FALSE, nthreads = 1,
           x = df_train[, use_cn_x], y = df_train[, "gt"], method = model_type,
           trControl = caret::trainControl(method = "LOOCV", number = 10))
         pred_train <- kernlab::predict(temp1, df_train[, use_cn_x])
@@ -776,6 +778,9 @@ adaptive_training_caret <- function(
 }
 ```
 
+
+And here we compute the grid (test each model on each dataset).
+Attention: The following is expensive.
 
 ```{r}
 grid <- expand.grid(list(
@@ -829,6 +834,7 @@ res_grid <- loadResultsOrCompute(file = "../results/rob-reg_res-grid.rds", compu
 })
 ```
 
+
 Let's show some results for the Gradient Boosting Machine (figure \ref{fig:rob-reg-gbm1}).
 It appears that the GBM needs at least $7$ training examples to work at all.
 With $\approx25$ training examples, the expected generalization error (using the RMSE) is $\approx1$, and with about $15$ examples it is $\approx1.5$, both of which might be acceptable in a real-world scenario.
@@ -838,6 +844,7 @@ With $\approx25$ training examples, the expected generalization error (using the
 temp <- res_grid[res_grid$model_type == "gbm" & res_grid$do_pca & res_grid$dataset == "dataset_it_oversampled",]
 temp <- temp[stats::complete.cases(temp),]
 temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
+
 use_ylim <- c(0, max(c(temp$Mean, temp$Max, temp$Min)))
 plot(x = temp$num_train, y = temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", xlim = c(5, 50), ylim = use_ylim)
 grid()
