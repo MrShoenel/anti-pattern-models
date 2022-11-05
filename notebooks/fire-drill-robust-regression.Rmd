@@ -1162,6 +1162,28 @@ rejection_sampling <- function(x_data, y_data, xlim = c(0, 1), num_x = 1e5) {
 ```
 
 
+Let's create a function to compute the Jensen--Shannon divergence between two PDFs on a segment:
+
+```{r}
+kl_div_segment <- function(p, q, ext = c(0, 0.1), xtol = 1e-20) {
+  cubature::cubintegrate(f = function(x) {
+    p_ <- p(x)
+    q_ <- q(x)
+    if (abs(p_) < xtol || abs(q_) < xtol) 0 else p_ * log(p_ / q_)
+  }, lower = ext[1], upper = ext[2])$integral
+}
+
+jsd_segment <- function(p, q, ext = c(0, 0.1), xtol = 1e-20) {
+  cubature::cubintegrate(f = function(x) {
+    p_ <- p(x)
+    q_ <- q(x)
+    m_ <- .5 * (p_ + q_)
+    if (abs(p_) < xtol || abs(q_) < xtol || abs(m_) < xtol) 0 else .5 * p_ * log(p_ / m_) + .5 * q_ * log(q_ / m_)
+  }, lower = ext[1], upper = ext[2])$integral
+}
+```
+
+
 ## Create Dataset for Source Code
 
 Source code projects are already present as PDFs, so we can just integrate for the three maintenance activities (actually, we'll use the CDFs directly).
