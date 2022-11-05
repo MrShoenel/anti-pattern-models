@@ -891,7 +891,45 @@ ggplot(temp1, aes(x = rmse_valid, y = num_train, fill = ..x..)) +
 ```
 
 
+We will also extract the number of components in case PCA was applied.
 
+```{r}
+# Do a PCA-only grid:
+grid <- expand.grid(list(
+  seed = 1:25,
+  num_train = 2:50,
+  use_dataset = use_datasets
+))
+grid$use_dataset <- as.character(grid$use_dataset)
+
+res_grid_comps <- loadResultsOrCompute(file = "../results/rob-reg_res-grid_comps.rds", computeExpr = {
+  cl <- parallel::makePSOCKcluster(min(32, parallel::detectCores()))
+  parallel::clusterExport(cl = cl, varlist = use_datasets)
+  
+  doWithParallelClusterExplicit(cl = cl, stopCl = TRUE, expr = {
+    foreach::foreach(
+      rn = rownames(grid),
+      .combine = rbind,
+      .inorder = FALSE
+    ) %dopar% {
+      row <- grid[rn,]
+      row$num_comps <- tryCatch({
+        adaptive_training_caret(
+          org_dataset = get(row$use_dataset), seeds = row$seed, model_type = model_types[1], # irrelevant
+          num_train = row$num_train, do_pca = TRUE, return_num_comps = TRUE)
+      }, error = function(cond) NA_real_)
+      row
+    }
+  })
+})
+table(res_grid_comps$num_comps)
+```
+
+Above we see a table with how often a certain number of components was used, and in figure \ref{fig:num-comps-hist} it is illustrated in a histogram.
+
+```{r num-comps-hist, echo=FALSE, fig.cap="Histogram over the number of components used in the grid search (threshold=0.975)."}
+hist(res_grid_comps$num_comps, xlab = "Number of PCA components", main = "PCA components with threshold=0.975.")
+```
 
 
 
