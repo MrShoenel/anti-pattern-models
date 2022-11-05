@@ -642,6 +642,12 @@ rbind(
 ## Adaptive Training
 
 We define a function that can train one of the chosen models adaptively (using an outer grid search).
+This function mainly handles models that are trainable with caret, but there are two exceptions:
+When the selected model is `gbm`, we use a custom grid to accommodate small and very small sample sizes, as the default grid warrants for much larger training sets.
+When the selected model is `rankModel`, we will actually test a new model of our own that uses quantile normalization of the inputs and an inverse rank transform of the outputs, with some non-linearity in between[^2].
+This model has been proven efficient with very small sample sizes.
+
+[^2]: See the Rank Model repository at <https://github.com/MrShoenel/R-rank-model>.
 
 
 ```{r}
@@ -651,16 +657,18 @@ adaptive_training_caret <- function(
     model_type = c("avNNet", "gbm", "glm", "M5", "rankModel", "rf", "svmPoly", "treebag", "xgbTree"),
     num_train = 5,
     num_valid = 50,
-    do_pca = TRUE
+    do_pca = TRUE,
+    return_num_comps = NULL
 ) {
   model_type <- match.arg(model_type)
   
   cn <- colnames(org_dataset)
   cn_x <- cn[cn != "gt"]
-  pre_proc_method <- c("center", "scale", "nzv")
+  pre_proc_method <- c("nzv")
   if (do_pca) {
-    pre_proc_method <- c(pre_proc_method, "pca")
+    pre_proc_method <- c("pca", pre_proc_method)
   }
+  pre_proc_method <- c(pre_proc_method, "center", "scale")
   
   res <- NULL
 
@@ -681,6 +689,13 @@ adaptive_training_caret <- function(
     # Colnames change to PC1, PC2, ..., if PCA, otherwise they will be a subset
     # of the original column names (because of (N)ZV):
     use_cn_x <- if (do_pca) paste0("PC", 1:(ncol(df_train) - 1)) else colnames(df_train)
+    
+    if (!is.null(return_num_comps) && return_num_comps) {
+      if (!do_pca) {
+        stop("Can only return number of components if doing PCA!")
+      }
+      return(length(use_cn_x))
+    }
     
     pred_train <- c()
     pred_valid <- c()
@@ -766,6 +781,7 @@ adaptive_training_caret <- function(
       num_train = num_train,
       num_valid = num_valid,
       model_type = model_type,
+      num_comps = if (do_pca) length(use_cn_x) else NA_real_,
       
       mae_train = Metrics::mae(actual = df_train$gt, predicted = pred_train),
       mae_valid = Metrics::mae(actual = df_valid$gt, predicted = pred_valid),
