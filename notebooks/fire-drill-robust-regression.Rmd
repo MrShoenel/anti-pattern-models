@@ -658,7 +658,8 @@ adaptive_training_caret <- function(
     num_train = 5,
     num_valid = 50,
     do_pca = TRUE,
-    return_num_comps = NULL
+    return_num_comps = NULL,
+    num_caret_repeats = 10
 ) {
   model_type <- match.arg(model_type)
   
@@ -765,7 +766,7 @@ adaptive_training_caret <- function(
       } else {
         temp1 <- caret::train(
           x = df_train[, use_cn_x], y = df_train[, "gt"], method = model_type,
-          trControl = caret::trainControl(method = "LOOCV", number = 10))
+          trControl = caret::trainControl(method = "LOOCV", number = num_caret_repeats))
         pred_train <- kernlab::predict(temp1, df_train[, use_cn_x])
         pred_valid <- kernlab::predict(temp1, df_valid[, use_cn_x])
       }
