@@ -1003,6 +1003,129 @@ res_grid %>% filter(num_train < 10) %>% group_by(model_type, num_train) %>% summ
 
 
 
+
+# Variable Importance for Assessing the Pattern
+
+Obtaining variable importance allows us to understand which features are more or less important. Since in our case features are tied to a metric (area, correlation), a data kind (source code, issue tracking), an activity/metric (e.g., `REQ`, `SCD`), and a segment (one of ten equally long consecutive project phases), we can facilitate variable importance to learn about any of these (how important they are to predict a precise severity of the Fire Drill's presence).
+We could potentially also (alternatively) learn about the quality of the ground truth. However, at this point we must assume that it is perfect as we have no evidence indicating otherwise.
+
+
+Let's create a function that can give us a proper dataframe from the variable importance.
+
+```{r}
+create_variable_importance <- function(dataset) {
+  model <- caret::train(
+    x = dataset[, colnames(dataset) != "gt"], y = dataset[,]$gt, method = "pls",
+    trControl = caret::trainControl(method = "LOOCV", number = 100))
+  
+  vi <- caret::varImp(model)
+  df <- vi$importance
+  res <- NULL
+  
+  for (rn in rownames(df)) {
+    sp <- strsplit(x = rn, split = "_")[[1]]
+    res <- rbind(res, data.frame(
+      variable = sp[1],
+      segment = as.numeric(sp[2]),
+      metric = sp[3],
+      vi = df[rn,]
+    ))
+  }
+  res$vi_rel <- res$vi / sum(res$vi)
+  list(res = res[order(-res$vi),], vi = vi)
+}
+```
+
+Let's compute the variable importance for each of our datasets:
+
+```{r message=FALSE, warning=FALSE}
+vi_sc <- create_variable_importance(
+  dataset = cbind(dataset_sc, data.frame(gt = ground_truth$consensus)))
+vi_sc_cdf <- create_variable_importance(
+  dataset = cbind(dataset_sc_cdf, data.frame(gt = ground_truth$consensus)))
+vi_it <- create_variable_importance(
+  dataset = cbind(dataset_it, data.frame(gt = ground_truth$consensus)))
+```
+
+The variable importance for each dataset is shown in figures \ref{fig:varimp-sc}, \ref{fig:varimp-sc-cdf}, and \ref{fig:varimp-it}.
+
+```{r varimp-sc, echo=FALSE, fig.height=7, fig.align="top", fig.pos="ht!", fig.cap="Variable importance for the source code dataset determined by partial least squares and cross validation."}
+plot_var_imp(data = vi_sc$vi, relative = TRUE) + labs(title = "Variable Importance: Source Code")
+```
+
+```{r varimp-sc-cdf, echo=FALSE, fig.height=7, fig.align="top", fig.pos="ht!", fig.cap="Variable importance for the source code (CDF) dataset determined by partial least squares and cross validation."}
+plot_var_imp(data = vi_sc_cdf$vi, relative = TRUE) + labs(title = "Variable Importance: Source Code (CDFs)")
+```
+
+```{r varimp-it, echo=FALSE, fig.height=7, fig.align="top", fig.pos="ht!", fig.cap="Variable importance for the issue-tracking dataset determined by partial least squares and cross validation."}
+plot_var_imp(data = vi_it$vi, relative = TRUE) + labs(title = "Variable Importance: Issue-tracking")
+```
+
+
+## Analysis of most important Segments, Metrics, Activities, etc.
+
+```{r echo=FALSE, eval=FALSE}
+temp <- vi_sc$res %>% group_by(segment) %>% summarise(Mean_vi = sum(vi_rel))
+barplot(height = temp$Mean_vi, names.arg = temp$segment)
+```
+
+\clearpage
+
+```{r echo=FALSE, fig.width=8, fig.height=9, fig.align="top", fig.pos="ht!"}
+par(mfrow = c(3,1))
+
+
+
+use_vars <- unique(vi_sc$res$variable)
+mat <- matrix(nrow = 4, ncol = 10, dimnames = list(use_vars))
+
+for (v in rownames(mat)) {
+  mat[v,] <- as.numeric((vi_sc$res[vi_sc$res$variable == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop"))$total_imp)
+}
+
+mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
+
+set.seed(3)
+pal_4 <- rev(sample(RColorBrewer::brewer.pal(10, "Set3"), 4))
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Source code pattern", col = pal_4, ylim = c(0, max(mat_sums + .015)), angle = 30, density = 90 * mat_sums / max(mat_sums))
+grid()
+text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)))
+legend("topright", rev(rownames(mat)), fill = rev(pal_4))
+
+
+mat <- matrix(nrow = 4, ncol = 10, dimnames = list(use_vars))
+
+for (v in rownames(mat)) {
+  mat[v,] <- as.numeric((vi_sc_cdf$res[vi_sc_cdf$res$variable == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop"))$total_imp)
+}
+
+mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Source code pattern (CDF)", col = pal_4, ylim = c(0, max(mat_sums + .015)), angle = 30, density = 90 * mat_sums / max(mat_sums))
+grid()
+text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)))
+legend("topright", rev(rownames(mat)), fill = rev(pal_4))
+
+
+
+
+
+use_vars <- unique(vi_it$res$variable)
+mat <- matrix(nrow = 3, ncol = 10, dimnames = list(use_vars))
+
+for (v in rownames(mat)) {
+  mat[v,] <- as.numeric((vi_it$res[vi_it$res$variable == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop"))$total_imp)
+}
+
+mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
+
+set.seed(2)
+pal_3 <- rev(sample(RColorBrewer::brewer.pal(12, "Set3"), 3))
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Issue-tracking pattern", col = pal_3, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 100 * mat_sums / max(mat_sums))
+grid()
+text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 3)))
+legend("topleft", rev(rownames(mat)), fill = rev(pal_3))
+```
+
 # References {-}
 
 <div id="refs"></div>
