@@ -1189,10 +1189,11 @@ jsd_segment <- function(p, q, ext = c(0, 0.1), xtol = 1e-20) {
 Source code projects are already present as PDFs, so we can just integrate for the three maintenance activities (actually, we'll use the CDFs directly).
 For the source code density, we'll draw some samples per segment and average the result, that's it.
 
+
 ```{r}
 grid <- expand.grid(list(
   interval = 1:10,
-  activity = c("A", "CP", "FREQ")#, "SCD") # Let's skip SCD and only use the activities for now
+  activity = c("A", "CP", "FREQ", "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ") # Let's skip SCD and only use the activities for now
 ))
 grid$activity <- as.character(grid$activity)
 
@@ -1209,11 +1210,14 @@ for (pname in names(projects_sc)) {
     row <- grid[rn,]
     interval_ext <- c(row$interval / 10 - .1, row$interval / 10)
     feat_name <- paste(row$activity, row$interval, sep = "_")
+    is_versus <- grepl(pattern = "_vs_", x = row$activity)
     
-    if (row$activity == "SCD") {
-      # Average SCD over the interval's extension
-      use_x <- seq(from = interval_ext[1], to = interval_ext[2], length.out = 1e3)
-      newrow_sc[1, feat_name] <- mean(projects_sc[[pname]][[row$activity]](use_x))
+    if (is_versus) {
+      # Calculate symmetric divergence of two activities
+      sp <- strsplit(x = row$activity, split = "_vs_")[[1]]
+      pdf_p <- projects_sc[[pname]][[sp[1]]]
+      pdf_q <- projects_sc[[pname]][[sp[2]]]
+      newrow_sc[1, feat_name] <- log(sqrt(.Machine$double.eps) + jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext))
     } else {
       # Integrate the PDF of the activity
       newrow_sc[1, feat_name] <- cubature::cubintegrate(
@@ -1235,7 +1239,7 @@ Here we load the original data and transform it into a density using rejection s
 ```{r}
 grid <- expand.grid(list(
   interval = 1:10,
-  activity = c("REQ", "DEV", "DESC")
+  activity = c("REQ", "DEV", "DESC", "REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")
 ))
 grid$activity <- as.character(grid$activity)
 
@@ -1249,9 +1253,9 @@ dataset_np_it <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = s
 for (pname in names(projects_it)) {
   temp <- read_excel("../data/FD_issue-based_detection.xlsx", sheet = pname)
   newrow_it <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_it)), value = colnames(dataset_np_it))
+  use_x <- temp$`time%`
   
   for (activity in c("REQ", "DEV", "DESC")) {
-    use_x <- temp$`time%`
     use_y <- as.numeric(temp[[tolower(activity)]])
     use_y[is.na(use_y)] <- 0
     
@@ -1262,6 +1266,23 @@ for (pname in names(projects_it)) {
       interval_ext <- c(idx / 10 - .1, idx / 10)
       feat_name <- paste(activity, idx, sep = "_")
       newrow_it[1, feat_name] <- cdf(interval_ext[2]) - cdf(interval_ext[1])
+    }
+  }
+  
+  for (divergence in c("REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")) {
+    sp <- strsplit(x = divergence, split = "_vs_")[[1]]
+    
+    use_y_p <- as.numeric(temp[[tolower(sp[1])]])
+    use_y_p[is.na(use_y_p)] <- 0
+    pdf_p <- rejection_sampling(x_data = use_x, y_data = use_y_p)$PDF
+    use_y_q <- as.numeric(temp[[tolower(sp[2])]])
+    use_y_q[is.na(use_y_q)] <- 0
+    pdf_q <- rejection_sampling(x_data = use_x, y_data = use_y_q)$PDF
+    
+    for (idx in 1:10) {
+      interval_ext <- c(idx / 10 - .1, idx / 10)
+      feat_name <- paste(divergence, idx, sep = "_")
+      newrow_it[1, feat_name] <- log(sqrt(.Machine$double.eps) + jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext))
     }
   }
   
