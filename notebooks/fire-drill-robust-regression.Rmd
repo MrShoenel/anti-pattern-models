@@ -1218,7 +1218,7 @@ for (pname in names(projects_sc)) {
       sp <- strsplit(x = row$activity, split = "_vs_")[[1]]
       pdf_p <- projects_sc[[pname]][[sp[1]]]
       pdf_q <- projects_sc[[pname]][[sp[2]]]
-      newrow_sc[1, feat_name] <- log(sqrt(.Machine$double.eps) + jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext))
+      newrow_sc[1, feat_name] <- jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext)
     } else {
       # Integrate the PDF of the activity
       newrow_sc[1, feat_name] <- cubature::cubintegrate(
@@ -1283,7 +1283,7 @@ for (pname in names(projects_it)) {
     for (idx in 1:10) {
       interval_ext <- c(idx / 10 - .1, idx / 10)
       feat_name <- paste(divergence, idx, sep = "_")
-      newrow_it[1, feat_name] <- log(sqrt(.Machine$double.eps) + jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext))
+      newrow_it[1, feat_name] <- jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext)
     }
   }
   
