@@ -1238,6 +1238,8 @@ dataset_np_sc <- as.data.frame(dataset_np_sc)
 Here we load the original data and transform it into a density using rejection sampling.
 
 ```{r}
+library(readxl)
+
 grid <- expand.grid(list(
   interval = 1:10,
   activity = c("REQ", "DEV", "DESC", "REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")
