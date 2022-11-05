@@ -1317,7 +1317,7 @@ Attention: The following is expensive.
 
 ```{r}
 grid <- expand.grid(list(
-  seed = 1:25,
+  seed = 1:50,
   num_train = 2:50,
   do_pca = c(TRUE, FALSE)
 ))
@@ -1347,7 +1347,8 @@ res_grid_np <- loadResultsOrCompute(file = "../results/rob-reg-np_res-grid.rds",
               row <- grid[rn,]
               adaptive_training_caret(
                 org_dataset = dataset, seeds = row$seed, model_type = model_type,
-                num_train = row$num_train, do_pca = row$do_pca)
+                num_train = row$num_train, do_pca = row$do_pca,
+                num_caret_repeats = 25)
             }, error = function(cond) {
               NULL # Return an empty result that will not disturb .combine
             })
