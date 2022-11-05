@@ -1126,6 +1126,203 @@ text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 3)))
 legend("topleft", rev(rownames(mat)), fill = rev(pal_3))
 ```
 
+
+# Pattern-less detection
+
+Let's try something radically different and simplified. From the beginning, we had used pattern so that we could measure the differences between a project and each pattern.
+That was useful for the research case of developing a scoring mechanism.
+If we do simple regression, this is not needed. Using a (constant) pattern can be thought of applying a (constant) non-linear transform to each activity.
+For example, consider we have a pattern activity $f(t)$ (where $t$ is time) and a project activity $g(t)$. What we have done so far was to produce $g'(t)$ as, for example, $g'=g-f$. When we used automatic calibration, the goal was to uniformly sample (create random instances) of project activities in order to estimate the probability density of $g'(t)$.
+Since $f(t)$ was a constant function (i.e., the same $f$ was used for each project), this transform is redundant if everything we want is simply a regression model.
+
+
+We will therefore attempt the following:
+We will model each activity, both for source code and issue-tracking, as probability distributions (PDFs).
+Since there is nothing to compare these distributions to, we will simply create features by integrating the PDF on equally-long segments (e.g., $[0.0,0.1]; \dots; [0.9,1.0]$), which is equivalent to $\operatorname{CDF}(b)-\operatorname{CDF}(a)$ for some segment $[a,b]$.
+Each feature will therefore express the amount of activity happening in the corresponding segment.
+As for the source code density, we will simply take the average of it in each segment.
+We will have to re-design the issue-tracking activities. The plan is to do this very similar to how we re-designed the source code activities in this report, using rejection sampling to obtain somewhat smooth densities.
+We can reuse our method for adaptively computing grid results, we'll only have to prepare new datasets.
+
+
+Let's define a shortcut function for rejection sampling (using $x/y$ data to approximate a function from first):
+
+```{r}
+rejection_sampling <- function(x_data, y_data, xlim = c(0, 1), num_x = 1e5) {
+  tempf <- stats::approxfun(x = x_data, y = y_data, rule = 2)
+  use_x <- seq(from = xlim[1], to = xlim[2], length.out = num_x)
+  use_y <- stats::runif(n = length(use_x), min = 0, max = max(y_data))
+  tempdens <- stats::density(x = use_x[use_y <= tempf(use_x)], bw = "SJ", cut = TRUE)
+  
+  list(
+    func = tempf,
+    PDF = stats::approxfun(x = tempdens$x, y = tempdens$y, yleft = 0, yright = 0),
+    CDF = make_smooth_ecdf(values = use_x[use_y <= tempf(use_x)], slope = 0, inverse = FALSE))
+}
+```
+
+
+## Create Dataset for Source Code
+
+Source code projects are already present as PDFs, so we can just integrate for the three maintenance activities (actually, we'll use the CDFs directly).
+For the source code density, we'll draw some samples per segment and average the result, that's it.
+
+```{r}
+grid <- expand.grid(list(
+  interval = 1:10,
+  activity = c("A", "CP", "FREQ")#, "SCD") # Let's skip SCD and only use the activities for now
+))
+grid$activity <- as.character(grid$activity)
+
+dataset_np_sc <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = sapply(X = rownames(grid), FUN = function(rn) {
+  r <- grid[rn,]
+  paste(r$activity, r$interval, sep = "_")
+}))
+
+
+for (pname in names(projects_sc)) {
+  newrow_sc <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_sc)), value = colnames(dataset_np_sc))
+  
+  for (rn in rownames(grid)) {
+    row <- grid[rn,]
+    interval_ext <- c(row$interval / 10 - .1, row$interval / 10)
+    feat_name <- paste(row$activity, row$interval, sep = "_")
+    
+    if (row$activity == "SCD") {
+      # Average SCD over the interval's extension
+      use_x <- seq(from = interval_ext[1], to = interval_ext[2], length.out = 1e3)
+      newrow_sc[1, feat_name] <- mean(projects_sc[[pname]][[row$activity]](use_x))
+    } else {
+      # Integrate the PDF of the activity
+      newrow_sc[1, feat_name] <- cubature::cubintegrate(
+        f = projects_sc[[pname]][[row$activity]], lower = interval_ext[1], upper = interval_ext[2])$integral
+    }
+  }
+  
+  dataset_np_sc <- rbind(dataset_np_sc, newrow_sc)
+}
+
+dataset_np_sc <- as.data.frame(dataset_np_sc)
+```
+
+
+## Create Dataset for Issue-Tracking
+
+Here we load the original data and transform it into a density using rejection sampling.
+
+```{r}
+grid <- expand.grid(list(
+  interval = 1:10,
+  activity = c("REQ", "DEV", "DESC")
+))
+grid$activity <- as.character(grid$activity)
+
+dataset_np_it <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = sapply(X = rownames(grid), FUN = function(rn) {
+  r <- grid[rn,]
+  paste(r$activity, r$interval, sep = "_")
+}))
+
+
+
+for (pname in names(projects_it)) {
+  temp <- read_excel("../data/FD_issue-based_detection.xlsx", sheet = pname)
+  newrow_it <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_it)), value = colnames(dataset_np_it))
+  
+  for (activity in c("REQ", "DEV", "DESC")) {
+    use_x <- temp$`time%`
+    use_y <- as.numeric(temp[[tolower(activity)]])
+    use_y[is.na(use_y)] <- 0
+    
+    rej <- rejection_sampling(x_data = use_x, y_data = use_y)
+    cdf <- rej$CDF
+    
+    for (idx in 1:10) {
+      interval_ext <- c(idx / 10 - .1, idx / 10)
+      feat_name <- paste(activity, idx, sep = "_")
+      newrow_it[1, feat_name] <- cdf(interval_ext[2]) - cdf(interval_ext[1])
+    }
+  }
+  
+  dataset_np_it <- rbind(dataset_np_it, newrow_it)
+}
+dataset_np_it <- as.data.frame(dataset_np_it)
+```
+
+
+## Oversampling
+
+The non-pattern datasets have the same problem as the ones using a pattern: the data is scarce and we have many features.
+Therefore, we will go through the same procedure and oversample them.
+
+```{r}
+dataset_np_sc_oversampled <- cbind(dataset_np_sc, data.frame(gt = ground_truth$consensus))
+dataset_np_sc_oversampled <- balance_num_labels(dataset = dataset_np_sc_oversampled, num = min_rows)
+
+dataset_np_it_oversampled <- cbind(dataset_np_it, data.frame(gt = ground_truth$consensus))
+dataset_np_it_oversampled <- balance_num_labels(dataset = dataset_np_it_oversampled, num = min_rows)
+```
+
+
+
+## Adaptive Training
+
+And here we compute the grid (test each model on each dataset).
+Attention: The following is expensive.
+
+```{r}
+grid <- expand.grid(list(
+  seed = 1:25,
+  num_train = 2:50,
+  do_pca = c(TRUE, FALSE)
+))
+model_types <- c("avNNet", "gbm", "glm", "M5", "rf", "svmPoly", "treebag")#, "rankModel")
+use_datasets <- c("dataset_np_it_oversampled", "dataset_np_sc_oversampled")
+
+
+library(foreach)
+res_grid_np <- loadResultsOrCompute(file = "../results/rob-reg-np_res-grid.rds", computeExpr = {
+  res <- NULL
+  
+  for (use_dataset in use_datasets) {
+    dataset <- get(use_dataset)
+    
+    for (model_type in model_types) {
+      
+      the_file <- paste0("../results/rob-reg-np_res-grid_", model_type, "_", use_dataset, ".rds")
+      temp <- as.data.frame(loadResultsOrCompute(file = the_file, computeExpr = {
+        temp1 <- doWithParallelCluster(numCores = min(parallel::detectCores(), 123), expr = {
+          foreach::foreach(
+            rn = rownames(grid),
+            .combine = rbind,
+            .inorder = FALSE,
+            .verbose = TRUE
+          ) %dopar% {
+            tryCatch({
+              row <- grid[rn,]
+              adaptive_training_caret(
+                org_dataset = dataset, seeds = row$seed, model_type = model_type,
+                num_train = row$num_train, do_pca = row$do_pca)
+            }, error = function(cond) {
+              NULL # Return an empty result that will not disturb .combine
+            })
+          }
+        })
+        saveRDS(object = temp1, file = the_file)
+        temp1
+      }))
+      temp$dataset <- rep(use_dataset, nrow(temp))
+      
+      res <- rbind(res, temp)
+    }
+  }
+
+  res$dataset <- factor(res$dataset)
+  res
+})
+```
+
+
+
 # References {-}
 
 <div id="refs"></div>
