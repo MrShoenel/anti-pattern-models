@@ -933,6 +933,72 @@ hist(res_grid_comps$num_comps, xlab = "Number of PCA components", main = "PCA co
 
 
 
+## Analysis
+
+Here we are going to analyze some of the results that we got (e.g., best pattern or model, expectations, lower/upper bounds, etc.).
+
+
+### PCA vs. non-PCA
+
+Here we want to find out whether applying principal components analysis is useful or not.
+
+```{r echo=FALSE, warning=FALSE}
+temp <- res_grid %>% group_by(do_pca) %>% summarise(
+  RMSE_valid_mean = mean(rmse_valid, na.rm = TRUE),
+  RMSE_valid_median = median(rmse_valid, na.rm = TRUE),
+  RMSE_valid_min = min(rmse_valid, na.rm = TRUE),
+  RMSE_valid_max = max(rmse_valid, na.rm = TRUE),
+  .groups = "drop")
+
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Mean, median, min, and max of the validation error, grouped by conditionally applying PCA.",
+    label = "pca-comps-table"
+  )
+}
+```
+
+Let's also show the distributions. In figure \ref{fig:pca-comps-ridge} we observe that applying PCA results in more smaller errors which are also more steadily distributed.
+While the lowest possible validation error as of above table \ref{tab:pca-comps-table} is $0$ for when not using PCA, this is likely due to the models overfitting, since without PCA we end up with many features and some models introduce extra degrees of freedom for each feature.
+We shall therefore conclude that applying PCA is favorable.
+
+
+```{r pca-comps-ridge, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Distributions of the validation error conditionally applying PCA."}
+temp <- res_grid[!is.na(res_grid$rmse_valid),]
+temp1 <- rbind(
+  data.frame(
+    do_pca = TRUE,
+    rmse = (temp %>% filter(do_pca & rmse_valid <= quantile((temp %>% filter(do_pca))$rmse_valid, probs = .99)))$rmse_valid),
+  data_frame(
+    do_pca = FALSE,
+    rmse = (temp %>% filter(!do_pca & rmse_valid <= quantile((temp %>% filter(!do_pca))$rmse_valid, probs = .99)))$rmse_valid)
+)
+
+
+ggplot(temp1, aes(x = rmse, y = do_pca, fill = ..x..)) +
+  geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(option = "C") +
+  theme_ridges() + 
+  theme(legend.position = "none") +
+  xlab("RMSE (validation data)") + ylab("Apply PCA") + xlim(-.5, 7)
+```
+
+
+
+
+Todo:
+- SC vs. IT
+- PCA vs. non-PCA
+- ...
+
+```{r}
+res_grid %>% filter(num_train < 10) %>% group_by(model_type, num_train) %>% summarise(RMSE = mean(rmse_valid, na.rm=TRUE)) %>% arrange(num_train, RMSE)
+```
 
 
 
