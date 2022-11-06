@@ -784,7 +784,8 @@ adaptive_training_caret <- function(
           tryCatch({
             temp1 <- gbm::gbm(
               formula = gt~., distribution = "gaussian", data = df_train,
-              n.trees = row$n.trees, n.minobsinnode = row$n.minobsinnode)
+              n.trees = row$n.trees, n.minobsinnode = row$n.minobsinnode,
+              cv.folds = num_caret_repeats, train.fraction = 1 - (1 / nrow(df_train))) # Let's do repeated, nested LOOCV
             
             temp_pred_valid <- stats::predict(temp1, df_valid)
             temp_best_gbm <- Metrics::rmse(actual = df_valid$gt, predicted = temp_pred_valid)
