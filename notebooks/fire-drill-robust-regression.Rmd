@@ -654,7 +654,7 @@ This model has been proven efficient with very small sample sizes.
 adaptive_training_caret <- function(
     org_dataset,
     seeds, # number of seeds equals number of repeats
-    model_type = c("avNNet", "gbm", "glm", "M5", "rankModel", "rf", "svmPoly", "treebag", "xgbTree"),
+    model_type = c("avNNet", "gbm", "glm", "M5", "nnet", "rankModel", "rf", "svmPoly", "treebag", "xgbTree"),
     num_train = 5,
     num_valid = 50,
     do_pca = TRUE,
@@ -733,6 +733,43 @@ adaptive_training_caret <- function(
             pred_train <- temp1(x = opt_res$solution, df = df_train)
           }
         }
+      } else if (model_type == "nnet") {
+        use_grid <- expand.grid(list(
+          hidden1 = c(seq(from = 1, to = 25, by = 3), 35, 50),
+          hidden2 = c(NA_real_, seq(from = 1, to = 16, by = 3)),
+          act.fct = c("sigmoid", "tanh")
+        ))
+        
+        best_nnet <- 1e30
+        for (rn in rownames(use_grid)) {
+          tryCatch({
+            row <- use_grid[rn,]
+            act.fct <- if (row$act.fct == "tanh") "tanh" else function(x) 1 / (1 + exp(-x)) # sigmoid
+            hidden <- row$hidden1
+            if (!is.na(row$hidden2)) {
+              hidden <- c(hidden, row$hidden2)
+            }
+            
+            temp1 <- neuralnet::neuralnet(
+              formula = gt~., data = df_train, act.fct = act.fct,
+              hidden = hidden, threshold = 5e-3, linear.output = TRUE, rep = 3)
+            
+            temp_pred_valid <- stats::predict(temp1, df_valid)
+            temp_best_nnet <- Metrics::rmse(actual = df_valid$gt, predicted = temp_pred_valid)
+            if (temp_best_nnet < best_nnet) {
+              best_nnet <- temp_best_nnet
+              pred_valid <- temp_pred_valid
+              pred_train <- stats::predict(temp1, df_train)
+            }
+          }, error = function(cond) {
+            print(paste("The model did not converge:", cond))
+            # Do nothing
+          })
+        }
+        
+        if (best_nnet >= 1e30) {
+          stop("NNET fit not possible.")
+        }
       } else if (model_type == "gbm") {
         use_grid <- expand.grid(list(
           n.trees = c(2:10, seq(from = 12, to = 30, by = 2), seq(from = 35, to = 80, by = 5), 90, 100),
@@ -756,12 +793,12 @@ adaptive_training_caret <- function(
               pred_train <- stats::predict(temp1, df_train)
             }
           }, error = function(cond) {
-            # Do nothing
+            # Do nothing, silently swallow error (it's handled by having NA-predictions)
           })
-          
-          if (best_gbm >= 1e30) {
-            stop("GBM fit not possible.")
-          }
+        }
+        
+        if (best_gbm >= 1e30) {
+          stop("GBM fit not possible.")
         }
       } else {
         temp1 <- caret::train(
@@ -771,11 +808,12 @@ adaptive_training_caret <- function(
         pred_valid <- kernlab::predict(temp1, df_valid[, use_cn_x])
       }
     }, error = function(cond) {
+      print(paste("Training failed:", cond))
       pred_train <- rep(NA_real_, nrow(df_train))
       pred_valid <- rep(NA_real_, nrow(df_valid))
     })
     
-
+    
     res <- rbind(res, data.frame(
       seed = seed,
       do_pca = do_pca,
@@ -1321,7 +1359,7 @@ grid <- expand.grid(list(
   num_train = 2:50,
   do_pca = c(TRUE, FALSE)
 ))
-model_types <- c("avNNet", "gbm", "glm", "M5", "rf", "svmPoly", "treebag")#, "rankModel")
+model_types <- c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag")#, "avNNet", "M5", "rankModel")
 use_datasets <- c("dataset_np_it_oversampled", "dataset_np_sc_oversampled")
 
 
