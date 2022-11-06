@@ -690,6 +690,7 @@ adaptive_training_caret <- function(
     # Colnames change to PC1, PC2, ..., if PCA, otherwise they will be a subset
     # of the original column names (because of (N)ZV):
     use_cn_x <- if (do_pca) paste0("PC", 1:(ncol(df_train) - 1)) else colnames(df_train)
+    use_cn_x <- use_cn_x[use_cn_x != "gt"]
     
     if (!is.null(return_num_comps) && return_num_comps) {
       if (!do_pca) {
