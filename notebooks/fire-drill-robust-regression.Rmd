@@ -771,20 +771,39 @@ adaptive_training_caret <- function(
         if (best_nnet >= 1e30) {
           stop("NNET fit not possible.")
         }
-      } else {
-        tune_grid <- NULL
-        if (model_type == "gbm") {
-          # If GBM, we'll use a more suitable grid.
-          tune_grid <- expand.grid(list(
-            n.trees = c(2:10, seq(from = 12, to = 30, by = 2), seq(from = 35, to = 80, by = 5), 90, 100),
-            n.minobsinnode = 1:10,
-            shrinkage = 0.1,
-            interaction.depth = 1:10
-          ))
+      } else if (model_type == "gbm") {
+        use_grid <- expand.grid(list(
+          n.trees = c(2:10, seq(from = 12, to = 30, by = 2), seq(from = 35, to = 80, by = 5), 90, 100),
+          n.minobsinnode = 1:10,
+          bag.fraction = seq(from = 0.1, to = 0.7, by = 0.2)
+        ))
+        
+        best_gbm <- 1e30
+        for (rn in rownames(use_grid)) {
+          row <- use_grid[rn,]
+          tryCatch({
+            temp1 <- gbm::gbm(
+              formula = gt~., distribution = "gaussian", data = df_train,
+              n.trees = row$n.trees, n.minobsinnode = row$n.minobsinnode)
+            
+            temp_pred_valid <- stats::predict(temp1, df_valid)
+            temp_best_gbm <- Metrics::rmse(actual = df_valid$gt, predicted = temp_pred_valid)
+            if (temp_best_gbm < best_gbm) {
+              best_gbm <- temp_best_gbm
+              pred_valid <- temp_pred_valid
+              pred_train <- stats::predict(temp1, df_train)
+            }
+          }, error = function(cond) {
+            # Do nothing, silently swallow error (it's handled by having NA-predictions)
+          })
         }
         
+        if (best_gbm >= 1e30) {
+          stop("GBM fit not possible.")
+        }
+      } else {
         temp1 <- caret::train(
-          x = df_train[, use_cn_x], y = df_train[, "gt"], method = model_type, tuneGrid = tune_grid,
+          x = df_train[, use_cn_x], y = df_train[, "gt"], method = model_type,
           trControl = caret::trainControl(method = "LOOCV", number = num_caret_repeats))
         pred_train <- kernlab::predict(temp1, df_train[, use_cn_x])
         pred_valid <- kernlab::predict(temp1, df_valid[, use_cn_x])
