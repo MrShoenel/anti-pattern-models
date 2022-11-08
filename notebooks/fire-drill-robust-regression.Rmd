@@ -1353,61 +1353,157 @@ dataset_np_it_oversampled <- balance_num_labels(dataset = dataset_np_it_oversamp
 ## Adaptive Training
 
 And here we compute the grid (test each model on each dataset).
+
+__Note__: We have computed the following actually three times. The first time using both type of features (amount of activity per segment, pair-wise symmetric divergence between activities), and then once using only one type of feature.
+There are three folders in the results-folder: `np_both`, `np_amount`, and `np_divergence` holding the results for each complete run.
+We tested all three combinations to find out whether fewer features are sufficient for a low generalization error.
+
 Attention: The following is expensive.
 
 ```{r}
-grid <- expand.grid(list(
-  seed = 1:50,
-  num_train = 2:50,
-  do_pca = c(TRUE, FALSE)
-))
-model_types <- c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag")#, "avNNet", "M5", "rankModel")
-use_datasets <- c("dataset_np_it_oversampled", "dataset_np_sc_oversampled")
-
-
-library(foreach)
-res_grid_np <- loadResultsOrCompute(file = "../results/rob-reg-np_res-grid.rds", computeExpr = {
-  res <- NULL
+compute_np_grid_adaptive <- function(type = c("both", "amount", "divergence")) {
+  type <- match.arg(type)
   
-  for (use_dataset in use_datasets) {
-    dataset <- get(use_dataset)
+  grid <- expand.grid(list(
+    seed = 1:50,
+    num_train = 2:50,
+    do_pca = c(TRUE, FALSE)
+  ))
+  model_types <- c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag")#, "avNNet", "M5", "rankModel")
+  use_datasets <- c("dataset_np_it_oversampled", "dataset_np_sc_oversampled")
+  
+  
+  library(foreach)
+  loadResultsOrCompute(file = paste0("../results/np_", type, "/rob-reg-np_res-grid.rds"), computeExpr = {
+    res <- NULL
     
-    for (model_type in model_types) {
+    for (use_dataset in use_datasets) {
+      dataset <- get(use_dataset)
       
-      the_file <- paste0("../results/rob-reg-np_res-grid_", model_type, "_", use_dataset, ".rds")
-      temp <- as.data.frame(loadResultsOrCompute(file = the_file, computeExpr = {
-        temp1 <- doWithParallelCluster(numCores = min(parallel::detectCores(), 123), expr = {
-          foreach::foreach(
-            rn = rownames(grid),
-            .combine = rbind,
-            .inorder = FALSE,
-            .verbose = TRUE
-          ) %dopar% {
-            tryCatch({
-              row <- grid[rn,]
-              adaptive_training_caret(
-                org_dataset = dataset, seeds = row$seed, model_type = model_type,
-                num_train = row$num_train, do_pca = row$do_pca,
-                num_caret_repeats = 25)
-            }, error = function(cond) {
-              NULL # Return an empty result that will not disturb .combine
-            })
-          }
-        })
-        saveRDS(object = temp1, file = the_file)
-        temp1
-      }))
-      temp$dataset <- rep(use_dataset, nrow(temp))
-      
-      res <- rbind(res, temp)
+      for (model_type in model_types) {
+        
+        the_file <- paste0("../results/np_", type, "/rob-reg-np_res-grid_", model_type, "_", use_dataset, ".rds")
+        temp <- as.data.frame(loadResultsOrCompute(file = the_file, computeExpr = {
+          temp1 <- doWithParallelCluster(numCores = min(parallel::detectCores(), 123), expr = {
+            foreach::foreach(
+              rn = rownames(grid),
+              .combine = rbind,
+              .inorder = FALSE,
+              .verbose = TRUE
+            ) %dopar% {
+              tryCatch({
+                row <- grid[rn,]
+                adaptive_training_caret(
+                  org_dataset = dataset, seeds = row$seed, model_type = model_type,
+                  num_train = row$num_train, do_pca = row$do_pca,
+                  num_caret_repeats = 25)
+              }, error = function(cond) {
+                NULL # Return an empty result that will not disturb .combine
+              })
+            }
+          })
+          saveRDS(object = temp1, file = the_file)
+          temp1
+        }))
+        temp$dataset <- rep(use_dataset, nrow(temp))
+        
+        res <- rbind(res, temp)
+      }
     }
-  }
+  
+    res$dataset <- factor(res$dataset)
+    res
+  })
+}
 
-  res$dataset <- factor(res$dataset)
-  res
-})
+res_grid_np_both <- compute_np_grid_adaptive(type = "b")
+res_grid_np_amount <- compute_np_grid_adaptive(type = "a")
+res_grid_np_divergence <- compute_np_grid_adaptive(type = "d")
 ```
 
+
+```{r np-overview, echo=FALSE, fig.width=12, fig.height=15, fig.cap="Comparing the expected validation error of the trained models of the No-pattern approach. Amount-only features are red, divergence-only are green, and both are blue."}
+par(mfrow = c(6,4), mar = c(4.5,4.5,2,0.25))
+
+#set.seed(1)
+#pal_3 <- rev(sample(RColorBrewer::brewer.pal(10, "Set3"), 3))
+pal_3 <- c("red", "darkgreen", "blue")
+names(pal_3) <- c("amount", "divergence", "both")
+
+for (model_type in c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag")) {
+  for (ds_pca in c("sc_yes", "sc_no", "it_yes", "it_no")) {
+    sp <- strsplit(x = ds_pca, split = "_")[[1]]
+    use_data <- sp[1]
+    do_pca <- sp[2] == "yes"
+    
+    use_ylim <- c(0, 3)
+    plot(x = -100, y = -100, xlim = c(0, 50), ylim = use_ylim,
+         xlab = "Number of training instances", ylab = "RMSE (validation data)",
+         main = paste(model_type, use_data, if (do_pca) "PCA" else "no PCA", sep = ", "))
+    grid()
+    
+    
+    for (type in c("amount", "divergence", "both")) {
+      temp <- get(paste0("res_grid_np_", type))
+      temp <- temp[temp$model == model_type & temp$do_pca == do_pca & temp$dataset == paste0("dataset_np_", use_data, "_oversampled"),]
+      temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
+      temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), .groups = "drop")
+      
+      lines(x = temp$num_train, y = temp$Mean, col = pal_3[type])
+    }
+  }
+}
+```
+
+\clearpage
+
+Figure \ref{fig:np-overview} compares all of the six trained models across both data types, source code and issue-tracking, with and without applied PCA, and using different feature sets (amount only, divergence only, both).
+The visual inspection tells us that the best model is the neural network for source code, and the one not using PCA being a little better ("nnet, sc, no PCA").
+That model has, for the number of training instances of $15$, an expectation $<1$, regardless of the feature set used.
+The best feature set by a small margin is "divergence", followed by "both".
+
+We show some results for this model in table \ref{tab:nnet-best-model}.
+Using the divergence-only features, only $13$ instances are required to achieve a generalization error of $\approx0.9$ (with a standard deviation of $\approx0.33$).
+The error falls below $0.8$ for $15$ instances, and for $18$ instances, the error plus standard deviation is even below $1$.
+
+
+
+```{r echo=FALSE}
+temp <- res_grid_np_divergence
+temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled" & temp$num_train >= 10 & temp$num_train <= 25,]
+temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
+temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Median = median(rmse_valid), Sd = sd(rmse_valid), Min = min(rmse_valid), Max = max(rmse_valid), .groups = "drop")
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = cbind(temp[, 1], round(temp[, 2:6], 4)),
+    booktabs = TRUE,
+    caption = "Mean, median, standard deviation, min, and max of the validation error, for the neural network model, using the source code data, divergence-only features, and no PCA. The error reduces steadily with the number of training instances.",
+    label = "nnet-best-model"
+  )
+}
+```
+
+
+
+
+```{r echo=FALSE, eval=FALSE}
+#temp <- res_grid_np[res_grid_np$model_type == "nnet" & !res_grid_np$do_pca & res_grid_np$dataset == "dataset_np_sc_oversampled",]
+temp <- readRDS("../results/rob-reg-np_res-grid_nnet_dataset_np_it_oversampled.rds")
+temp <- temp[!temp$do_pca,]
+temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
+temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
+
+use_ylim <- c(0, max(c(temp$Mean, temp$Max, temp$Min)))
+use_ylim <- c(0, 5)
+plot(x = temp$num_train, y = temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", xlim = c(0, 50), ylim = use_ylim)
+grid()
+lines(x = temp$num_train, y = temp$Max, col="blue")
+lines(x = temp$num_train, y = temp$Min, col="red")
+legend(x = 32, y = 4.25, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
+```
 
 
 # References {-}
