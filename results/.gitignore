@@ -1,3 +1,8 @@
 **/progress*.png
 **/*.mp4
 **/*.gif
+
+# Only keep the aggregated result
+np_amount/*_oversampled.rds
+np_both/*_oversampled.rds
+np_divergence/*_oversampled.rds
