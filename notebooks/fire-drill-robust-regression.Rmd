@@ -985,10 +985,11 @@ Here we want to find out whether applying principal components analysis is usefu
 
 ```{r echo=FALSE, warning=FALSE}
 temp <- res_grid %>% group_by(do_pca) %>% summarise(
-  RMSE_valid_mean = mean(rmse_valid, na.rm = TRUE),
-  RMSE_valid_median = median(rmse_valid, na.rm = TRUE),
-  RMSE_valid_min = min(rmse_valid, na.rm = TRUE),
-  RMSE_valid_max = max(rmse_valid, na.rm = TRUE),
+  RMSE_val_mean = mean(rmse_valid, na.rm = TRUE),
+  RMSE_val_median = median(rmse_valid, na.rm = TRUE),
+  RMSE_val_sd = sd(rmse_valid, na.rm = TRUE),
+  RMSE_val_min = min(rmse_valid, na.rm = TRUE),
+  RMSE_val_max = max(rmse_valid, na.rm = TRUE),
   .groups = "drop")
 
 
@@ -998,7 +999,7 @@ if (interactive()) {
   knitr::kable(
     x = temp,
     booktabs = TRUE,
-    caption = "Mean, median, min, and max of the validation error, grouped by conditionally applying PCA.",
+    caption = "Mean, median, standard deviation, min, and max of the validation error, grouped by conditionally applying PCA.",
     label = "pca-comps-table"
   )
 }
@@ -1031,13 +1032,11 @@ ggplot(temp1, aes(x = rmse, y = do_pca, fill = ..x..)) +
 
 
 
-
-Todo:
-- SC vs. IT
-- PCA vs. non-PCA
-- ...
-
-```{r}
+```{r echo=FALSE, eval=FALSE}
+#Todo:
+#- SC vs. IT
+#- PCA vs. non-PCA
+#- ...
 res_grid %>% filter(num_train < 10) %>% group_by(model_type, num_train) %>% summarise(RMSE = mean(rmse_valid, na.rm=TRUE)) %>% arrange(num_train, RMSE)
 ```
 
@@ -1088,7 +1087,10 @@ vi_it <- create_variable_importance(
   dataset = cbind(dataset_it, data.frame(gt = ground_truth$consensus)))
 ```
 
+
 The variable importance for each dataset is shown in figures \ref{fig:varimp-sc}, \ref{fig:varimp-sc-cdf}, and \ref{fig:varimp-it}.
+Figure \ref{fig:varimp-all} shows a more detailed drill-down.
+
 
 ```{r varimp-sc, echo=FALSE, fig.height=7, fig.align="top", fig.pos="ht!", fig.cap="Variable importance for the source code dataset determined by partial least squares and cross validation."}
 plot_var_imp(data = vi_sc$vi, relative = TRUE) + labs(title = "Variable Importance: Source Code")
@@ -1112,7 +1114,7 @@ barplot(height = temp$Mean_vi, names.arg = temp$segment)
 
 \clearpage
 
-```{r echo=FALSE, fig.width=8, fig.height=9, fig.align="top", fig.pos="ht!"}
+```{r varimp-all, echo=FALSE, fig.width=8, fig.height=9, fig.align="top", fig.pos="ht!", fig.cap="Variable importance per pattern, activity, and segment."}
 par(mfrow = c(3,1))
 
 
@@ -1170,7 +1172,7 @@ legend("topleft", rev(rownames(mat)), fill = rev(pal_3))
 
 # Pattern-less detection
 
-Let's try something radically different and simplified. From the beginning, we had used pattern so that we could measure the differences between a project and each pattern.
+Let's try something radically different and simplified. From the beginning, we had used patterns so that we could measure the differences between a project and each pattern.
 That was useful for the research case of developing a scoring mechanism.
 If we do simple regression, this is not needed. Using a (constant) pattern can be thought of applying a (constant) non-linear transform to each activity.
 For example, consider we have a pattern activity $f(t)$ (where $t$ is time) and a project activity $g(t)$. What we have done so far was to produce $g'(t)$ as, for example, $g'=g-f$. When we used automatic calibration, the goal was to uniformly sample (create random instances) of project activities in order to estimate the probability density of $g'(t)$.
@@ -1462,26 +1464,199 @@ The visual inspection tells us that the best model is the neural network for sou
 That model has, for the number of training instances of $15$, an expectation $<1$, regardless of the feature set used.
 The best feature set by a small margin is "divergence", followed by "both".
 
-We show some results for this model in table \ref{tab:nnet-best-model}.
-Using the divergence-only features, only $13$ instances are required to achieve a generalization error of $\approx0.9$ (with a standard deviation of $\approx0.33$).
-The error falls below $0.8$ for $15$ instances, and for $18$ instances, the error plus standard deviation is even below $1$.
+
+## PCA vs. non-PCA
+
+We will inspect the best model (neural network) and check whether it makes a difference to apply PCA or not when using both types of features (amount and divergence).
+Table \ref{tab:nnet-pca-comps-table} shows the effects of conditionally applying PCA.
+It appears that the expected average validation error is lower and has also lower variance when __not__ using PCA.
+Simplified, more features is better, but the difference is not large (but still significant).
 
 
+```{r echo=FALSE, warning=FALSE}
+temp <- res_grid_np_both %>% filter(model_type == "nnet") %>% group_by(do_pca) %>% summarise(
+  RMSE_val_mean = mean(rmse_valid, na.rm = TRUE),
+  RMSE_val_median = median(rmse_valid, na.rm = TRUE),
+  RMSE_val_sd = sd(rmse_valid, na.rm = TRUE),
+  RMSE_val_min = min(rmse_valid, na.rm = TRUE),
+  RMSE_val_max = max(rmse_valid, na.rm = TRUE),
+  .groups = "drop")
 
-```{r echo=FALSE}
-temp <- res_grid_np_divergence
-temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled" & temp$num_train >= 10 & temp$num_train <= 25,]
-temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
-temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Median = median(rmse_valid), Sd = sd(rmse_valid), Min = min(rmse_valid), Max = max(rmse_valid), .groups = "drop")
 
 if (interactive()) {
   temp
 } else {
   knitr::kable(
-    x = cbind(temp[, 1], round(temp[, 2:6], 4)),
+    x = temp,
     booktabs = TRUE,
-    caption = "Mean, median, standard deviation, min, and max of the validation error, for the neural network model, using the source code data, divergence-only features, and no PCA. The error reduces steadily with the number of training instances.",
+    caption = "Mean, median, standard deviation, min, and max of the validation error, grouped by conditionally applying PCA.",
+    label = "nnet-pca-comps-table"
+  )
+}
+```
+
+
+## Confidence Intervals
+
+We show some results for this model in table \ref{tab:nnet-best-model}.
+Using all features, only $14$ instances are required to achieve a generalization error of $\leq1$ (with a standard deviation of $\approx0.31$).
+The error falls to $\approx0.9$ for $15$ instances, and for $17$ instances, the error plus one standard deviation is even below $1$.
+
+
+Before we evaluate the confidence intervals, let's take a look at the expected validation error, and the observed maximum and minimum (figure \ref{fig:nnet-expected-gen-err}).
+We observe that the error steadily decreases with more and more training data being added.
+The best results were obtained when ___no___ PCA was applied and the dataset was using source code data (without pattern) and both type of features (amount and divergence).
+The expected error on the withheld validation data falls below $1$ for about $15$ or more training instances.
+Examining the confidence intervals will allow us to understand the likelihood for the RMSE to deviate from the expectation.
+
+
+```{r nnet-expected-gen-err, echo=FALSE, fig.cap="The expected validation error for the best-performing model and dataset."}
+temp <- res_grid_np_both[,]
+temp <- temp[temp$model_type == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled",]
+temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
+temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
+
+use_ylim <- c(0, max(c(temp$Mean, temp$Max, temp$Min)))
+use_ylim <- c(0, 5)
+plot(x = temp$num_train, y = temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", xlim = c(0, 50), ylim = use_ylim, main = "Neural network performance in relation to available training data.")
+grid()
+lines(x = temp$num_train, y = temp$Max, col="blue")
+lines(x = temp$num_train, y = temp$Min, col="red")
+legend(x = 32, y = 4.25, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
+```
+
+
+```{r echo=FALSE}
+temp <- res_grid_np_both
+temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled" & temp$num_train <= 41,]
+temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
+temp <- temp %>% group_by(num_train) %>% summarize(
+  "Unimodal?" = LaplacesDemon::is.unimodal(x = rmse_valid),
+  "Normal?" = stats::shapiro.test(x = rmse_valid)$p.value >= 0.05,
+  p.value = stats::shapiro.test(x = rmse_valid)$p.value,
+  Mean = mean(rmse_valid), Median = median(rmse_valid), Sd = sd(rmse_valid), Min = min(rmse_valid), Max = max(rmse_valid), .groups = "drop")
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = cbind(temp[, 1:4], round(temp[, 5:9], 4)),
+    booktabs = TRUE,
+    caption = "Normality test and p-value, mean, median, standard deviation, min, and max of the validation error, for the neural network model, using the source code data, divergence-only features, and no PCA. The error reduces steadily with the number of training instances.",
     label = "nnet-best-model"
+  )
+}
+```
+
+
+Table \ref{tab:nnet-best-model} also shows whether the generalization error is normally distributed [@royston1982], which it is in many cases (and in some almost).
+The advantage of a normally distributed generalization error allows us to make statements with regard to the standard deviation, additionally to the expected error.
+Taking the case of $17$ training instances again, the expected generalization error is $\approx0.75$ and the standard deviation is $\approx0.25$.
+Since the generalization error is normally distributed, we expect the error to deviate less than or equal to $0.25$ in about __$\approx68$%__ of all cases, since for a normal distribution, cases that are up to one standard deviation away from the mean account for $\approx68$% of all cases (three sigma rule [@pukelsheim1994threesigma]).
+In other words, the a neural network trained on $17$ instances will deliver predictions with a probability of $\approx68$% that are off by $\leq1$.
+
+
+Another interesting example from table \ref{tab:nnet-best-model} is the one using $26$ instances.
+The validation error there is unimodal, normally distributed, and has an expectation of $0.497$ and standard deviation of $0.153$.
+This means, according to the Three Sigma rule which we can apply in this case, that we can expect $99.7$% of all predicted values to be below $\approx0.956$ (mean plus three standard deviations).
+In other words, we can practically guarantee to predict an error that is always less than $1$.
+With about $68$% certainty, the error will be less than $\approx0.65$. With about $95$% certainty, it will be below $\approx0.803$.
+I'd say these are pretty good expectations for a model trained on only $26$ instances.
+
+
+Table \ref{tab:nnet-best-model-confidence-intervals} shows some common confidence intervals (where "Low" and "High" demarcate the lowest and highest expected deviation, according to the mean and standard deviation of the validation error and the fact that it is normally distributed).
+For example, with a confidence of $99$%, the lowest expected error is just $0.1115$, and the highest is only $1.3960$.
+Note that the error cannot be negative and that this happens because it is not a perfect normal distribution.
+So, for example, the confidence is the probability that $Pr(\mu-a\leq X\leq\mu+a)$. If we use two times the standard deviation, then this will cover $95.45$% of all values.
+
+
+The table also shows lows and high according to Chebyshev's inequality [@chebyshev1867].
+Chebyshev's inequality is useful in cases when the actual distribution is not known. While the lows are lower and the highs are higher, we still get upper and lower bounds, even for cases where the generalization error is _not_ normally distributed.
+
+
+```{r echo=FALSE}
+temp <- res_grid_np_both
+temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled" & temp$num_train == 17,]$rmse_valid
+
+temp <- data.frame(
+  Confidence = sort(c(seq(from = 50, to = 95, by = 5), 68.27, 95.45, 97.5, 98, 99, 99.5, 99.73))
+) %>% group_by(Confidence) %>% summarize(
+  Low = round(qnorm(c(.5 - Confidence / 200), mean = mean(temp), sd = sd(temp)), 4),
+  Mean1 = round(mean(temp), 2),
+  High = round(qnorm(c(.5 + Confidence / 200), mean = mean(temp), sd = sd(temp)), 4),
+  Chebyshev_Low = round(mean(temp) - sd(temp) * sqrt(1 / (1 - Confidence / 100)), 4),
+  Mean2 = round(mean(temp), 2),
+  Chebyshev_High = round(mean(temp) + sd(temp) * sqrt(1 / (1 - Confidence / 100)), 4),
+  .groups = "drop")
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Confidence intervals of the best neural network model trained on $17$ instances. The table includes values according to the 68-95-99.7\\%-rule and Chebyshev's inequality.",
+    label = "nnet-best-model-confidence-intervals"
+  )
+}
+```
+
+
+Table \ref{tab:confidence-intervals-inequalities} demonstrates four different inequalities.
+For $17$ training instances and a hypothetical RMSE (the `diff` column), it shows the confidence for the three sigma rule, the Vysochanskij--Petunin inequality, Gauss' inequality, and Chebyshev's inequality.
+The order of the inequalities reflects their tightness. The more assumptions we can make about the distribution of the sample, the tighter we can select the bounds.
+There are various other ___concentration inequalities___, such as Markov's, Paley--Zygmund's, Cantelli's, or Chernoff's bounds.
+A disadvantage with Chebyshev's inequality is that it only works for more than one standard deviation ($\approx1.63$ standard deviations for Vysochanskij--Petunin's inequality).
+While Gauss' inequality works in that case, it requires to determine the mode of the sample, and that the sample is unimodal.
+
+
+Therefore, in practice, I suggest to try one inequality after the other and take the one that has its requirements satisfied first (testing the tight ones first).
+
+
+```{r echo=FALSE}
+tempf <- function(vals, diff_) {
+  mean_ <- mean(vals)
+  sd_ <- sd(vals)
+  min_ <- sqrt(8/3)
+  diff_ <- abs(diff_)
+  lambda <- sd_ / diff_
+  modes <- LaplacesDemon::Modes(x = vals)
+  mode_ <- modes$modes[which.max(modes$size)]
+  r_ <- sqrt((mean_ - mode_)^2 + sd_^2)
+  k2 <- (diff_ / sd_)^2
+  
+  data.frame(
+    diff = diff_,
+    ThreeSigmaR = 200 * abs(.5 - pnorm(q = mean_ + diff_, mean = mean_, sd = sd_)),
+    VysoPetunin = if (diff_ >= min_ * sd_) 100 * (1 - 4 / 9 * lambda^2) else 0,
+    GaussIneq = 100 * (1 - (if (diff_ >= 2 * r_ / sqrt(3)) ((2 * r_) / (3 * diff_))^2 else (1 - diff_ / (r_ * sqrt(3))))),
+    Chebyshev = if (k2 < 1) 0 else 100 * (1 - 1 / k2)
+  )
+}
+```
+
+
+```{r echo=FALSE}
+temp <- res_grid_np_both
+temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled" & temp$num_train == 17,]
+temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
+
+# Let's create a data.frame that computes the bounds based on multiple methods
+res <- NULL
+
+for (diff_ in seq(0, 2, by=0.1)) {
+  res <- rbind(res, tempf(vals = temp$rmse_valid, diff_ = diff_))
+}
+
+
+if (interactive()) {
+  res
+} else {
+  knitr::kable(
+    x = res,
+    booktabs = TRUE,
+    caption = "Four different inequalities giving and their confidence for a given deviation (for the best neural network model trained on $17$ instances). The Three Sigma rule has the tightest bounds, while Gauss' inequality has the loosest.",
+    label = "confidence-intervals-inequalities"
   )
 }
 ```
@@ -1489,21 +1664,224 @@ if (interactive()) {
 
 
 
-```{r echo=FALSE, eval=FALSE}
-#temp <- res_grid_np[res_grid_np$model_type == "nnet" & !res_grid_np$do_pca & res_grid_np$dataset == "dataset_np_sc_oversampled",]
-temp <- readRDS("../results/rob-reg-np_res-grid_nnet_dataset_np_it_oversampled.rds")
-temp <- temp[!temp$do_pca,]
-temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
-temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
 
-use_ylim <- c(0, max(c(temp$Mean, temp$Max, temp$Min)))
-use_ylim <- c(0, 5)
-plot(x = temp$num_train, y = temp$Mean, type="l", xlab = "Number of training instances", ylab = "RMSE (validation data)", xlim = c(0, 50), ylim = use_ylim)
-grid()
-lines(x = temp$num_train, y = temp$Max, col="blue")
-lines(x = temp$num_train, y = temp$Min, col="red")
-legend(x = 32, y = 4.25, legend = c("mean", "max", "min"), col = c("black", "blue", "red"), lwd = 2)
+
+
+```{r echo=FALSE}
+temp <- res_grid_np_both
+temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled",]# & temp$num_train <= 20,]
+temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
+
+tempf <- function(num_train, rmse) {
+  vals <- temp[temp$num_train == num_train,]$rmse_valid
+  mean_ <- mean(vals)
+  sd_ <- sd(vals)
+  temp <- 200 * abs(.5 - pnorm(q = rmse, mean = mean_, sd = sd_))
+  return(temp)
+  #if (temp < 99.9) temp else NA_real_
+}
+
+tempgrid <- outer(X = seq(min(temp$num_train), max(temp$num_train), by = 1), Y = seq(0, 2, length.out = 250), FUN = Vectorize(tempf))
 ```
+
+
+Figure \ref{fig:nnet-rmse-cis} shows the confidence interval of the generalization error per number of training instances.
+It is obvious that with a lower generalization error, the size of the confidence interval reduces as well (i.e., less variance and more stable predictions).
+
+
+```{r nnet-rmse-cis, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Continuous confidence of the neural network predictor, with regard to number of training instances. Shown are the values according to the 68-95-99.7\\%-rule (assuming a normal distribution for every generalization error)."}
+fields::image.plot(list(
+  x = seq(min(temp$num_train), max(temp$num_train), by = 1), y = seq(0, 2, length.out = 250), z = tempgrid),
+  col = viridis::inferno(50), legend.shrink = .75, legend.lab = "Confidence", legend.line = 2.75,
+  xlab = "Number of training instances", ylab = "RMSE (validation data)",
+  main = "Confidence intervals according to the 68-95-99.7%-rule.")
+grid(col = "darkgrey", lwd = 2)
+abline(h = c(.5, 1), lwd = 3, lty = c(2,5), col = "#0377fc")
+```
+
+
+Figure \ref{fig:nnet-rmse-cis-chebyshev} shows the same confidence intervals for the generalization error, according to Chebyshev's inequality (ignoring that some errors are, in fact, normally distributed).
+Note that this figure contains a wide area where the confidence is pictured as unknown.
+This is because Chebyshev's inequality is only useful for $k>1$, that is, more than one standard deviations. For $k\leq1$, we cannot guarantee that any of the values will be within the mean plus/minus up to one standard deviation using Chebyshev's rule, so its utility lies more in obtaining upper bounds for when the distribution is not known.
+For the sake of the figure, I have implemented it as $\frac{1}{\max{(1,k^2)}}$. You see that we have a wide dark area in which we cannot guarantee anything (that it will contain values).
+This would then be essentially the same as Selberg's generalization [@selberg1940].
+
+There is also the Vysochanskij--Petunin inequality, but it only gives bounds for more than $\sqrt{(\frac{8}{3})}$ standard deviations [@vysochanskij1980justification].
+It is defined as $\frac{4}{9\lambda^2}$, so for the minimum lambda it includes $\approx\frac{5}{6}$ of all values (and is not applicable for probabilities below that).
+
+```{r echo=FALSE}
+compute_inequalities <- function(num_train, rmse, use = c("threesigma", "vyso", "chebyshev", "gauss")) {
+  vals <- temp[temp$num_train == num_train,]$rmse_valid
+  mean_ <- mean(vals)
+  sd_ <- sd(vals)
+  use <- match.arg(use)
+  
+  if (use == "threesigma") {
+    # Three Sigma rule
+    temp <- 200 * abs(.5 - pnorm(q = rmse, mean = mean_, sd = sd_))
+    temp
+    #if (temp < 99.9) temp else NA_real_
+  } else if (use == "vyso") {
+    # Vysochanskij–Petunin inequality
+    min_ <- sqrt(8/3)
+    diff_ <- abs(mean_ - rmse)
+    lambda <- sd_ / diff_
+    #if (diff_ >= min_ * sd_) 100 * (1 - 4 / 9 * lambda^2) else NA_real_
+    max(0, 100 * (1 - 4 / 9 * lambda^2))
+  } else if (use == "chebyshev") {
+    # Chebyshev:
+    diff <- abs(mean_ - rmse)
+    k2 <- (diff / sd_)^2
+    100 * (1 - 1 / max(1, k2))
+    #if (k2 < 1) NA_real_ else 100 * (1 - 1 / k2)
+  } else if (use == "gauss") {
+    # Gauss's inequality:
+    k <- abs(mean_ - rmse)
+    modes <- LaplacesDemon::Modes(x = vals)$modes
+    if (length(modes) != 1) {
+      #return(NA_real_) # Only works for unimodal data; fall back to Chebyshev:
+      k2 <- (k / sd_)^2
+      100 * (1 - 1 / max(1, k2))
+    }
+    mode_ <- modes[1]
+    r <- sqrt((mean_ - mode_)^2 + sd_^2)
+    100 * (1 - (if (k >= 2 * r / sqrt(3)) ((2*r) / (3*k))^2 else (1 - k / (r * sqrt(3)))))
+  }
+}
+```
+
+
+```{r echo=FALSE}
+x <- seq(min(temp$num_train), max(temp$num_train), by = 1)
+y <- seq(0, 2, length.out = 250)
+
+tempgrids <- loadResultsOrCompute(file = "../results/rob-reg_inequalities.rds", computeExpr = {
+  list(
+    threesigma = outer(X = x, Y = y, FUN = Vectorize(FUN = function(a, b) compute_inequalities(num_train = a, rmse = b, use = "t"))),
+    vyso = outer(X = x, Y = y, FUN = Vectorize(FUN = function(a, b) compute_inequalities(num_train = a, rmse = b, use = "v"))),
+    chebyshev = outer(X = x, Y = y, FUN = Vectorize(FUN = function(a, b) compute_inequalities(num_train = a, rmse = b, use = "c"))),
+    gauss = outer(X = x, Y = y, FUN = Vectorize(FUN = function(a, b) compute_inequalities(num_train = a, rmse = b, use = "g"))))
+})
+```
+
+```{r nnet-rmse-cis-chebyshev, echo=FALSE, fig.width=8, fig.height=6.5, fig.cap="Continuous confidence of the neural network predictor, with regard to number of training instances. Shown are the values according to four different inequalities."}
+
+par(mfrow = c(2,2), mar = c(2,4,2,1))
+
+use <- c(threesigma = "the Three Sigma Rule", vyso = "the Vysochanskij--Petunin inequality", chebyshev = "Chebyshev's inequality", gauss = "Gauss' inequality")
+
+for (idx in 1:4) {
+  if (idx > 2) {
+    par(mar = c(4,4,2,1))
+  }
+  key <- names(use)[idx]
+  fields::image.plot(list(
+    x = x, y = y, z = tempgrids[[key]]),
+    col = viridis::inferno(50), legend.shrink = .75, legend.lab = "Confidence", legend.line = 2.5, zlim = c(0, 100),
+    xlab = if (idx < 3) "" else "Number of training instances", ylab = if (idx == 2 || idx == 4) "" else "RMSE (validation data)",
+    main = paste0("Approx. confidence intervals according to ", use[key], "."), cex.main = .7)
+  grid(col = "darkgrey", lwd = 2)
+  abline(h = c(.5, 1), lwd = 3, lty = c(2,5), col = "#0377fc")
+}
+```
+
+
+## Variable Importance
+
+
+
+```{r echo=FALSE}
+# We will have to override the function for variable importance:
+create_variable_importance <- function(dataset) {
+  model <- caret::train(
+    x = dataset[, colnames(dataset) != "gt"], y = dataset[,]$gt, method = "pls",
+    trControl = caret::trainControl(method = "LOOCV", number = 100))
+  
+  vi <- caret::varImp(model)
+  df <- vi$importance
+  res <- NULL
+  
+  for (rn in rownames(df)) {
+    # "A_10"
+    # "A_vs_FREQ_8"
+    is_versus <- grepl(pattern = "_vs_", x = rn)
+    sp <- NULL
+    if (is_versus) {
+      temp <- strsplit(x = rn, split = "_")[[1]]
+      sp <- c(paste(temp[1:3], collapse = "_"), temp[4])
+    } else {
+      sp <- strsplit(x = rn, split = "_")[[1]]
+    }
+    
+    res <- rbind(res, data.frame(
+      feature = sp[1],
+      is_versus = is_versus,
+      segment = as.numeric(sp[2]),
+      vi = df[rn,]
+    ))
+  }
+  res$vi_rel <- res$vi / sum(res$vi)
+  list(res = res[order(-res$vi),], vi = vi)
+}
+```
+
+
+```{r warning=FALSE}
+vi_np_sc <- create_variable_importance(dataset = dataset_np_sc_oversampled)
+```
+
+
+```{r varimp-np-sc, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Variable importance for the no-pattern source code dataset estimated using 100 repeats and partial least squares."}
+par(mar = c(4.5,4.5,3,8))
+use_vars <- rev(c("A", "CP", "FREQ"))#, "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ")) # rev(unique(vi_np_sc$res$feature))
+mat <- matrix(nrow = 3, ncol = 10, dimnames = list(use_vars))
+
+for (v in rownames(mat)) {
+  mat[v,] <- as.numeric((vi_np_sc$res[vi_np_sc$res$feature == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop"))$total_imp)
+}
+
+mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
+
+pal_4 <- RColorBrewer::brewer.pal(6, "Set3")[4:6]
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "No-pattern source code variable importance", col = pal_4, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 40 + 60 * mat_sums / max(mat_sums))
+grid()
+text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)))
+legend(x = 12.5, y= .14, rev(rownames(mat)), fill = rev(pal_4), bg = "white", xpd = TRUE)
+```
+
+
+In figure \ref{fig:varimp-np-sc} it becomes clear that the divergence features are much less important than the amount features.
+That could indicate, that these features contribute towards are more robust estimator.
+So if both types of features are used simultaneously, it is much more important to know _how much_ of each activity happens in each segment, than it is to know _how different_ the measured amounts across activities were.
+When we plot the same figure using amount features only, the picture is almost the same, minus the importance of the divergence features.
+
+
+The total importance for the divergence features is `r vi_np_sc$res %>% filter(is_versus) %>% select(vi_rel) %>% sum() %>% round(digits = 3)` and the total importance for the amount features is `r vi_np_sc$res %>% filter(!is_versus) %>% select(vi_rel) %>% sum() %>% round(digits = 3)`.
+Table \ref{tab:varimp-np-sc-per-feature} shows the total importance per feature. Here it becomes blear that the activities `CP` and `A` are the most important ($\approx62$% total importance).
+In almost all segments we see this large share reflected.
+
+```{r echo=FALSE}
+temp <- vi_np_sc$res %>% group_by(feature) %>% summarize(Sum = sum(vi_rel), .groups = "drop") %>% arrange(-Sum)
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Total variable importance per feature for the no-pattern source code dataset.",
+    label = "varimp-np-sc-per-feature"
+  )
+}
+```
+
+In figure \ref{fig:varimp-np-sc} we can already see the total importance per segment.
+We can see that the two most important segments $2,3$ are surrounded by the two least important segments $1,4$.
+It might be the case that a potential Fire Drill cannot be matched well at all using data captured at the very beginning of a project.
+Segments two and three then, however, could give strong early indications as to how the project may play out, hence their importance.
+
+
+
 
 
 # References {-}
