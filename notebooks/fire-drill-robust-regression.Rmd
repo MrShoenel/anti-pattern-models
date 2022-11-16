@@ -1549,11 +1549,11 @@ if (interactive()) {
 ```
 
 
-Table \ref{tab:nnet-best-model} also shows whether the generalization error is normally distributed [@royston1982], which it is in many cases (and in some almost).
+Table \ref{tab:nnet-best-model} also shows whether the generalization error is normally distributed [@shapiro1965normal; @royston1982], which it is in many cases (and in some almost).
 The advantage of a normally distributed generalization error allows us to make statements with regard to the standard deviation, additionally to the expected error.
 Taking the case of $17$ training instances again, the expected generalization error is $\approx0.75$ and the standard deviation is $\approx0.25$.
-Since the generalization error is normally distributed, we expect the error to deviate less than or equal to $0.25$ in about __$\approx68$%__ of all cases, since for a normal distribution, cases that are up to one standard deviation away from the mean account for $\approx68$% of all cases (three sigma rule [@pukelsheim1994threesigma]).
-In other words, the a neural network trained on $17$ instances will deliver predictions with a probability of $\approx68$% that are off by $\leq1$.
+Since the generalization error is normally distributed, we expect the error to deviate less than or equal to $0.25$ in about __$\approx68$%__ of all cases, since for a normal distribution, cases that are up to one standard deviation away from the mean account for $\approx68$% of all cases (three sigma rule; @pukelsheim1994threesigma).
+In other words, a neural network trained on $17$ instances will deliver predictions with a probability of $\approx68$% that are off by $\leq1$.
 
 
 Another interesting example from table \ref{tab:nnet-best-model} is the one using $26$ instances.
