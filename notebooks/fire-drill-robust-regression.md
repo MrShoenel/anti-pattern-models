@@ -243,7 +243,7 @@ c(cubature::cubintegrate(f = tempf_A, 0, 1)$integral, cubature::cubintegrate(f =
   0, 1)$integral)  # Those should be very close to 1
 ```
 
-    ## [1] 1.000985 1.000838
+    ## [1] 1.000984 1.000840
 
 ``` r
 pattern_sc <- list(SCD = templ$SCD, A = tempf_A, CP = tempf_CP, FREQ = function(x) 0.4 *
@@ -269,7 +269,7 @@ tempecdf_FREQ <- make_smooth_ecdf(values = use_x[use_y <= pattern_sc$FREQ(use_x)
 cubature::cubintegrate(f = tempf_FREQ, 0, 1)$integral
 ```
 
-    ## [1] 1.000914
+    ## [1] 1.000911
 
 Now it’s time to print the new pattern for Source Code! Note that in
 figure the curves for the variables `A`, `CP`, and `FREQ` are now all
@@ -1433,19 +1433,19 @@ source code data, divergence-only features, and no PCA. The error
 reduces steadily with the number of training instances.
 
 Table also shows whether the generalization error is normally
-distributed (Royston 1982), which it is in many cases (and in some
-almost). The advantage of a normally distributed generalization error
-allows us to make statements with regard to the standard deviation,
-additionally to the expected error. Taking the case of $17$ training
-instances again, the expected generalization error is $\approx0.75$ and
-the standard deviation is $\approx0.25$. Since the generalization error
-is normally distributed, we expect the error to deviate less than or
-equal to $0.25$ in about **$\approx68$%** of all cases, since for a
-normal distribution, cases that are up to one standard deviation away
-from the mean account for $\approx68$% of all cases (three sigma rule
-(Pukelsheim 1994)). In other words, the a neural network trained on $17$
-instances will deliver predictions with a probability of $\approx68$%
-that are off by $\leq1$.
+distributed (Shapiro and Wilk 1965; Royston 1982), which it is in many
+cases (and in some almost). The advantage of a normally distributed
+generalization error allows us to make statements with regard to the
+standard deviation, additionally to the expected error. Taking the case
+of $17$ training instances again, the expected generalization error is
+$\approx0.75$ and the standard deviation is $\approx0.25$. Since the
+generalization error is normally distributed, we expect the error to
+deviate less than or equal to $0.25$ in about **$\approx68$%** of all
+cases, since for a normal distribution, cases that are up to one
+standard deviation away from the mean account for $\approx68$% of all
+cases (three sigma rule; Pukelsheim (1994)). In other words, a neural
+network trained on $17$ instances will deliver predictions with a
+probability of $\approx68$% that are off by $\leq1$.
 
 Another interesting example from table is the one using $26$ instances.
 The validation error there is unimodal, normally distributed, and has an
@@ -1603,20 +1603,20 @@ of features are used simultaneously, it is much more important to know
 plot the same figure using amount features only, the picture is almost
 the same, minus the importance of the divergence features.
 
-The total importance for the divergence features is 0.152 and the total
-importance for the amount features is 0.848. Table shows the total
+The total importance for the divergence features is 0.172 and the total
+importance for the amount features is 0.828. Table shows the total
 importance per feature. Here it becomes blear that the activities `CP`
 and `A` are the most important ($\approx62$% total importance). In
 almost all segments we see this large share reflected.
 
 | feature    |       Sum |
 |:-----------|----------:|
-| CP         | 0.3373281 |
-| A          | 0.3041426 |
-| FREQ       | 0.2064238 |
-| A_vs_CP    | 0.0901475 |
-| A_vs_FREQ  | 0.0518834 |
-| CP_vs_FREQ | 0.0100746 |
+| CP         | 0.3246845 |
+| A          | 0.3119498 |
+| FREQ       | 0.1914782 |
+| A_vs_CP    | 0.1045793 |
+| A_vs_FREQ  | 0.0563061 |
+| CP_vs_FREQ | 0.0110022 |
 
 Total variable importance per feature for the no-pattern source code
 dataset.
@@ -1679,6 +1679,14 @@ Statistics)* 31 (2): 176–80. <http://www.jstor.org/stable/2347986>.
 Selberg, Henrik L. 1940. “Zwei Ungleichungen Sur Ergänzung Des
 Tchebycheffschen Lemmas.” *Scandinavian Actuarial Journal* 1940 (3-4):
 121–25. <https://doi.org/10.1080/03461238.1940.10404804>.
+
+</div>
+
+<div id="ref-shapiro1965normal" class="csl-entry">
+
+Shapiro, S. S., and M. B. Wilk. 1965. “An Analysis of Variance Test for
+Normality (Complete Samples).” *Biometrika* 52 (3-4): 591–611.
+<https://doi.org/10.1093/biomet/52.3-4.591>.
 
 </div>
 
