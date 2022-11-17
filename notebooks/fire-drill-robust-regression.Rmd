@@ -1277,7 +1277,15 @@ dataset_np_sc <- as.data.frame(dataset_np_sc)
 
 ## Create Dataset for Issue-Tracking
 
-Here we load the original data and transform it into a density using rejection sampling.
+Here we load the original data and transform it into a density. Issue-tracking data has one major difference compared to source code data.
+In the latter, we know the timely accumulation of certain activities, but we do not know how much time was spent on an activity.
+In issue-tracking data, we do know that. Therefore, we will use the following procedure for creating the issue-tracking data:
+
+1. Use normalized time as $x$ and the activity's spent time as $y$.
+2. Filter $x$ by using the condition $y>0$.
+3. Estimate a density over __$x$__, using the duration of each activity ($y$) as weights. We will have to normalize the non-zero activities to sum up to $1$ first.
+4. Perform rejection sampling on that density to obtain a smooth CDF which will be used to estimate the amount of each activity in each segment.
+
 
 ```{r}
 library(readxl)
@@ -1295,17 +1303,37 @@ dataset_np_it <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = s
 
 
 
+rejection_sampling_issue_tracking <- function(use_x, use_y) {
+  # Apply filter:
+  temp_x <- use_x[use_y > 0]
+  temp_y <- use_y[use_y > 0]
+  
+  tryCatch({
+    temp_dens <- suppressWarnings({
+      stats::density(x = temp_x, weights = temp_y / sum(temp_y), bw = "SJ", cut = TRUE)
+    })
+    use_x <- temp_dens$x
+    use_y <- temp_dens$y
+  }, error = function(cond) {
+    if (interactive()) {
+      print(paste0("Cannot estimate density for project ", pname, " and activity ", activity))
+    }
+  })
+  
+  rejection_sampling(x_data = use_x, y_data = use_y, xlim = range(use_x))
+}
+```
+
+
+```{r}
 for (pname in names(projects_it)) {
   temp <- read_excel("../data/FD_issue-based_detection.xlsx", sheet = pname)
   newrow_it <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_it)), value = colnames(dataset_np_it))
-  use_x <- temp$`time%`
   
   for (activity in c("REQ", "DEV", "DESC")) {
     use_y <- as.numeric(temp[[tolower(activity)]])
     use_y[is.na(use_y)] <- 0
-    
-    rej <- rejection_sampling(x_data = use_x, y_data = use_y)
-    cdf <- rej$CDF
+    cdf <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y)$CDF
     
     for (idx in 1:10) {
       interval_ext <- c(idx / 10 - .1, idx / 10)
@@ -1319,10 +1347,11 @@ for (pname in names(projects_it)) {
     
     use_y_p <- as.numeric(temp[[tolower(sp[1])]])
     use_y_p[is.na(use_y_p)] <- 0
-    pdf_p <- rejection_sampling(x_data = use_x, y_data = use_y_p)$PDF
+    pdf_p <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y_p)$PDF
+    
     use_y_q <- as.numeric(temp[[tolower(sp[2])]])
     use_y_q[is.na(use_y_q)] <- 0
-    pdf_q <- rejection_sampling(x_data = use_x, y_data = use_y_q)$PDF
+    pdf_q <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y_q)$PDF
     
     for (idx in 1:10) {
       interval_ext <- c(idx / 10 - .1, idx / 10)
