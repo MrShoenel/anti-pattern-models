@@ -137,9 +137,29 @@ balanceDatasetSmote <- function(data, stateColumn) {
 
 
 loadResultsOrCompute <- function(file, computeExpr) {
+  use_rds <- grepl(pattern = "rds$", x = file, ignore.case = TRUE)
+  
+  fn_save <- function(obj, file) {
+    if (use_rds) {
+      base::saveRDS(object = obj, file = file)
+    } else {
+      write.table(x = obj, file = file, quote = TRUE, sep = ";", dec = ".", row.names = FALSE, col.names = TRUE,  fileEncoding = "UTF-8")
+    }
+    obj
+  }
+  
+  fn_read <- function(file) {
+    if (use_rds) {
+      base::readRDS(file = file)
+    } else {
+      read.table(file = file, header = TRUE, sep = ";", dec = ".", fileEncoding = "UTF-8", encoding = "UTF-8")
+    }
+  }
+
+  
   file <- base::normalizePath(file, mustWork = FALSE)
   if (file.exists(file)) {
-    return(base::readRDS(file))
+    return(fn_read(file = file))
   }
   
   res <- base::tryCatch(
@@ -151,8 +171,7 @@ loadResultsOrCompute <- function(file, computeExpr) {
     stop(paste0("The computation failed: ", res))
   }
   
-  base::saveRDS(res, file)
-  return(res)
+  fn_save(obj = res, file = file)
 }
 
 caretFitOneModeltoAllData <- function(method, tuneGrid, data) {
