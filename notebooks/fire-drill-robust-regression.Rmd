@@ -47,13 +47,13 @@ opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
 ```
 
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
+devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/helpers.R")
+devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/rank-model.R")
+
 source(file = "../helpers.R")
 source(file = "./common-funcs.R")
 source(file = "../models/modelsR6.R")
 source(file = "../models/SRBTW-R6.R")
-
-devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/helpers.R")
-devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/rank-model.R")
 
 library(ggplot2)
 library(ggridges)
