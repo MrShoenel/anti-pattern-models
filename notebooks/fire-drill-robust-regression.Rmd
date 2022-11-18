@@ -783,7 +783,7 @@ adaptive_training_caret <- function(
           row <- use_grid[rn,]
           tryCatch({
             temp1 <- gbm::gbm(
-              formula = gt~., distribution = "gaussian", data = df_train,
+              formula = gt~., distribution = "gaussian", data = df_train, n.cores = 1,
               n.trees = row$n.trees, n.minobsinnode = row$n.minobsinnode,
               cv.folds = num_caret_repeats, train.fraction = 1 - (1 / nrow(df_train))) # Let's do repeated, nested LOOCV
             
