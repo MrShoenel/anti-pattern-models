@@ -865,7 +865,8 @@ res_grid <- loadResultsOrCompute(file = "../results/rob-reg_res-grid.rds", compu
             rn = rownames(grid),
             .combine = rbind,
             .inorder = FALSE,
-            .verbose = TRUE
+            .verbose = TRUE,
+            .export = c("adaptive_training_caret")
           ) %dopar% {
             tryCatch({
               row <- grid[rn,]
@@ -951,7 +952,8 @@ res_grid_comps <- loadResultsOrCompute(file = "../results/rob-reg_res-grid_comps
     foreach::foreach(
       rn = rownames(grid),
       .combine = rbind,
-      .inorder = FALSE
+      .inorder = FALSE,
+      .export = c("adaptive_training_caret")
     ) %dopar% {
       row <- grid[rn,]
       row$num_comps <- tryCatch({
@@ -1437,7 +1439,8 @@ compute_np_grid_adaptive <- function(type = c("both", "amount", "divergence")) {
               rn = rownames(grid),
               .combine = rbind,
               .inorder = FALSE,
-              .verbose = TRUE
+              .verbose = TRUE,
+              .export = c("adaptive_training_caret")
             ) %dopar% {
               tryCatch({
                 row <- grid[rn,]
