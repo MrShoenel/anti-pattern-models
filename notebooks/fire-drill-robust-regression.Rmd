@@ -1234,44 +1234,46 @@ For the source code density, we'll draw some samples per segment and average the
 
 
 ```{r}
-grid <- expand.grid(list(
-  interval = 1:10,
-  activity = c("A", "CP", "FREQ", "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ") # Let's skip SCD and only use the activities for now
-))
-grid$activity <- as.character(grid$activity)
-
-dataset_np_sc <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = sapply(X = rownames(grid), FUN = function(rn) {
-  r <- grid[rn,]
-  paste(r$activity, r$interval, sep = "_")
-}))
-
-
-for (pname in names(projects_sc)) {
-  newrow_sc <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_sc)), value = colnames(dataset_np_sc))
+dataset_np_sc <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_sc.csv", computeExpr = {
+  grid <- expand.grid(list(
+    interval = 1:10,
+    activity = c("A", "CP", "FREQ", "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ") # Let's skip SCD and only use the activities for now
+  ))
+  grid$activity <- as.character(grid$activity)
   
-  for (rn in rownames(grid)) {
-    row <- grid[rn,]
-    interval_ext <- c(row$interval / 10 - .1, row$interval / 10)
-    feat_name <- paste(row$activity, row$interval, sep = "_")
-    is_versus <- grepl(pattern = "_vs_", x = row$activity)
+  dataset_np_sc <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = sapply(X = rownames(grid), FUN = function(rn) {
+    r <- grid[rn,]
+    paste(r$activity, r$interval, sep = "_")
+  }))
+  
+  
+  for (pname in names(projects_sc)) {
+    newrow_sc <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_sc)), value = colnames(dataset_np_sc))
     
-    if (is_versus) {
-      # Calculate symmetric divergence of two activities
-      sp <- strsplit(x = row$activity, split = "_vs_")[[1]]
-      pdf_p <- projects_sc[[pname]][[sp[1]]]
-      pdf_q <- projects_sc[[pname]][[sp[2]]]
-      newrow_sc[1, feat_name] <- jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext)
-    } else {
-      # Integrate the PDF of the activity
-      newrow_sc[1, feat_name] <- cubature::cubintegrate(
-        f = projects_sc[[pname]][[row$activity]], lower = interval_ext[1], upper = interval_ext[2])$integral
+    for (rn in rownames(grid)) {
+      row <- grid[rn,]
+      interval_ext <- c(row$interval / 10 - .1, row$interval / 10)
+      feat_name <- paste(row$activity, row$interval, sep = "_")
+      is_versus <- grepl(pattern = "_vs_", x = row$activity)
+      
+      if (is_versus) {
+        # Calculate symmetric divergence of two activities
+        sp <- strsplit(x = row$activity, split = "_vs_")[[1]]
+        pdf_p <- projects_sc[[pname]][[sp[1]]]
+        pdf_q <- projects_sc[[pname]][[sp[2]]]
+        newrow_sc[1, feat_name] <- jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext)
+      } else {
+        # Integrate the PDF of the activity
+        newrow_sc[1, feat_name] <- cubature::cubintegrate(
+          f = projects_sc[[pname]][[row$activity]], lower = interval_ext[1], upper = interval_ext[2])$integral
+      }
     }
+    
+    dataset_np_sc <- rbind(dataset_np_sc, newrow_sc)
   }
   
-  dataset_np_sc <- rbind(dataset_np_sc, newrow_sc)
-}
-
-dataset_np_sc <- as.data.frame(dataset_np_sc)
+  as.data.frame(dataset_np_sc)
+})
 ```
 
 
@@ -1288,21 +1290,6 @@ In issue-tracking data, we do know that. Therefore, we will use the following pr
 
 
 ```{r}
-library(readxl)
-
-grid <- expand.grid(list(
-  interval = 1:10,
-  activity = c("REQ", "DEV", "DESC", "REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")
-))
-grid$activity <- as.character(grid$activity)
-
-dataset_np_it <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = sapply(X = rownames(grid), FUN = function(rn) {
-  r <- grid[rn,]
-  paste(r$activity, r$interval, sep = "_")
-}))
-
-
-
 rejection_sampling_issue_tracking <- function(use_x, use_y) {
   # Apply filter:
   temp_x <- use_x[use_y > 0]
@@ -1326,43 +1313,58 @@ rejection_sampling_issue_tracking <- function(use_x, use_y) {
 
 
 ```{r}
-for (pname in names(projects_it)) {
-  temp <- read_excel("../data/FD_issue-based_detection.xlsx", sheet = pname)
-  newrow_it <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_it)), value = colnames(dataset_np_it))
+dataset_np_it <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_it.csv", computeExpr = {
+  library(readxl)
+
+  grid <- expand.grid(list(
+    interval = 1:10,
+    activity = c("REQ", "DEV", "DESC", "REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")
+  ))
+  grid$activity <- as.character(grid$activity)
   
-  for (activity in c("REQ", "DEV", "DESC")) {
-    use_y <- as.numeric(temp[[tolower(activity)]])
-    use_y[is.na(use_y)] <- 0
-    cdf <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y)$CDF
+  dataset_np_it <- `colnames<-`(x = matrix(nrow = 0, ncol = nrow(grid)), value = sapply(X = rownames(grid), FUN = function(rn) {
+    r <- grid[rn,]
+    paste(r$activity, r$interval, sep = "_")
+  }))
+  
+  for (pname in names(projects_it)) {
+    temp <- read_excel("../data/FD_issue-based_detection.xlsx", sheet = pname)
+    newrow_it <- `colnames<-`(x = matrix(ncol = ncol(dataset_np_it)), value = colnames(dataset_np_it))
     
-    for (idx in 1:10) {
-      interval_ext <- c(idx / 10 - .1, idx / 10)
-      feat_name <- paste(activity, idx, sep = "_")
-      newrow_it[1, feat_name] <- cdf(interval_ext[2]) - cdf(interval_ext[1])
+    for (activity in c("REQ", "DEV", "DESC")) {
+      use_y <- as.numeric(temp[[tolower(activity)]])
+      use_y[is.na(use_y)] <- 0
+      cdf <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y)$CDF
+      
+      for (idx in 1:10) {
+        interval_ext <- c(idx / 10 - .1, idx / 10)
+        feat_name <- paste(activity, idx, sep = "_")
+        newrow_it[1, feat_name] <- cdf(interval_ext[2]) - cdf(interval_ext[1])
+      }
     }
-  }
-  
-  for (divergence in c("REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")) {
-    sp <- strsplit(x = divergence, split = "_vs_")[[1]]
     
-    use_y_p <- as.numeric(temp[[tolower(sp[1])]])
-    use_y_p[is.na(use_y_p)] <- 0
-    pdf_p <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y_p)$PDF
-    
-    use_y_q <- as.numeric(temp[[tolower(sp[2])]])
-    use_y_q[is.na(use_y_q)] <- 0
-    pdf_q <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y_q)$PDF
-    
-    for (idx in 1:10) {
-      interval_ext <- c(idx / 10 - .1, idx / 10)
-      feat_name <- paste(divergence, idx, sep = "_")
-      newrow_it[1, feat_name] <- jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext)
+    for (divergence in c("REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")) {
+      sp <- strsplit(x = divergence, split = "_vs_")[[1]]
+      
+      use_y_p <- as.numeric(temp[[tolower(sp[1])]])
+      use_y_p[is.na(use_y_p)] <- 0
+      pdf_p <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y_p)$PDF
+      
+      use_y_q <- as.numeric(temp[[tolower(sp[2])]])
+      use_y_q[is.na(use_y_q)] <- 0
+      pdf_q <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y_q)$PDF
+      
+      for (idx in 1:10) {
+        interval_ext <- c(idx / 10 - .1, idx / 10)
+        feat_name <- paste(divergence, idx, sep = "_")
+        newrow_it[1, feat_name] <- jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext)
+      }
     }
+    
+    dataset_np_it <- rbind(dataset_np_it, newrow_it)
   }
-  
-  dataset_np_it <- rbind(dataset_np_it, newrow_it)
-}
-dataset_np_it <- as.data.frame(dataset_np_it)
+  dataset_np_it <- as.data.frame(dataset_np_it)
+})
 ```
 
 
@@ -1372,11 +1374,15 @@ The non-pattern datasets have the same problem as the ones using a pattern: the 
 Therefore, we will go through the same procedure and oversample them.
 
 ```{r}
-dataset_np_sc_oversampled <- cbind(dataset_np_sc, data.frame(gt = ground_truth$consensus))
-dataset_np_sc_oversampled <- balance_num_labels(dataset = dataset_np_sc_oversampled, num = min_rows)
+dataset_np_sc_oversampled <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_sc_oversampled.csv", computeExpr = {
+  temp <- cbind(dataset_np_sc, data.frame(gt = ground_truth$consensus))
+  balance_num_labels(dataset = temp, num = min_rows)
+})
 
-dataset_np_it_oversampled <- cbind(dataset_np_it, data.frame(gt = ground_truth$consensus))
-dataset_np_it_oversampled <- balance_num_labels(dataset = dataset_np_it_oversampled, num = min_rows)
+dataset_np_it_oversampled <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_it_oversampled.csv", computeExpr = {
+  temp <- cbind(dataset_np_it, data.frame(gt = ground_truth$consensus))
+  balance_num_labels(dataset = temp, num = min_rows)
+})
 ```
 
 
