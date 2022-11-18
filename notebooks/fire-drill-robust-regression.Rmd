@@ -1410,6 +1410,17 @@ compute_np_grid_adaptive <- function(type = c("both", "amount", "divergence")) {
     
     for (use_dataset in use_datasets) {
       dataset <- get(use_dataset)
+      # Let's select the right columns. If type = "both", then use all.
+      if (type == "amount") {
+        # Take out the "_vs_"-columns:
+        cn <- colnames(dataset)
+        # This also keeps the "gt"-column
+        dataset <- dataset[, cn[!grepl(pattern = "_vs_", x = cn)]]
+      } else if (type == "divergence") {
+        cn <- colnames(dataset)
+        # Only take "_vs_"-columns and re-append the "gt"-column
+        dataset <- dataset[, c(cn[grepl(pattern = "_vs_", x = cn)], "gt")]
+      }
       
       for (model_type in model_types) {
         
@@ -1446,7 +1457,10 @@ compute_np_grid_adaptive <- function(type = c("both", "amount", "divergence")) {
     res
   })
 }
+```
 
+
+```{r}
 res_grid_np_both <- compute_np_grid_adaptive(type = "b")
 res_grid_np_amount <- compute_np_grid_adaptive(type = "a")
 res_grid_np_divergence <- compute_np_grid_adaptive(type = "d")
