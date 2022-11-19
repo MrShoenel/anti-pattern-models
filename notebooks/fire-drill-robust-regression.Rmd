@@ -1526,7 +1526,7 @@ Simplified, more features is better, but the difference is not large (but still 
 
 
 ```{r echo=FALSE, warning=FALSE}
-temp <- res_grid_np_both %>% filter(model_type == "nnet") %>% group_by(do_pca) %>% summarise(
+temp <- res_grid_np_both %>% filter(model_type == "nnet") %>% group_by(dataset, do_pca) %>% arrange(dataset, do_pca) %>% summarise(
   RMSE_val_mean = mean(rmse_valid, na.rm = TRUE),
   RMSE_val_median = median(rmse_valid, na.rm = TRUE),
   RMSE_val_sd = sd(rmse_valid, na.rm = TRUE),
@@ -1541,7 +1541,7 @@ if (interactive()) {
   knitr::kable(
     x = temp,
     booktabs = TRUE,
-    caption = "Mean, median, standard deviation, min, and max of the validation error, grouped by conditionally applying PCA.",
+    caption = "Mean, median, standard deviation, min, and max of the validation error, grouped by the type of data (it=issue-tracking, sc=source code) conditionally applying PCA for feature set \"both\".",
     label = "nnet-pca-comps-table"
   )
 }
@@ -1562,8 +1562,8 @@ The expected error on the withheld validation data falls below $1$ for about $15
 Examining the confidence intervals will allow us to understand the likelihood for the RMSE to deviate from the expectation.
 
 
-```{r nnet-expected-gen-err, echo=FALSE, fig.cap="The expected validation error for the best-performing model and dataset."}
-temp <- res_grid_np_both[,]
+```{r nnet-expected-gen-err, echo=FALSE, fig.cap="The expected validation error for the best-performing model and dataset (source code, no PCA, divergence-features)."}
+temp <- res_grid_np_divergence[,]
 temp <- temp[temp$model_type == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled",]
 temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
 temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
@@ -1579,7 +1579,7 @@ legend(x = 32, y = 4.25, legend = c("mean", "max", "min"), col = c("black", "blu
 
 
 ```{r echo=FALSE}
-temp <- res_grid_np_both
+temp <- res_grid_np_both[,]
 temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled" & temp$num_train <= 41,]
 temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
 temp <- temp %>% group_by(num_train) %>% summarize(
@@ -1594,7 +1594,7 @@ if (interactive()) {
   knitr::kable(
     x = cbind(temp[, 1:4], round(temp[, 5:9], 4)),
     booktabs = TRUE,
-    caption = "Normality test and p-value, mean, median, standard deviation, min, and max of the validation error, for the neural network model, using the source code data, divergence-only features, and no PCA. The error reduces steadily with the number of training instances.",
+    caption = "Normality test and p-value, mean, median, standard deviation, min, and max of the validation error, for the neural network model, using the source code data, amount- and divergence-features, and no PCA. The error reduces steadily with the number of training instances.",
     label = "nnet-best-model"
   )
 }
@@ -1761,7 +1761,7 @@ This would then be essentially the same as Selberg's generalization [@selberg194
 There is also the Vysochanskij--Petunin inequality, but it only gives bounds for more than $\sqrt{(\frac{8}{3})}$ standard deviations [@vysochanskij1980justification].
 It is defined as $\frac{4}{9\lambda^2}$, so for the minimum lambda it includes $\approx\frac{5}{6}$ of all values (and is not applicable for probabilities below that).
 
-```{r echo=FALSE}
+```{r}
 compute_inequalities <- function(num_train, rmse, use = c("threesigma", "vyso", "chebyshev", "gauss")) {
   vals <- temp[temp$num_train == num_train,]$rmse_valid
   mean_ <- mean(vals)
@@ -1797,7 +1797,7 @@ compute_inequalities <- function(num_train, rmse, use = c("threesigma", "vyso", 
     }
     mode_ <- modes[1]
     r <- sqrt((mean_ - mode_)^2 + sd_^2)
-    100 * (1 - (if (k >= 2 * r / sqrt(3)) ((2*r) / (3*k))^2 else (1 - k / (r * sqrt(3)))))
+    100 * (1 - (if (k >= 2 * r / sqrt(3)) ((2 * r) / (3 * k))^2 else (1 - k / (r * sqrt(3)))))
   }
 }
 ```
@@ -1885,8 +1885,8 @@ vi_np_sc <- create_variable_importance(dataset = dataset_np_sc_oversampled)
 
 ```{r varimp-np-sc, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Variable importance for the no-pattern source code dataset estimated using 100 repeats and partial least squares."}
 par(mar = c(4.5,4.5,3,8))
-use_vars <- rev(c("A", "CP", "FREQ"))#, "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ")) # rev(unique(vi_np_sc$res$feature))
-mat <- matrix(nrow = 3, ncol = 10, dimnames = list(use_vars))
+use_vars <- rev(c("A", "CP", "FREQ", "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ")) # rev(unique(vi_np_sc$res$feature))
+mat <- matrix(nrow = 6, ncol = 10, dimnames = list(use_vars))
 
 for (v in rownames(mat)) {
   mat[v,] <- as.numeric((vi_np_sc$res[vi_np_sc$res$feature == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop"))$total_imp)
@@ -1902,7 +1902,7 @@ legend(x = 12.5, y= .14, rev(rownames(mat)), fill = rev(pal_4), bg = "white", xp
 ```
 
 
-In figure \ref{fig:varimp-np-sc} it becomes clear that the divergence features are much less important than the amount features.
+In figure \ref{fig:varimp-np-sc} it becomes clear that the divergence features are much less important than the amount features when __both__ types of features are used in a regression model.
 That could indicate, that these features contribute towards are more robust estimator.
 So if both types of features are used simultaneously, it is much more important to know _how much_ of each activity happens in each segment, than it is to know _how different_ the measured amounts across activities were.
 When we plot the same figure using amount features only, the picture is almost the same, minus the importance of the divergence features.
