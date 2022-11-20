@@ -157,9 +157,9 @@ all_signals <- list()
 for (pId in paste0("Project", 1:9)) {
   all_signals[[pId]] <- load_project_issue_data(pId = pId)
 }
-loadResultsOrCompute(file = "../results/project_signals_it.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/project_signals_it.rds", computeExpr = {
   all_signals
-})
+}))
 ```
 
 ```{r echo=FALSE}
@@ -342,9 +342,9 @@ pattern_it <- list(
   DEV = stats::approxfun(x = temp, y = dev(temp), rule = 2),
   DESC = stats::approxfun(x = temp, y = desc(temp), rule = 2))
 
-loadResultsOrCompute(file = "../results/pattern_I_it.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/pattern_I_it.rds", computeExpr = {
   pattern_it
-})
+}))
 ```
 
 
@@ -2770,9 +2770,9 @@ for (pId in paste0("Project", 10:15)) {
   all_signals_2nd_batch[[pId]] <- load_project_issue_data(pId = pId)
 }
 
-loadResultsOrCompute(file = "../results/project_signals_2nd_batch_it.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/project_signals_2nd_batch_it.rds", computeExpr = {
   all_signals_2nd_batch
-})
+}))
 ```
 
 
@@ -3712,10 +3712,10 @@ rfe_data_it <- cbind(
   data.frame(gt = ground_truth$consensus))
 ```
 
-```{r warning=FALSE}
+```{r warning=FALSE, message=FALSE}
 library(caret, quietly = TRUE)
-library(pls)
-library(randomForest)
+library(pls, quietly = TRUE)
+library(randomForest, quietly = TRUE)
 
 set.seed(1337)
 
@@ -4456,7 +4456,7 @@ if (interactive()) {
   knitr::kable(
     x = p4_area_scores_corr,
     booktabs = TRUE,
-    caption = "",
+    caption = "Impact of the smoothing-span on the correlation of the computed distance vs. the ground truth.",
     label = "p4-area-scores-corr"
   )
 }
@@ -4513,7 +4513,7 @@ if (interactive()) {
   knitr::kable(
     x = p4_area_scores_partial_corr,
     booktabs = TRUE,
-    caption = "",
+    caption = "Correlation of computed scores decline with more time considered.",
     label = "p4-area-scores-partial-corr"
   )
 }
@@ -5960,6 +5960,8 @@ knitr::include_graphics(
 ```
 
 
+
+\clearpage
 
 # References {-}
 
