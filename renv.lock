@@ -119,6 +119,14 @@
       "Hash": "8dcfa99b14c296bc9f1fd64d52fd3ce7",
       "Requirements": []
     },
+    "LaplacesDemon": {
+      "Package": "LaplacesDemon",
+      "Version": "16.1.6",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "e3688a7a73fe0c811053581348eb78f2",
+      "Requirements": []
+    },
     "MASS": {
       "Package": "MASS",
       "Version": "7.3-57",
@@ -250,10 +258,10 @@
     },
     "Rcpp": {
       "Package": "Rcpp",
-      "Version": "1.0.6",
+      "Version": "1.0.9",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "dbb5e436998a7eba5a9d682060533338",
+      "Hash": "e9c08b94391e9f3f97355841229124f2",
       "Requirements": []
     },
     "RcppArmadillo": {
@@ -1363,6 +1371,14 @@
         "rpart",
         "survival"
       ]
+    },
+    "irrCAC": {
+      "Package": "irrCAC",
+      "Version": "1.0",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "a54af901aa4922a6eb4831a033c17a99",
+      "Requirements": []
     },
     "isoband": {
       "Package": "isoband",
