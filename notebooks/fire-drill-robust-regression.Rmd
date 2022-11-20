@@ -1934,7 +1934,7 @@ Segments two and three then, however, could give strong early indications as to 
 
 
 
-
+\clearpage
 
 # References {-}
 
