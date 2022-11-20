@@ -4639,6 +4639,228 @@ if (interactive()) {
 ```
 
 
+## Ground truth inter-rater agreement
+
+```{r echo=FALSE, warning=FALSE}
+library(irrCAC)
+```
+
+
+We have previously reported the quadratic weighted Kappa, as well as the Pearson correlation.
+We should note, however, that the proposed scale by @landis1977application was chosen rather arbitrarily, and that each Kappa _agreement coefficient_ is a point estimate associated with a probability distribution and a margin of error [@klein2018agreement].
+It is therefore recommended to properly _benchmark_ raw Kappa coefficients.
+Gwet suggests to compute the probability of a Kappa to fall into a certain range by integrating a standard normal distribution (where the Kappa coefficient is the mean and its associated error is the standard deviation) [@gwet2014].
+We should probably also report Gwet's coefficient called "AC\textsubscript{$1$}", which outperforms other coefficients in terms of having reasonably small biases for estimating the true inter-rater reliability [@gwet2008ac1].
+It is especially applicable in the presence of high agreement because of its comparatively low bias.
+
+
+Also, so far, we had two raters. In the meantime, however, a third rater gave their assessment for all $15$ projects.
+In order to assess inter-rater agreement of three or more raters, we will have to use a Kappa or coefficient that can handle at least three raters (Gwet's can, for example).
+
+```{r}
+# Let's put them together.
+ground_truth_all <- rbind(ground_truth, ground_truth_2nd_batch)
+```
+
+
+
+In the following, we will report three things:
+
+* Pair-wise Pearson correlation (rater A vs. B, A vs. C, B vs. C)
+* Percentage agreement between all three raters
+* Various other Kappas: Gwet's AC\textsubscript{$1$}, Fleiss' Kappa, Krippendorff's Alpha, and Conger's Kappa.
+
+For the last point, we will also benchmark these Kappas according to Landis and Koch's scale, as well as Fleiss' scale (Altman's scale is almost identical with Landis + Koch).
+Note that the various Kappas and coefficients (except for Krippendorff's) are designed to work with nominal data only.
+All of the ones we are going to test support, however, weight matrices. That means, we can make them work with ordinal data (i.e., ordered nominal data).
+We will therefore first convert our ground truth, which is in the range $[0,10]$ to a factor/string, and then use linear weights (our ground truth uses a linear Likert scale).
+We can therefore treat our Likert-scaled data as ordinal. Since the items are spaced linearly, so will be the weights.
+We should note, however, that there are are various other methods for assessing inter-rater agreement on Likert scales [@James1984; @ONeill2017] but here, however, we will treat it as an equally-spaced ordinal scale, which is equivalent but more straightforward.
+The weights then assign an order to it. The bigger the differences between two raters' assessments, the bigger the difference in weight will be.
+
+
+Here is the ground truth assessment as of the third rater:
+
+```{r}
+ground_truth_rater.c <- c(0, 0, 10, 8, 0, 2, 4, 2, 2, 1, 0, 0, 6, 0, 0)
+```
+
+
+### Pair-wise Pearson correlation
+
+Let's see how well the individual raters' assessments correlate with each other.
+
+```{r}
+c(
+  stats::cor(ground_truth_all$rater.a, ground_truth_all$rater.b),
+  stats::cor(ground_truth_all$rater.a, ground_truth_rater.c),
+  stats::cor(ground_truth_all$rater.b, ground_truth_rater.c))
+```
+
+These are quite significant correlations. The p-values for these combinations are all almost zero:
+
+```{r}
+c(
+  stats::cor.test(ground_truth_all$rater.a, ground_truth_all$rater.b)$p.value,
+  stats::cor.test(ground_truth_all$rater.a, ground_truth_rater.c)$p.value,
+  stats::cor.test(ground_truth_all$rater.b, ground_truth_rater.c)$p.value)
+```
+
+The null hypothesis is that there is no correlation, but we clearly have to reject it in all cases, as there is no statistical significant evidence for it.
+
+
+
+### Percentage agreement
+
+This is roughly the same as one minus the mean of the mean absolute error among the pairs of raters divided by the range of the ground truth:
+
+```{r}
+(temp <- 1 - mean(c(
+  Metrics::mae(ground_truth_all$rater.a, ground_truth_all$rater.b),
+  Metrics::mae(ground_truth_all$rater.a, ground_truth_rater.c),
+  Metrics::mae(ground_truth_all$rater.b, ground_truth_rater.c)
+)) / 10)
+```
+
+This means that we have a percentual agreement between all three raters of about `r round(100 * temp, 2)`%.
+This quite good, but we have to proceed to the next method of benchmarking to get recognizable results.
+
+
+### Benchmarking of Fleiss' Kappa, Gwet's AC1/AC2, Krippendorff's Alpha, and Conger's Kappa
+
+Let's compute a few Kappas and agreement coefficients.
+Table \ref{tab:gt-kappas} shows an overview. The percentage agreement is almost always the same and equal to what we computed previously manually.
+The standard error seems to be quite similar, too.
+But we see differences for the coefficient itself, with the largest being Gwet's AC\textsubscript{$1$}/AC\textsubscript{$2$} (the remaining others being pretty similar).
+This is the one we should report, as Gwet has shown that it outperforms other Kappas/coefficients in the presence of high agreement, which is the case here [@gwet2008ac1].
+
+
+```{r}
+ratings <- cbind(ground_truth_all[, c("rater.a", "rater.b")], data.frame(rater.c = ground_truth_rater.c))
+
+temp <- rbind(
+  irrCAC::fleiss.kappa.raw(ratings = ratings, weights = "linear", categ.labels = paste0(0:10))$est,
+  irrCAC::gwet.ac1.raw(ratings = ratings, weights = "linear", categ.labels = paste0(0:10))$est,
+  irrCAC::krippen.alpha.raw(ratings = ratings, weights = "linear", categ.labels = paste0(0:10))$est,
+  irrCAC::conger.kappa.raw(ratings = ratings, weights = "linear", categ.labels = paste0(0:10))$est)
+```
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Fleiss' Kappa, Gwet's AC1/AC2, Krippendorff's Alpha, and Conger's Kappa. The table shows the percent agreement (pa), percent chance agreement (pe), the coefficient's/Kappa's value, its standard error, the confidencen interval, and p-value.",
+    label = "gt-kappas"
+  )
+}
+```
+
+
+Let's compute some benchmarks.
+They are shown in tables \ref{tab:bench-landis-koch} and \ref{tab:bench-fleiss}.
+What these tables show is the amount of probability with with the computed agreement coefficient falls into the defined range.
+For example, about $82.18$% of the computed coefficient falls into the _Substantial_-category.
+Also, the Kappa is $>99.99$% associated with the category _Moderate_ ($\geq0.4$) or better.
+These results mean that the majority of the Kappa is substantial, and we have a small (but not insignificant) portion being in the almost perfect category ($\approx5$%). Another $\approx12.9$% are in the moderate category.
+In table \ref{tab:bench-fleiss}, about $1/6$ falls into the category _Excellent_, and the remaining $5/6$ into the next best category _Intermediate to Good_.
+
+```{r}
+ac1 <- irrCAC::gwet.ac1.raw(ratings = ratings, weights = "linear", categ.labels = paste0(0:10))$est
+
+temp1 <- irrCAC::landis.koch.bf(coeff = ac1$coeff.val, se = ac1$coeff.se)
+temp2 <- irrCAC::fleiss.bf(coeff = ac1$coeff.val, se = ac1$coeff.se)
+```
+
+```{r echo=FALSE}
+temp1$Prob <- diff(c(0, as.numeric(temp1$CumProb)))
+
+if (interactive()) {
+  temp1
+} else {
+  knitr::kable(
+    x = temp1,
+    booktabs = TRUE,
+    caption = "Landis-Koch benchmark (cumulative probabilities) for Gwet's AC1/AC2 agreement coefficient for all three raters.",
+    label = "bench-landis-koch"
+  )
+}
+```
+
+```{r echo=FALSE}
+temp2$Prob <- diff(c(0, as.numeric(temp2$CumProb)))
+
+if (interactive()) {
+  temp2
+} else {
+  knitr::kable(
+    x = temp2,
+    booktabs = TRUE,
+    caption = "Fleiss benchmark (cumulative probabilities) for Gwet's AC1/AC2 agreement coefficient for all three raters.",
+    label = "bench-fleiss"
+  )
+}
+```
+
+
+We can also visualize the probability. It is computed using a standard normal distribution [@klein2018agreement].
+Equation \ref{eq:kappa-bench} shows how to compute the probability for an agreement coefficient $\kappa$ to be in the range $[a,b]$.
+This is also called _interval membership probability_ [@gwet2014].
+Note that the square root of the variance ($\sqrt{\operatorname{Var}}$) is the same as the standard deviation.
+Instead of this formula, we can also use a parameterized PDF (or CDF) directly (see equation \ref{eq:kappa-bench-param}).
+For example:
+
+```{r}
+tempf <- function(q) pnorm(q = q, mean = ac1$coeff.val, sd = ac1$coeff.se)
+
+# This is equivalent to the Landis-Koch benchmark of "Almost Perfect" (see previous table)
+c(tempf(1) - tempf(.8))
+```
+
+\begin{align}
+    \Phi\dots&\;\text{CDF of the standard normal distribution}\nonumber,
+    \\[1ex]
+    Pr(a\leq\kappa\leq b)=&\;\Phi\left(\frac{\kappa-a}{\sqrt{\operatorname{Var}(\kappa)}}\right)-\Phi\left(\frac{\kappa-b}{\sqrt{\operatorname{Var}(\kappa)}}\right)\label{eq:kappa-bench},
+    \\[1ex]
+    =&\;\int_a^b\,\frac{1}{\sqrt{\operatorname{Var}(\kappa)}\sqrt{2\pi}}e^{-\frac{1}{2}\left(\frac{x-\kappa}{\sqrt{\operatorname{Var}(\kappa)}}\right)^2}\,dx\label{eq:kappa-bench-param}.
+\end{align}
+
+
+Figure \ref{fig:gwet-ac1ac2-pdf} shows the three top-most categories according to @landis1977application and their integral.
+
+```{r gwet-ac1ac2-pdf, echo=FALSE, fig.align="top", fig.pos="ht!", fig.cap=paste0("Normal distribution for Gwet's AC1/AC2 coefficient. Shown are the integrated areas and the opacity indicates the probability for the coefficient to be in the given range. The mean is at approx. ", round(ac1$coeff.val, 3), " and the standard deviation is about ", round(ac1$coeff.se, 3), ".")}
+tempf <- function(x) dnorm(x = x, mean = ac1$coeff.val, sd = ac1$coeff.se)
+
+curve2(tempf, 0, 1, xlim = c(.35, 1), ylim = c(0, 6.5), main = "Normal distribution for Gwet's AC1/AC2 coefficient.", xlab = "Kappa value", ylab = "Relative likelihood")
+abline(v = irrCAC::landis.koch$ub.LK, col = "#aaaaaa", lty = 2)
+pal <- viridis::viridis(100, begin = .2, end = .3)
+
+text(x = .5, y = 6.25, "Moderate")
+text(x = .7, y = 6.25, "Substantial")
+text(x = .9, y = 6.25, "Almost Perfect")
+
+for (lb in c(.4, .6, .8)) {
+  ub <- lb + .2
+  prob <- stats::integrate(f = tempf, lower = lb, upper = ub)$value
+  intensity <- as.hexmode(round(15 + prob * 240))
+  if (stringi::stri_length(intensity) == 1) {
+    intensity <- paste0("0", intensity)
+  }
+  
+  use_x <- seq(from = lb, to = ub, length.out = 100)
+  polygon(x = c(ub, lb, use_x), y = c(0, 0, tempf(use_x)), col = paste0(substr(pal[round(prob * 100)], 1, 7), intensity))
+  text(x = lb + .1, y = 1.5, labels = paste0(round(100 * prob, 2),"%"))
+}
+grid()
+```
+
+
+
+
+
 ## Loading the new projects
 
 ```{r}
