@@ -1954,6 +1954,55 @@ It might be the case that a potential Fire Drill cannot be matched well at all u
 Segments two and three then, however, could give strong early indications as to how the project may play out, hence their importance.
 
 
+## Decision Tree
+
+Another kind of regression model is a decision tree. The goal here is to construct an approximate, yet useful tree.
+Today, we have no _quantitative_ understanding of the Fire Drill and a decision tree gives us one such perspective.
+
+
+In the following, we build a tree based on the "amount"-features only. The reason behind this is simple: these features are plainly understandable and straightforward to comprehend.
+Also, we do not need to z-standardize them, which is almost required if we want to interpret the resulting tree.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(ISLR)
+library(rpart)
+library(rpart.plot)
+```
+
+
+```{r}
+set.seed(1)
+temp <- dataset_np_sc_oversampled[, !grepl(pattern = "_vs_", x = colnames(dataset_np_sc_oversampled))]
+temp <- cbind(100 * temp[, colnames(temp) != "gt"], data.frame(gt = temp$gt))
+
+#cn <- colnames(temp)
+#cn_x <- cn[cn != "gt"]
+#pre_proc_method <- c("nzv", "center", "scale")
+#pre_proc <- caret::preProcess(x = temp[, cn_x], method = pre_proc_method)
+#temp <- stats::predict(pre_proc, newdata = temp)
+
+#build the initial decision tree
+tree <- rpart(gt ~ ., data=temp, method = "anova", control=rpart.control(minsplit = 3, cp = 1e-6))
+
+#identify best cp value to use
+best <- tree$cptable[which.min(tree$cptable[, "xerror"]), "CP"]
+
+#produce a pruned tree based on the best cp value
+pruned_tree <- prune(tree, cp=best)
+```
+
+The tree is shown in figure \ref{fig:dec-tree-amount-feats}. The values have been scaled to reflect percent.
+The leaf nodes are the predicted Fire Drill severity and the tree can be traversed comfortably manually.
+The root node has a severity of $5$, which is similar to the _ZeroR_ regression rule, in which we predict the average without further information.
+If, for example, we observe that in the 3rd segment, more than $5.8$% of the total `CP`-activity have happened, then we proceed to the next node, which corresponds to a severity of $7.5$.
+We can proceed with the drill down to obtain more and more accurate estimates.
+
+
+```{r dec-tree-amount-feats, echo=FALSE, fig.height=7, fig.width=12, fig.cap="A decision tree using source code data and amount-type features only.", fig.align="top", fig.pos="ht!"}
+#plot the pruned tree
+prp(pruned_tree, type = 2, extra = 0, under = TRUE, fallen.leaves = TRUE, left = FALSE, digits = 2, tweak = 1.1, round = 0, yes.text = "Yes", no.text = "No")
+```
+
 
 \clearpage
 
