@@ -105,6 +105,7 @@ The process for `A`, `CP`, and `FREQ` is the following (both, for the pattern an
   * If project, sample from the KDE of the activity's curve.
 * Estimate new KDE from these samples for `A` and `CP`.
 * Compose a mixture density for `FREQ` as $f(x)=r_A f_A(x) + r_{CP} f_{CP}(x)$, where $r_a,r_{CP}$ correspond to the ratios of these activities.
+  * We will also compose an ordinary density called `FREQ_nm` (no-mixture) that just captures all commit when they happened. This is going to be used later in the no-pattern approach.
 * Perform rejection sampling from the three densities, using large sample sizes, so that we can obtain a smooth ECDF.
 
 This process will leave us with three separate smooth ECDFs.
@@ -365,10 +366,13 @@ for (lvl in levels(temp$project)) {
   temp_CP <- get_densities(data = df[df$label %in% c("C", "P"),]$AuthorTimeNormalized)
   acp_ratio <- nrow(df[df$label == "A",]) / nrow(df)
   temp_FREQ <- make_mixture(pdf1 = temp_A$PDF, pdf2 = temp_CP$PDF, pdf1_ratio = acp_ratio)
+  # We will use this later on
+  temp_FREQ_no_mixture <- get_densities(data = df$AuthorTimeNormalized)
   
   templ[["A"]] <- temp_A$PDF
   templ[["CP"]] <- temp_CP$PDF
   templ[["FREQ"]] <- temp_FREQ$PDF
+  templ[["FREQ_nm"]] <- temp_FREQ_no_mixture$PDF
   
   templ_cdf[["A"]] <- temp_A$CDF
   templ_cdf[["CP"]] <- temp_CP$CDF
@@ -827,7 +831,9 @@ adaptive_training_caret <- function(
       mae_train = Metrics::mae(actual = df_train$gt, predicted = pred_train),
       mae_valid = Metrics::mae(actual = df_valid$gt, predicted = pred_valid),
       rmse_train = Metrics::rmse(actual = df_train$gt, predicted = pred_train),
-      rmse_valid = Metrics::rmse(actual = df_valid$gt, predicted = pred_valid)
+      rmse_valid = Metrics::rmse(actual = df_valid$gt, predicted = pred_valid),
+      sd_train = stats::sd(x = df_train$gt - pred_train),
+      sd_valid = stats::sd(x = df_train$gt - pred_valid)
     ))
   }
   
@@ -1243,11 +1249,15 @@ Source code projects are already present as PDFs, so we can just integrate for t
 For the source code density, we'll draw some samples per segment and average the result, that's it.
 
 
+Also, here we will be using the no-mixture version of the `FREQ` activity. The mixture as used previously, simply is a linearly weighted convex combination of the `A`- and `CP`-densities.
+In the following, when attempting to adaptively train a regression model and learning from the features, we expect using a no-mixture version will increase the entropy.
+
+
 ```{r}
 dataset_np_sc <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_sc.csv", computeExpr = {
   grid <- expand.grid(list(
     interval = 1:10,
-    activity = c("A", "CP", "FREQ", "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ") # Let's skip SCD and only use the activities for now
+    activity = c("A", "CP", "FREQ_nm", "A_vs_CP", "A_vs_FREQ_nm", "CP_vs_FREQ_nm") # Let's skip SCD and only use the activities for now
   ))
   grid$activity <- as.character(grid$activity)
   
