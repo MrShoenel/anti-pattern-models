@@ -987,11 +987,11 @@ Here we want to find out whether applying principal components analysis is usefu
 
 ```{r echo=FALSE, warning=FALSE}
 temp <- res_grid %>% group_by(do_pca) %>% summarise(
-  RMSE_val_mean = mean(rmse_valid, na.rm = TRUE),
-  RMSE_val_median = median(rmse_valid, na.rm = TRUE),
-  RMSE_val_sd = sd(rmse_valid, na.rm = TRUE),
-  RMSE_val_min = min(rmse_valid, na.rm = TRUE),
-  RMSE_val_max = max(rmse_valid, na.rm = TRUE),
+  RMSE_mean = mean(rmse_valid, na.rm = TRUE),
+  RMSE_median = median(rmse_valid, na.rm = TRUE),
+  RMSE_sd = sd(rmse_valid, na.rm = TRUE),
+  RMSE_min = min(rmse_valid, na.rm = TRUE),
+  RMSE_max = max(rmse_valid, na.rm = TRUE),
   .groups = "drop")
 
 
@@ -1118,7 +1118,7 @@ plot_var_imp(data = vi_it$vi, relative = TRUE) + labs(title = "Variable Importan
 ## Analysis of most important Segments, Metrics, Activities, etc.
 
 ```{r echo=FALSE, eval=FALSE}
-temp <- vi_sc$res %>% group_by(segment) %>% summarise(Mean_vi = sum(vi_rel))
+temp <- vi_sc$res %>% group_by(segment) %>% summarise(Mean_vi = sum(vi_rel), .groups = "drop")
 barplot(height = temp$Mean_vi, names.arg = temp$segment)
 ```
 
@@ -1535,12 +1535,14 @@ Simplified, more features is better, but the difference is not large (but still 
 
 ```{r echo=FALSE, warning=FALSE}
 temp <- res_grid_np_both %>% filter(model_type == "nnet") %>% group_by(dataset, do_pca) %>% arrange(dataset, do_pca) %>% summarise(
-  RMSE_val_mean = mean(rmse_valid, na.rm = TRUE),
-  RMSE_val_median = median(rmse_valid, na.rm = TRUE),
-  RMSE_val_sd = sd(rmse_valid, na.rm = TRUE),
-  RMSE_val_min = min(rmse_valid, na.rm = TRUE),
-  RMSE_val_max = max(rmse_valid, na.rm = TRUE),
+  RMSE_mean = mean(rmse_valid, na.rm = TRUE),
+  RMSE_median = median(rmse_valid, na.rm = TRUE),
+  RMSE_sd = sd(rmse_valid, na.rm = TRUE),
+  RMSE_min = min(rmse_valid, na.rm = TRUE),
+  RMSE_max = max(rmse_valid, na.rm = TRUE),
   .groups = "drop")
+
+temp$dataset <- substr(x = temp$dataset, start = 9, stop = 99)
 
 
 if (interactive()) {
@@ -1549,7 +1551,7 @@ if (interactive()) {
   knitr::kable(
     x = temp,
     booktabs = TRUE,
-    caption = "Mean, median, standard deviation, min, and max of the validation error, grouped by the type of data (it=issue-tracking, sc=source code) conditionally applying PCA for feature set \"both\".",
+    caption = "Mean, median, standard deviation, min, and max of the RMSE validation error, grouped by the type of data (it=issue-tracking, sc=source code) conditionally applying PCA for feature set \"both\".",
     label = "nnet-pca-comps-table"
   )
 }
@@ -1574,7 +1576,7 @@ Examining the confidence intervals will allow us to understand the likelihood fo
 temp <- res_grid_np_divergence[,]
 temp <- temp[temp$model_type == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled",]
 temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
-temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(min(rmse_valid)), .groups = "drop")
+temp <- temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), Max = max(rmse_valid), Min = min(rmse_valid), .groups = "drop")
 
 use_ylim <- c(0, max(c(temp$Mean, temp$Max, temp$Min)))
 use_ylim <- c(0, 5)
@@ -1602,7 +1604,7 @@ if (interactive()) {
   knitr::kable(
     x = cbind(temp[, 1:4], round(temp[, 5:9], 4)),
     booktabs = TRUE,
-    caption = "Normality test and p-value, mean, median, standard deviation, min, and max of the validation error, for the neural network model, using the source code data, amount- and divergence-features, and no PCA. The error reduces steadily with the number of training instances.",
+    caption = "Normality test and p-value, mean, median, standard deviation, min, and max of the RMSE validation error, for the neural network model, using the source code data, amount- and divergence-features, and no PCA. The error reduces steadily with the number of training instances.",
     label = "nnet-best-model"
   )
 }
@@ -1715,7 +1717,7 @@ if (interactive()) {
   knitr::kable(
     x = res,
     booktabs = TRUE,
-    caption = "Four different inequalities giving and their confidence for a given deviation (for the best neural network model trained on $17$ instances). The Three Sigma rule has the tightest bounds, while Gauss' inequality has the loosest.",
+    caption = paste0("Four different inequalities giving and their confidence for a given deviation (for the best neural network model trained on $17$ instances). The Three Sigma rule has the tightest bounds, while Gauss' inequality has the loosest. The mean of the data is $", round(mean(temp$rmse_valid), 3), "$ and the standard deviation is $", round(sd(temp$rmse_valid), 3), "$."),
     label = "confidence-intervals-inequalities"
   )
 }
@@ -1752,7 +1754,9 @@ It is obvious that with a lower generalization error, the size of the confidence
 ```{r nnet-rmse-cis, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Continuous confidence of the neural network predictor, with regard to number of training instances. Shown are the values according to the 68-95-99.7\\%-rule (assuming a normal distribution for every generalization error)."}
 fields::image.plot(list(
   x = seq(min(temp$num_train), max(temp$num_train), by = 1), y = seq(0, 2, length.out = 250), z = tempgrid),
-  col = viridis::inferno(50), legend.shrink = .75, legend.lab = "Confidence", legend.line = 2.75,
+  #col = viridis::inferno(50),
+  col = c(grey.colors(n = 25, start = .2, end = .975, gamma = 1.5), "white"),
+  legend.shrink = .75, legend.lab = "Confidence", legend.line = 2.75,
   xlab = "Number of training instances", ylab = "RMSE (validation data)",
   main = "Confidence intervals according to the 68-95-99.7%-rule.")
 grid(col = "darkgrey", lwd = 2)
@@ -1853,8 +1857,16 @@ for (idx in 1:4) {
 ```{r echo=FALSE}
 # We will have to override the function for variable importance:
 create_variable_importance <- function(dataset) {
+  # Note that PLS is very sensitive to (un-)scaled data, so we
+  # need to make sure the data is properly pre-processed.
+  cn <- colnames(dataset)
+  cn_x <- cn[cn != "gt"]
+  pre_proc_method <- c("nzv", "center", "scale")
+  pre_proc <- caret::preProcess(x = dataset[, cn_x], method = pre_proc_method)
+  dataset <- stats::predict(pre_proc, newdata = dataset)
+  
   model <- caret::train(
-    x = dataset[, colnames(dataset) != "gt"], y = dataset[,]$gt, method = "pls",
+    x = dataset[, cn_x], y = dataset[,]$gt, method = "pls",
     trControl = caret::trainControl(method = "LOOCV", number = 100))
   
   vi <- caret::varImp(model)
@@ -1897,12 +1909,13 @@ use_vars <- rev(c("A", "CP", "FREQ", "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ")) # re
 mat <- matrix(nrow = 6, ncol = 10, dimnames = list(use_vars))
 
 for (v in rownames(mat)) {
-  mat[v,] <- as.numeric((vi_np_sc$res[vi_np_sc$res$feature == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop"))$total_imp)
+  temp <- vi_np_sc$res[vi_np_sc$res$feature == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop")
+  mat[v,] <- if (nrow(temp) == 0) 0 else as.numeric((temp)$total_imp)
 }
 
 mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
 
-pal_4 <- RColorBrewer::brewer.pal(6, "Set3")[4:6]
+pal_4 <- RColorBrewer::brewer.pal(6, "Set3")#[4:6]
 bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "No-pattern source code variable importance", col = pal_4, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 40 + 60 * mat_sums / max(mat_sums))
 grid()
 text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)))
