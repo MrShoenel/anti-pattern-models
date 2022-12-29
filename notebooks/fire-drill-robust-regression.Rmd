@@ -1056,8 +1056,16 @@ Let's create a function that can give us a proper dataframe from the variable im
 
 ```{r}
 create_variable_importance <- function(dataset) {
+  # Note that PLS is very sensitive to (un-)scaled data, so we
+  # need to make sure the data is properly pre-processed.
+  cn <- colnames(dataset)
+  cn_x <- cn[cn != "gt"]
+  pre_proc_method <- c("nzv", "center", "scale")
+  pre_proc <- caret::preProcess(x = dataset[, cn_x], method = pre_proc_method)
+  dataset <- stats::predict(pre_proc, newdata = dataset)
+  
   model <- caret::train(
-    x = dataset[, colnames(dataset) != "gt"], y = dataset[,]$gt, method = "pls",
+    x = dataset[, cn_x], y = dataset[,]$gt, method = "pls",
     trControl = caret::trainControl(method = "LOOCV", number = 100))
   
   vi <- caret::varImp(model)
