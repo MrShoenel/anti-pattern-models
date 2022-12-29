@@ -276,7 +276,7 @@ We have a total of $15$ projects and a ground truth for each.
 Here, we will simply join the two batches.
 
 ```{r}
-ground_truth <- rbind(
+ground_truth_all <- rbind(
   read.csv(file = "../data/ground-truth.csv", sep = ";"),
   read.csv(file = "../data/ground-truth_2nd-batch.csv", sep = ";"))
 ```
@@ -566,7 +566,7 @@ Then, optionally, we further reduce the feature space's dimensionality by applyi
 
 
 ```{r gt-label-hist, echo=FALSE, fig.cap="Histogram of the ground truth consensus for all 15 projects.", fig.align="top", fig.pos="ht!"}
-hist(ground_truth$consensus, breaks = -1:10)
+hist(ground_truth_all$consensus, breaks = -1:10)
 ```
 
 ```{r}
@@ -618,13 +618,13 @@ And here we create the oversampled datasets.
 ```{r}
 min_rows <- 15 # Number of rows we want to end up with per numeric label
 
-dataset_sc_oversampled <- cbind(dataset_sc, data.frame(gt = ground_truth$consensus))
+dataset_sc_oversampled <- cbind(dataset_sc, data.frame(gt = ground_truth_all$consensus))
 dataset_sc_oversampled <- balance_num_labels(dataset = dataset_sc_oversampled, num = min_rows)
 
-dataset_sc_cdf_oversampled <- cbind(dataset_sc_cdf, data.frame(gt = ground_truth$consensus))
+dataset_sc_cdf_oversampled <- cbind(dataset_sc_cdf, data.frame(gt = ground_truth_all$consensus))
 dataset_sc_cdf_oversampled <- balance_num_labels(dataset = dataset_sc_cdf_oversampled, num = min_rows)
 
-dataset_it_oversampled <- cbind(dataset_it, data.frame(gt = ground_truth$consensus))
+dataset_it_oversampled <- cbind(dataset_it, data.frame(gt = ground_truth_all$consensus))
 dataset_it_oversampled <- balance_num_labels(dataset = dataset_it_oversampled, num = min_rows)
 ```
 
@@ -1082,11 +1082,11 @@ Let's compute the variable importance for each of our datasets:
 
 ```{r message=FALSE, warning=FALSE}
 vi_sc <- create_variable_importance(
-  dataset = cbind(dataset_sc, data.frame(gt = ground_truth$consensus)))
+  dataset = cbind(dataset_sc, data.frame(gt = ground_truth_all$consensus)))
 vi_sc_cdf <- create_variable_importance(
-  dataset = cbind(dataset_sc_cdf, data.frame(gt = ground_truth$consensus)))
+  dataset = cbind(dataset_sc_cdf, data.frame(gt = ground_truth_all$consensus)))
 vi_it <- create_variable_importance(
-  dataset = cbind(dataset_it, data.frame(gt = ground_truth$consensus)))
+  dataset = cbind(dataset_it, data.frame(gt = ground_truth_all$consensus)))
 ```
 
 
@@ -1377,12 +1377,12 @@ Therefore, we will go through the same procedure and oversample them.
 
 ```{r}
 dataset_np_sc_oversampled <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_sc_oversampled.csv", computeExpr = {
-  temp <- cbind(dataset_np_sc, data.frame(gt = ground_truth$consensus))
+  temp <- cbind(dataset_np_sc, data.frame(gt = ground_truth_all$consensus))
   balance_num_labels(dataset = temp, num = min_rows)
 })
 
 dataset_np_it_oversampled <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_it_oversampled.csv", computeExpr = {
-  temp <- cbind(dataset_np_it, data.frame(gt = ground_truth$consensus))
+  temp <- cbind(dataset_np_it, data.frame(gt = ground_truth_all$consensus))
   balance_num_labels(dataset = temp, num = min_rows)
 })
 ```
