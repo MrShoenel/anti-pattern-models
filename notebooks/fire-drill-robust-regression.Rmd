@@ -2004,6 +2004,185 @@ prp(pruned_tree, type = 2, extra = 0, under = TRUE, fallen.leaves = TRUE, left =
 ```
 
 
+# Unsupervised Learning
+
+Let's also try unsupervised learning: Clustering of similar projects.
+The goal here is to see, whether similar projects (that is, with a similar ground truth) end up in the same clusters or are at least close to each other in a lower dimensional space.
+
+
+## 2D and 3D embeddings using t-distributed Stochastic Neighbor Embeddings
+
+When we cluster, we must specify the number of clusters ahead of time.
+t-SNE on the other hand, reduces the dimensionality of our observations [@vandermaaten08a].
+If we choose to produce low-dimensional observations (i.e., 2D or 3D), then we can comfortably plot the result.
+The expectation is that we can observe clusters of similar observations (here: projects with a similar ground truth).
+
+
+Figure \ref{fig:tsne-first-test} shows a 2D-embedding of our $15$ projects.
+It is problematic to have so few projects and so many expected clusters (ideally, we expect each severity to be a cluster, which means $11$ clusters).
+Therefore, we could try to either use the oversampled data, or to group projects into severity ranges in order to reduce the amount of expected clusters.
+
+
+```{r tsne-first-test, fig.cap="2-dimensional t-SNE embedding of all projects.", fig.align="top", fig.pos="ht!"}
+set.seed(1)
+temp <- Rtsne::Rtsne(X = dataset_np_sc[,], dims = 2, perplexity = 3, pca = TRUE, check_duplicates = FALSE, theta = 0)
+
+plot(x = temp$Y[,1], y = temp$Y[,2], col = rgb(red = 0, green = 0, blue = 0, alpha = 0), xlab = "", ylab = "", xlim = c(min(temp$Y[,1]) - 10, max(temp$Y[,1]) + 10), ylim = c(min(temp$Y[,2]) - 15, max(temp$Y[,2]) + 5))
+text(x = temp$Y[,1], y = temp$Y[,2], labels = paste0("Proj_", 1:15))
+points(x = temp$Y[,1], y = temp$Y[,2] - 20, pch = 15, cex= 1.3, col = "darkred")
+grid()
+```
+
+```{r}
+set.seed(1)
+
+dataset <- dataset_np_sc_oversampled[,]
+dataset$gt <- round(dataset$gt) / 10 * 11 # inflate by 1 for visual reasons only
+
+cn <- colnames(dataset)
+cn_x <- cn[cn != "gt"]
+pre_proc_method <- c("nzv", "center", "scale")
+pre_proc <- caret::preProcess(x = dataset[, cn_x], method = pre_proc_method)
+temp <- stats::predict(pre_proc, newdata = dataset)
+
+#pal <- viridis::viridis(11)
+#pal <- RColorBrewer::brewer.pal(n = 11, name = "Set3")
+#pal <- viridis::inferno(n = 11, begin = 0, end = .95)
+#pal <- ggsci::pal_d3(palette = "category20")(n=11)
+#pal <- ggsci::pal_igv()(n = 11)
+#pal <- ggsci::pal_rickandmorty()(n = 11)
+#pal <- ggsci::pal_simpsons()(n = 11)
+#pal <- ggsci::pal_ucscgb()(n = 11)
+pal <- c(
+  ggsci::pal_material(palette = "green", n = 3)(n = 3)[2],
+  ggsci::pal_material(palette = "blue", n = 7)(n = 7)[c(2, 4, 6)],
+  ggsci::pal_material(palette = "purple", n = 9)(n = 9)[c(2, 4, 6, 8)],
+  ggsci::pal_material(palette = "orange", n = 6)(n = 6)[c(2, 4, 6)])
+
+tsne_2d <- Rtsne::Rtsne(
+  X = temp[, "gt" != colnames(temp)], dims = 2, perplexity = 30, pca = TRUE, check_duplicates = FALSE, theta = 0.05, max_iter = 2e3)
+tsne_3d <- Rtsne::Rtsne(
+  X = temp[, "gt" != colnames(temp)], dims = 3, perplexity = 30, pca = TRUE, check_duplicates = FALSE, theta = 0.05, max_iter = 2e3)
+```
+
+```{r tsne-dual-embedding, echo=FALSE, fig.width=10, fig.height=5, fig.cap="A 2- and 3-dimensional embedding of the oversampled projects (using z-standardized source code features).", fig.align="top", fig.pos="ht!"}
+par(mfrow = c(1,2))
+
+plot3D::scatter2D(
+  x = tsne_2d$Y[,1], y = tsne_2d$Y[,2], colvar = .5 + dataset$gt, col = pal, pch = 16, clab = "Severity",
+  xlab = "", ylab = "", bty = "b2",
+  colkey = FALSE) # colkey=list("dist" = 0.06, "length" = .66, "width" = .66, "cex.clab" = 0.8, at = 0:11, labels = paste0(-1:10))
+
+
+par(mar = c(2,1,2,2))
+plot3D::scatter3D(
+  x = tsne_3d$Y[,1], y = tsne_3d$Y[,2], z = tsne_3d$Y[,3], colvar = .5 + dataset$gt, col = pal, phi = 22, theta = -42, r = 2,
+  ticktype = "detailed", nticks = 5, pch = 16, cex.p = 1.3, clab = "Severity", xlab = "", ylab = "", zlab = "",
+  colkey = list("dist" = 0.04, "length" = .66, "width" = .5, "cex.clab" = 0.8, at = 0:11, labels = paste0(-1:10)), bty = "b2")
+```
+
+Figure \ref{fig:tsne-dual-embedding} shows two embeddings. I have asked my colleague Angelos to interpret these, without telling him any details about the underlying dataset.
+
+He kindly responded:
+
+_Starting with the 2D projection, Observation 1 (O1) is about the distortion in the vertical space. I believe if there had been more space to project your points, I would have used a square (or as square as possible) grid. Following that, many points are overlapping in the 2D embedding and require interactivity in order to see them in comparison to 3D, which was clear in that case._
+
+_O2 is related to groups of points forming a kind of circular motive. I think this happens when the data instances/records are quite similar or even identical._
+
+_O3 is the most important observation because it seems that as you reduce the severity, there is a linear (or time-dependent) connection between your points. For example, the orange points are between dark red and light orange. The same is true for the purple points, but this is more clearly visible from the 3D projection. I am not sure why though; it could be that the 3D is "cheating here" due to the perspective from which you have taken the screenshot. I would definitely need to interact with both charts to understand more about what is going on._
+
+__Comment Sebastian__: That linear trend appears to correspond to the linear Likert-scale used to assign the severity.
+
+_The same goes for O4, where 2D is split into three areas while 3D shows two. Also, the overplotting issue is still evident here, especially for the 2D embedding. If I had no colors, I would argue that almost nothing is easy to observe from the plots except for the very distant and tight clusters. The remaining points in the middle would have been considered one cluster, in my opinion._
+
+_Something deceiving in the 3D plot is marked as O2, with the green points appearing closer to the dark red compared to the 2D embedding. I guess it is because of the position of the "camera," so interaction is key here._
+
+
+The second observation follows from the synthetic oversampling of the data, which will result in very similar data points.
+I actually had to disable checking for duplicates when computing the t-SNE on the oversampled datasets for it to work.
+
+
+So, what we could try, is to reduce the amount of expected clusters and use the original, non-oversampled data.
+Figure \ref{fig:tsne-severity-groups} shows the result of this. There I have reduced the projects' cluster to two, similar to how the decision rule does it (ground truth less than $5$ means "no Fire Drill").
+Still, this plot is not meaningful and we cannot observe any useful clusters.
+The reason could quite well be that we do not have sufficient data. It could also very well be that the projects' underlying data does not reflect the ground truth all too well.
+Further investigation and/or more data is needed.
+
+```{r tsne-severity-groups, echo=FALSE, fig.cap="2D t-SNE embedding of the projects using source code data. The expected clusters have been reduced to two.", fig.align="top", fig.pos="ht!"}
+set.seed(2)
+
+dataset <- cbind(dataset_np_sc[,], data.frame(gt = ground_truth_all$consensus))
+# Let's make groups of ground truth:
+dataset$gt <- sapply(X = dataset$gt, FUN = function(gt) {
+  #if (gt < 4) 1 else if (gt < 7) 2 else 3
+  if (gt < 5) 0 else 1
+})
+
+cn <- colnames(dataset)
+cn_x <- cn[cn != "gt"]
+pre_proc_method <- c("nzv", "center", "scale")
+pre_proc <- caret::preProcess(x = dataset[, cn_x], method = pre_proc_method)
+temp <- stats::predict(pre_proc, newdata = dataset)
+pal <- c(
+  #ggsci::pal_material(palette = "green", n = 3)(n = 3)[2],
+  ggsci::pal_material(palette = "blue", n = 3)(n = 3)[2],
+  ggsci::pal_material(palette = "orange", n = 3)(n = 3)[2])
+
+tsne_grouped_2d <- Rtsne::Rtsne(
+  X = temp[, "gt" != colnames(temp)], dims = 3, perplexity = 4, pca = FALSE, check_duplicates = TRUE, theta = 0.05, max_iter = 5e3)
+plot3D::scatter2D(
+  x = tsne_grouped_2d$Y[,1], y = tsne_grouped_2d$Y[,2], colvar = .5 + dataset$gt, col = pal, pch = 16, clab = "Severity",
+  xlab = "", ylab = "", bty = "b2",
+  colkey = list("dist" = 0.015, "length" = .66, "width" = .66, "cex.clab" = 0.8, at = c(.75, 1.25), labels = c("[0,5)", "[5,10]")))
+```
+
+
+## k-Means Clustering
+
+Here we use k-Means clustering of the projects using three clusters (severity $<4$, severity $<7$, and severity $>7$),
+In figure \ref{fig:kmeans-embedding}, the $x/y$-coordinates are obtained from the first two principal components to produce an embedding.
+With a circle, the k-Means-assigned cluster for each project is shown. Next to each circle, the true cluster (using a triangle) is plotted.
+Only four out of $15$ projects are assigned a correct cluster, three are in the wrong, directly neighboring cluster (e.g., assigned to severity cluster $2$ instead of $1$, or $1$ instead of $0$), and eight are in the most distant cluster (i.e., $0$ instead of $2$ or vice versa).
+
+
+```{r kmeans-embedding, echo=FALSE, fig.cap="k-Means clustering of projects using 3 clusters and the first two principal components.", fig.align="top", fig.pos="ht!"}
+set.seed(1)
+
+dataset <- cbind(dataset_np_sc[,], data.frame(gt = ground_truth_all$consensus))
+# Let's make groups of ground truth:
+dataset$gt <- sapply(X = dataset$gt, FUN = function(gt) {
+  if (gt < 4) 0 else if (gt < 7) 1 else 2
+  #if (gt < 5) 0 else 1
+})
+
+cn <- colnames(dataset)
+cn_x <- cn[cn != "gt"]
+pre_proc_method <- c("nzv", "center", "scale")
+pre_proc <- caret::preProcess(x = dataset[, cn_x], method = pre_proc_method)
+temp <- stats::predict(pre_proc, newdata = dataset)
+
+temp.km <- stats::kmeans(x = temp[, "gt" != colnames(temp)], centers = 3, iter.max = 1000, nstart = 100)
+
+temp.pca <- stats::prcomp(x = temp[, "gt" != colnames(temp)], center = FALSE, scale. = FALSE)
+
+pal <- c(
+  ggsci::pal_material(palette = "green", n = 3)(n = 3)[2],
+  ggsci::pal_material(palette = "blue", n = 3)(n = 3)[2],
+  ggsci::pal_material(palette = "orange", n = 3)(n = 3)[2])
+
+plot3D::scatter2D(
+  x = temp.pca$x[,1], y = temp.pca$x[,2], colvar = temp.km$cluster - min(temp.km$cluster), col = pal, pch = 16, clab = "Severity", cex = 1.8,
+  xlab = "", ylab = "", bty = "b2",
+  colkey = list("dist" = 0.02, "length" = .66, "width" = .66, "cex.clab" = 0.8, at = c(1/3, 1, 5/3), labels = paste0(1:3)))
+plot3D::points2D(
+  x = temp.pca$x[,1] + .5, y = temp.pca$x[,2] + .2, pch = 17, cex = 1.2, colvar = temp$gt, col = pal, colkey = FALSE, add = TRUE)
+
+legend(x = 4, y = 6.5, pch = 1:2, legend = c("k-Means cluster", "True cluster"), cex = 1.2, bg = "white")
+```
+
+
+
+
 \clearpage
 
 # References {-}
