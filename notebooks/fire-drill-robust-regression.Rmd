@@ -1278,15 +1278,18 @@ dataset_np_sc <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_sc.csv"
       is_versus <- grepl(pattern = "_vs_", x = row$activity)
       
       if (is_versus) {
-        # Calculate symmetric divergence of two activities
+        # Calculate symmetric divergence of two activities on the segment
         sp <- strsplit(x = row$activity, split = "_vs_")[[1]]
         pdf_p <- projects_sc[[pname]][[sp[1]]]
         pdf_q <- projects_sc[[pname]][[sp[2]]]
         newrow_sc[1, feat_name] <- jsd_segment(p = pdf_p, q = pdf_q, ext = interval_ext)
       } else {
-        # Integrate the PDF of the activity
-        newrow_sc[1, feat_name] <- cubature::cubintegrate(
-          f = projects_sc[[pname]][[row$activity]], lower = interval_ext[1], upper = interval_ext[2])$integral
+        # Integrate the PDF of the activity:
+        #newrow_sc[1, feat_name] <- cubature::cubintegrate(
+        #  f = projects_sc[[pname]][[row$activity]], lower = interval_ext[1], upper = interval_ext[2])$integral
+        # Actually, let's use the CDF directly:
+        cdf <- projects_sc_cdf[[pname]][[row$activity]]
+        newrow_sc[1, feat_name] <- cdf(interval_ext[2]) - cdf(interval_ext[1])
       }
     }
     
