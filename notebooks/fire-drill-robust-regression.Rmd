@@ -377,6 +377,7 @@ for (lvl in levels(temp$project)) {
   templ_cdf[["A"]] <- temp_A$CDF
   templ_cdf[["CP"]] <- temp_CP$CDF
   templ_cdf[["FREQ"]] <- temp_FREQ$CDF
+  templ_cdf[["FREQ_nm"]] <- temp_FREQ_no_mixture$CDF
   
   templ[["SCD"]] <- suppressWarnings({
     stats::approxfun(x = df$AuthorTimeNormalized, y = df$Density, rule = 2)
@@ -1383,7 +1384,8 @@ dataset_np_it <- loadResultsOrCompute(file = "../data/rob-reg_dataset_np_it.csv"
     
     dataset_np_it <- rbind(dataset_np_it, newrow_it)
   }
-  dataset_np_it <- as.data.frame(dataset_np_it)
+  
+  as.data.frame(dataset_np_it)
 })
 ```
 
@@ -2012,6 +2014,120 @@ We can proceed with the drill down to obtain more and more accurate estimates.
 #plot the pruned tree
 prp(pruned_tree, type = 2, extra = 0, under = TRUE, fallen.leaves = TRUE, left = FALSE, digits = 2, tweak = 1.1, round = 0, yes.text = "Yes", no.text = "No")
 ```
+
+
+## Weighted Mixtures from Data
+
+We have previously estimated densities for each project and activity.
+Using the ground truth, we can now produce a mixture using the projects' weights.
+
+
+The main purpose of this exercise is to obtain a density, per activity, that is indicative of the Fire Drill behavior for this activity.
+It lets us better understand the Fire Drill in terms of these activities, since it is a weighted mixture of the observed instances.
+It could also be then used as a pattern.
+
+Figure \ref{fig:weighted-mixt-sc} shows the mixtures for source code.
+It appears that we have most of the adaptive activities in the 2nd half of the project, with a decline then towards the end.
+Corrective and perfective activities steadily increase and peak towards the end.
+My interpretation of this plot, after having seen the raters' notes, is a late-stage rush with adding new features, followed by switch of dedication of time towards making them work as the project approaches the deadline.
+
+
+```{r}
+weighted_mixture_sc <- function(x, activity = c("A", "CP", "FREQ_nm")) {
+  activity <- match.arg(activity)
+  s <- sum(ground_truth_all$consensus)
+  y <- 0
+  
+  for (pidx in 1:15) {
+    p <- paste0("project_", pidx)
+    w <- ground_truth_all[ground_truth_all$project == p,]$consensus / s
+    y <- y + w * projects_sc[[p]][[activity]](x)
+  }
+  y
+}
+```
+
+
+```{r echo=FALSE, eval=FALSE, fig.width=15, fig.height=5}
+par(mfrow = c(1, 3))
+curve2(function(x) weighted_mixture_sc(x, "A"), 0, 1, main = "A")
+grid()
+curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, main = "CP")
+grid()
+curve2(function(x) weighted_mixture_sc(x, "F"), 0, 1, main = "FREQ")
+grid()
+```
+
+```{r weighted-mixt-sc, echo=FALSE, fig.height=5, fig.width=8, fig.cap="The weighted mixtures as of the source code activities. For FREQ, the no-mixture version is shown."}
+curve2(function(x) weighted_mixture_sc(x, "A"), 0, 1, lwd = 1.5, col = "red", ylim = c(0,3.2), main = "Weighted mixtures for the source code activities.", xlab = "Relative project time", ylab = "Relative likelihood")
+curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, lwd = 1.5, col = "#00bb00", add = TRUE)
+curve2(function(x) weighted_mixture_sc(x, "F"), 0, 1, lwd = 1.5, col = "magenta", add = TRUE)
+grid()
+legend(x = 0, y = 3.1, legend = c("A", "CP", "FREQ"), col = c("red", "#00bb00", "magenta"), bg = "white", lty = 1, lwd = 2)
+```
+
+
+For issue-tracking, we previously only used the CDF from oversampling directly.
+Therefore, we have to redo this task and take the PDF then.
+The result is shown in figure \ref{fig:weighted-mixt-it}.
+Time spent on `REQ` is much more likely in the first half of a project and declines to almost zero towards project end.
+`DEV` begins at almost zero, shows a slow start, and reaches a somewhat wide peak in the second half of a project. It meets its decline only close to the end of a project.
+Descoping, `DESC`, almost linearly increases from project begin towards project end.
+Therefore, the more time has passed, the more likely descoping is.
+
+
+```{r}
+weighted_mixture_it <- (function() {
+  library(readxl)
+  
+  plist <- list()
+  
+  for (pname in names(projects_it)) {
+    temp <- read_excel("../data/FD_issue-based_detection.xlsx", sheet = pname)
+    templ <- list()
+    
+    for (activity in c("REQ", "DEV", "DESC")) {
+      use_y <- as.numeric(temp[[tolower(activity)]])
+      use_y[is.na(use_y)] <- 0
+      templ[[activity]] <- rejection_sampling_issue_tracking(use_x = temp$`time%`, use_y = use_y)
+    }
+    
+    plist[[pname]] <- templ
+  }
+
+    
+  function(x, activity = c("REQ", "DEV", "DESC")) {
+    activity <- match.arg(activity)
+    s <- sum(ground_truth_all$consensus)
+    y <- 0
+    
+    for (pidx in 1:15) {
+      w <- ground_truth_all[ground_truth_all$project == paste0("project_", pidx),]$consensus / s
+      y <- y + w * plist[[paste0("Project", pidx)]][[activity]]$PDF(x)
+    }
+    y
+  }
+})()
+```
+
+```{r echo=FALSE, eval=FALSE, fig.width=15, fig.height=4}
+par(mfrow = c(1, 3))
+curve2(function(x) weighted_mixture_it(x, "R"), 0, 1, main = "REQ")
+grid()
+curve2(function(x) weighted_mixture_it(x, "DEV"), 0, 1, main = "DEV")
+grid()
+curve2(function(x) weighted_mixture_it(x, "DESC"), 0, 1, main = "DESC")
+grid()
+```
+
+```{r weighted-mixt-it, echo=FALSE, fig.height=5, fig.width=8, fig.cap="The weighted mixtures as of the issue-tracking activities."}
+curve2(function(x) weighted_mixture_it(x, "R"), 0, 1, lwd = 1.5, col = "red", ylim = c(0,2.2), main = "Weighted mixtures for the issue-tracking activities.", xlab = "Relative project time", ylab = "Relative likelihood")
+curve2(function(x) weighted_mixture_it(x, "DEV"), 0, 1, lwd = 1.5, col = "#0000bb", add = TRUE)
+curve2(function(x) weighted_mixture_it(x, "DESC"), 0, 1, lwd = 1.5, col = "darkgreen", add = TRUE)
+grid()
+legend(x = 0, y = 2.1, legend = c("REQ", "DEV", "DESC"), col = c("red", "#0000bb", "darkgreen"), bg = "white", lty = 1, lwd = 2)
+```
+
 
 
 # Unsupervised Learning
