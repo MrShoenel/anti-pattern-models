@@ -105,7 +105,7 @@ The process for `A`, `CP`, and `FREQ` is the following (both, for the pattern an
   * If project, sample from the KDE of the activity's curve.
 * Estimate new KDE from these samples for `A` and `CP`.
 * Compose a mixture density for `FREQ` as $f(x)=r_A f_A(x) + r_{CP} f_{CP}(x)$, where $r_a,r_{CP}$ correspond to the ratios of these activities.
-  * We will also compose an ordinary density called `FREQ_nm` (no-mixture) that just captures all commit when they happened. This is going to be used later in the no-pattern approach.
+  * We will also compose an ordinary density called `FREQ_nm` (non-mixture) that just captures all commit when they happened. This is going to be used later in the no-pattern approach.
 * Perform rejection sampling from the three densities, using large sample sizes, so that we can obtain a smooth ECDF.
 
 This process will leave us with three separate smooth ECDFs.
@@ -1250,8 +1250,8 @@ Source code projects are already present as PDFs, so we can just integrate for t
 For the source code density, we'll draw some samples per segment and average the result, that's it.
 
 
-Also, here we will be using the no-mixture version of the `FREQ` activity. The mixture as used previously, simply is a linearly weighted convex combination of the `A`- and `CP`-densities.
-In the following, when attempting to adaptively train a regression model and learning from the features, we expect using a no-mixture version will increase the entropy.
+Also, here we will be using the __non-mixture__ version of the `FREQ` activity. The mixture as used previously, simply is a linearly weighted convex combination of the `A`- and `CP`-densities.
+In the following, when attempting to adaptively train a regression model and learning from the features, we expect that using a non-mixture version will increase the entropy.
 
 
 ```{r}
@@ -2061,7 +2061,7 @@ curve2(function(x) weighted_mixture_sc(x, "F"), 0, 1, main = "FREQ")
 grid()
 ```
 
-```{r weighted-mixt-sc, echo=FALSE, fig.height=5, fig.width=8, fig.cap="The weighted mixtures as of the source code activities. For FREQ, the no-mixture version is shown."}
+```{r weighted-mixt-sc, echo=FALSE, fig.height=5, fig.width=8, fig.cap="The weighted mixtures as of the source code activities. For FREQ, the non-mixture version is shown."}
 curve2(function(x) weighted_mixture_sc(x, "A"), 0, 1, lwd = 1.5, col = "red", ylim = c(0,3.2), main = "Weighted mixtures for the source code activities.", xlab = "Relative project time", ylab = "Relative likelihood")
 curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, lwd = 1.5, col = "#00bb00", add = TRUE)
 curve2(function(x) weighted_mixture_sc(x, "F"), 0, 1, lwd = 1.5, col = "magenta", add = TRUE)
