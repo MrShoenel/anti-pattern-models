@@ -62,6 +62,41 @@ library(fields)
 library(dplyr)
 ```
 
+```{r echo=FALSE}
+FIG_WIDTH <- round(6.49733, 4)
+
+saveTikzExpr <- function(expr, name, width = FIG_WIDTH, height = 3.2) {
+  tikzDevice::tikz(file = paste0("../figures/fig_", name, ".tex"), width = width, height = height, verbose = FALSE, )
+  eval(expr)
+  dev.off()
+}
+```
+
+```{r echo=FALSE, eval=FALSE}
+library(extrafont)
+font_import()
+loadfonts()
+
+gg2_style <- function(facets = FALSE) {
+  sty <- theme_minimal(base_size = 10) + theme(
+    text = element_text(family = "serif"),
+    axis.title.x.bottom = element_text(margin = ggplot2::margin(t = 8)),
+    axis.title.y.left = element_text(margin = ggplot2::margin(r = 8)))
+  
+  if (facets) {
+    sty <- sty + theme(
+      text = element_text(family = "LM Roman 10"),
+      panel.spacing = unit(1, "mm"),
+      panel.border = element_rect(color = "#d8d8d8", fill = NA, size = .1),
+      strip.background = element_rect(fill="#f2f2f2", color = "#d8d8d8"),
+      strip.text.x = element_text(color="black", margin = ggplot2::margin(t = 2, b = 2)),
+      strip.text.y = element_text(color="black", margin = ggplot2::margin(l = 4, r = 2)))
+  }
+  sty
+}
+```
+
+
 # Introduction\label{tr:fire-drill-rob-reg-technical-report}
 
 This technical report was added in the eighth iteration of the compilation.
