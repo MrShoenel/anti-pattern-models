@@ -2222,6 +2222,11 @@ set.seed(1)
 temp <- dataset_np_sc_oversampled[, !grepl(pattern = "_vs_", x = colnames(dataset_np_sc_oversampled))]
 temp <- cbind(100 * temp[, colnames(temp) != "gt"], data.frame(gt = temp$gt))
 
+cn <- colnames(temp)
+cn_x <- cn[cn != "gt"]
+cn_x <- gsub(pattern = "_nm", replacement = "nm", x = cn_x, ignore.case = TRUE)
+colnames(temp) <- c(cn_x, "gt")
+
 #cn <- colnames(temp)
 #cn_x <- cn[cn != "gt"]
 #pre_proc_method <- c("nzv", "center", "scale")
@@ -2247,7 +2252,7 @@ We can proceed with the drill down to obtain more and more accurate estimates.
 
 ```{r dec-tree-amount-feats, echo=FALSE, fig.height=7, fig.width=12, fig.cap="A decision tree using source code data and amount-type features only.", fig.align="top", fig.pos="ht!"}
 #plot the pruned tree
-prp(pruned_tree, type = 2, extra = 0, under = TRUE, fallen.leaves = TRUE, left = FALSE, digits = 2, tweak = 1.1, round = 0, yes.text = "Yes", no.text = "No")
+prp(pruned_tree, type = 2, extra = 1, under = TRUE, fallen.leaves = TRUE, left = FALSE, digits = 2, tweak = 1.1, round = 0, yes.text = "Yes", no.text = "No")
 ```
 
 
