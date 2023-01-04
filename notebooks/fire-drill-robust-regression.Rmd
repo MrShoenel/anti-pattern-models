@@ -664,7 +664,8 @@ adaptive_training_caret <- function(
     num_valid = 50,
     do_pca = TRUE,
     return_num_comps = NULL,
-    num_caret_repeats = 10
+    num_caret_repeats = 10,
+    return_instance = FALSE
 ) {
   model_type <- match.arg(model_type)
   
@@ -746,6 +747,7 @@ adaptive_training_caret <- function(
           act.fct = c("sigmoid", "tanh")
         ))
         
+        best_instance <- NULL
         best_nnet <- 1e30
         for (rn in rownames(use_grid)) {
           tryCatch({
@@ -758,7 +760,7 @@ adaptive_training_caret <- function(
             
             temp1 <- neuralnet::neuralnet(
               formula = gt~., data = df_train, act.fct = act.fct,
-              hidden = hidden, threshold = 5e-3, linear.output = TRUE, rep = 3)
+              hidden = hidden, threshold = 5e-3, linear.output = TRUE, rep = 3, lifesign = "full", lifesign.step = 1000)
             
             temp_pred_valid <- stats::predict(temp1, df_valid)
             temp_best_nnet <- Metrics::rmse(actual = df_valid$gt, predicted = temp_pred_valid)
@@ -766,6 +768,7 @@ adaptive_training_caret <- function(
               best_nnet <- temp_best_nnet
               pred_valid <- temp_pred_valid
               pred_train <- stats::predict(temp1, df_train)
+              best_instance <- temp1
             }
           }, error = function(cond) {
             print(paste("The model did not converge:", cond))
@@ -775,6 +778,13 @@ adaptive_training_caret <- function(
         
         if (best_nnet >= 1e30) {
           stop("NNET fit not possible.")
+        }
+        if (return_instance) {
+          return(list(
+            "best_instance" = best_instance,
+            "df_train" = df_train,
+            "df_valid" = df_valid
+          ))
         }
       } else if (model_type == "gbm") {
         use_grid <- expand.grid(list(
