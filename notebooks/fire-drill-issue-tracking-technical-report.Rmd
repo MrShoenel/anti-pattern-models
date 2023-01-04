@@ -4674,6 +4674,79 @@ ground_truth_all <- rbind(ground_truth, ground_truth_2nd_batch)
 ground_truth_all$rater.c <- c(0, 0, 10, 8, 0, 2, 4, 2, 2, 1, 0, 0, 6, 0, 0)
 ```
 
+```{r echo=FALSE, eval=FALSE}
+# This block and the next attempt to empirically find weights for the raters
+# such that the weighted-consensus is closest to the original consensus.
+
+tempf<-function(x) {
+  g <- x[1] * ground_truth_all$rater.c + x[2] * ground_truth_all$rater.a + x[3] * ground_truth_all$rater.b
+  Metrics::rmse(ground_truth_all$consensus, g)
+}
+
+tempf_ineq <- function(x) {
+  # s.t. max(xTg) >= 9.5
+  # = max(xTg) - 9.5 >= 0
+  # = -max(xTg) + 9.5
+  x <- x / sum(x)
+  m <- max(x[1] * ground_truth_all$rater.c + x[2] * ground_truth_all$rater.a + x[3] * ground_truth_all$rater.b)
+  -m + 9.5
+}
+
+(x <- nloptr::nloptr(
+    lb = c(0.1,0.1,0.1),
+    ub = c(1,1,1),
+    x0 = c(.5, .2, .3),
+    eval_f = tempf,
+    #eval_grad_f = function(x) pracma::grad(f = tempf, x0 = x),
+    eval_g_ineq = tempf_ineq,
+    opts = list(algorithm = "NLOPT_GN_ISRES", xtol_rel=1e-6, maxeval=25000)
+))
+
+x <- x$solution
+x <- x / sum(x)
+x
+round(round(x[1] * ground_truth_all$rater.c + x[2] * ground_truth_all$rater.a + x[3] * ground_truth_all$rater.b,1))
+ground_truth_all$consensus
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+tempf<-function(x) {
+  g <- x[1] * ground_truth_all$rater.c + x[2] * ground_truth_all$rater.a + x[3] * ground_truth_all$rater.b
+  Metrics::rmse(ground_truth_all$consensus, g)
+}
+
+tempf_ineq <- function(x) {
+  # s.t. max(xTg) >= 9.5
+  # = max(xTg) - 9.5 >= 0
+  # = -max(xTg) + 9.5
+  x <- x / sum(x)
+  m <- max(x[1] * ground_truth_all$rater.c + x[2] * ground_truth_all$rater.a + x[3] * ground_truth_all$rater.b)
+  -m + 9.5
+}
+
+tempf_ineq_jac <- function(x) {
+  pracma::jacobian(f = tempf_ineq, x0 = x)
+}
+
+set.seed(1)
+(x <- nloptr::nloptr(
+    lb = c(0.1,0.1,0.1),
+    ub = c(1,1,1),
+    x0 = runif(3, .1),
+    eval_f = tempf,
+    eval_grad_f = function(x) pracma::grad(f = tempf, x0 = x),
+    eval_g_ineq = tempf_ineq,
+    eval_jac_g_ineq = tempf_ineq_jac,
+    opts = list(algorithm = "NLOPT_LD_MMA", "check_derivatives"=TRUE, xtol_rel=1e-6, maxeval=100)
+))
+
+x <- x$solution
+x <- x / sum(x)
+x
+ground_truth_all$consensus
+round(x[1] * ground_truth_all$rater.c + x[2] * ground_truth_all$rater.a + x[3] * ground_truth_all$rater.b, 0)
+```
 
 
 In the following, we will report three things:
