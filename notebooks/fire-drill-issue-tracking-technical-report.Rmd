@@ -4831,7 +4831,7 @@ if (interactive()) {
   knitr::kable(
     x = temp,
     booktabs = TRUE,
-    caption = "Fleiss' Kappa, Gwet's AC1/AC2, Krippendorff's Alpha, and Conger's Kappa. The table shows the percent agreement (pa), percent chance agreement (pe), the coefficient's/Kappa's value, its standard error, the confidencen interval, and p-value.",
+    caption = "Fleiss' Kappa, Gwet's AC1/AC2, Krippendorff's Alpha, and Conger's Kappa. The table shows the percent agreement (pa), percent chance agreement (pe), the coefficient's/Kappa's value, its standard error, the confidence interval, and p-value.",
     label = "gt-kappas"
   )
 }
@@ -4903,7 +4903,15 @@ c(tempf(1) - tempf(.8))
     \\[1ex]
     Pr(a\leq\kappa\leq b)=&\;\Phi\left(\frac{\kappa-a}{\sqrt{\operatorname{Var}(\kappa)}}\right)-\Phi\left(\frac{\kappa-b}{\sqrt{\operatorname{Var}(\kappa)}}\right)\label{eq:kappa-bench},
     \\[1ex]
-    =&\;\int_a^b\,\frac{1}{\sqrt{\operatorname{Var}(\kappa)}\sqrt{2\pi}}e^{-\frac{1}{2}\left(\frac{x-\kappa}{\sqrt{\operatorname{Var}(\kappa)}}\right)^2}\,dx\label{eq:kappa-bench-param}.
+    =&\;\int_{\begin{cases}
+    a&\text{, if}\;a>0,
+    \\
+    -\infty&\text{, otherwise}
+    \end{cases}}^{\begin{cases}
+    b&\text{, if}\;b<1,
+    \\
+    \infty&\text{, otherwise}
+    \end{cases}}\,\left[\frac{1}{\sqrt{\operatorname{Var}(\kappa)}\sqrt{2\pi}}e^{-\frac{1}{2}\left(\frac{x-\kappa}{\sqrt{\operatorname{Var}(\kappa)}}\right)^2}\right]\,dx\label{eq:kappa-bench-param}.
 \end{align}
 
 
