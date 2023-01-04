@@ -1192,7 +1192,7 @@ mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
 
 set.seed(3)
 pal_4 <- rev(sample(RColorBrewer::brewer.pal(10, "Set3"), 4))
-bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Source code pattern", col = pal_4, ylim = c(0, max(mat_sums + .015)), angle = 30, density = 90 * mat_sums / max(mat_sums))
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Source code pattern.", col = pal_4, ylim = c(0, max(mat_sums + .015)), angle = 30, density = 90 * mat_sums / max(mat_sums))
 grid()
 text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)))
 legend("topright", rev(rownames(mat)), fill = rev(pal_4))
@@ -1205,7 +1205,7 @@ for (v in rownames(mat)) {
 }
 
 mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
-bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Source code pattern (CDF)", col = pal_4, ylim = c(0, max(mat_sums + .015)), angle = 30, density = 90 * mat_sums / max(mat_sums))
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Source code pattern (CDF).", col = pal_4, ylim = c(0, max(mat_sums + .015)), angle = 30, density = 90 * mat_sums / max(mat_sums))
 grid()
 text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)))
 legend("topright", rev(rownames(mat)), fill = rev(pal_4))
@@ -1225,7 +1225,7 @@ mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
 
 set.seed(2)
 pal_3 <- rev(sample(RColorBrewer::brewer.pal(12, "Set3"), 3))
-bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Issue-tracking pattern", col = pal_3, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 100 * mat_sums / max(mat_sums))
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "Issue-tracking pattern.", col = pal_3, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 100 * mat_sums / max(mat_sums))
 grid()
 text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 3)))
 legend("topleft", rev(rownames(mat)), fill = rev(pal_3))
@@ -1589,7 +1589,7 @@ The best feature set by a small margin is "divergence", followed by "both".
 
 We will inspect the best model (neural network) and check whether it makes a difference to apply PCA or not when using both types of features (amount and divergence).
 Table \ref{tab:nnet-pca-comps-table} shows the effects of conditionally applying PCA.
-It appears that the expected average validation error is lower and has also lower variance when __not__ using PCA.
+It appears that the expected average validation error is lower and has also lower variance when ___not___ using PCA.
 Simplified, more features is better, but the difference is not large (but still significant).
 
 
@@ -1621,7 +1621,7 @@ if (interactive()) {
 ## Confidence Intervals
 
 We show some results for this model in table \ref{tab:nnet-best-model}.
-Using all features, only $14$ instances are required to achieve a generalization error of $\leq1$ (with a standard deviation of $\approx0.31$).
+Using all features, only $14$ instances are required to achieve a generalization error (RMSE) of $\leq1$ (with a standard deviation of $\approx0.31$).
 The error falls to $\approx0.9$ for $15$ instances, and for $17$ instances, the error plus one standard deviation is even below $1$.
 
 
@@ -1653,7 +1653,7 @@ temp <- res_grid_np_both[,]
 temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled" & temp$num_train <= 41,]
 temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
 temp <- temp %>% group_by(num_train) %>% summarize(
-  "Unimodal?" = LaplacesDemon::is.unimodal(x = rmse_valid),
+  "Unimodal?" = stats::shapiro.test(x = rmse_valid)$p.value >= 0.05 || LaplacesDemon::is.unimodal(x = rmse_valid),
   "Normal?" = stats::shapiro.test(x = rmse_valid)$p.value >= 0.05,
   p.value = stats::shapiro.test(x = rmse_valid)$p.value,
   Mean = mean(rmse_valid), Median = median(rmse_valid), Sd = sd(rmse_valid), Min = min(rmse_valid), Max = max(rmse_valid), .groups = "drop")
@@ -1664,7 +1664,7 @@ if (interactive()) {
   knitr::kable(
     x = cbind(temp[, 1:4], round(temp[, 5:9], 4)),
     booktabs = TRUE,
-    caption = "Normality test and p-value, mean, median, standard deviation, min, and max of the RMSE validation error, for the neural network model, using the source code data, amount- and divergence-features, and no PCA. The error reduces steadily with the number of training instances.",
+    caption = "Normality test and p-value, mean, median, standard deviation, min, and max of the RMSE validation error, for the neural network model, using the source code data, amount- and divergence-features combined, and no PCA. The error reduces steadily with the number of training instances.",
     label = "nnet-best-model"
   )
 }
@@ -1706,7 +1706,7 @@ temp <- data.frame(
   Low = round(qnorm(c(.5 - Confidence / 200), mean = mean(temp), sd = sd(temp)), 4),
   Mean1 = round(mean(temp), 2),
   High = round(qnorm(c(.5 + Confidence / 200), mean = mean(temp), sd = sd(temp)), 4),
-  Chebyshev_Low = round(mean(temp) - sd(temp) * sqrt(1 / (1 - Confidence / 100)), 4),
+  Chebyshev_Low = max(0, round(mean(temp) - sd(temp) * sqrt(1 / (1 - Confidence / 100)), 4)),
   Mean2 = round(mean(temp), 2),
   Chebyshev_High = round(mean(temp) + sd(temp) * sqrt(1 / (1 - Confidence / 100)), 4),
   .groups = "drop")
@@ -1717,7 +1717,7 @@ if (interactive()) {
   knitr::kable(
     x = temp,
     booktabs = TRUE,
-    caption = "Confidence intervals of the best neural network model trained on $17$ instances. The table includes values according to the 68-95-99.7\\%-rule and Chebyshev's inequality.",
+    caption = "Confidence intervals of the best neural network model trained on $17$ instances. The table includes values according to the 68-95-99.7\\%-rule and Chebyshev's inequality (cut off at 0).",
     label = "nnet-best-model-confidence-intervals"
   )
 }
