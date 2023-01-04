@@ -2021,44 +2021,166 @@ create_variable_importance <- function(dataset, method = c("cubist", "gamboost",
 }
 ```
 
-
 ```{r warning=FALSE}
-vi_np_sc <- create_variable_importance(dataset = dataset_np_sc_oversampled)
+vi_np_sc <- loadResultsOrCompute(file = "../results/rob-reg_vi_np_sc.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    templ <- list()
+    for (method in c("gamboost", "nnet", "pls", "plsRglm", "treebag")) {
+      templ[[method]] <- create_variable_importance(dataset = dataset_np_sc_oversampled, method = method)
+    }
+    templ
+  })
+})
+
+vi_np_it <- loadResultsOrCompute(file = "../results/rob-reg_vi_np_it.rds", computeExpr = {
+  doWithParallelCluster(expr = {
+    templ <- list()
+    for (method in c("gamboost", "nnet", "pls", "plsRglm", "treebag")) {
+      templ[[method]] <- create_variable_importance(dataset = dataset_np_it_oversampled, method = method)
+    }
+    templ
+  })
+})
+```
+
+```{r echo=FALSE}
+merge_varimps <- function(l) {
+  n <- names(l)
+  r <- NULL
+  
+  for (name in n) {
+    vi <- l[[name]]$res %>% arrange(feature, segment)
+    if (is.null(r)) {
+      r <- data.frame(
+        feature = vi$feature,
+        segment = vi$segment,
+        vi_rel = vi$vi_rel
+      )
+    } else {
+      r$vi_rel <- r$vi_rel + vi$vi_rel
+    }
+  }
+  
+  r$vi_rel <- r$vi_rel / length(n)
+  r
+}
 ```
 
 
-```{r varimp-np-sc, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Variable importance for the no-pattern source code dataset estimated using 100 repeats and partial least squares."}
-par(mar = c(4.5,4.5,3,8))
-use_vars <- rev(c("A", "CP", "FREQ", "A_vs_CP", "A_vs_FREQ", "CP_vs_FREQ")) # rev(unique(vi_np_sc$res$feature))
+```{r varimp-np-sc, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Variable importance for the no-pattern source code dataset estimated using 100 repeats and averaged over five models (Boosted Generalized Additive Model [@rpkg_gamboost], Neural network [@venables2002sstat], (Generalized Linear) Partial Least Squares [@rpkg_plsRglm], and Bagged CART [@rpkg_ipred])."}
+par(mar = c(4.5,4.5,3,10))
+use_vars <- rev(c("A", "CP", "FREQ_nm", "A_vs_CP", "A_vs_FREQ_nm", "CP_vs_FREQ_nm")) # rev(unique(vi_np_sc$res$feature))
 mat <- matrix(nrow = 6, ncol = 10, dimnames = list(use_vars))
+temp_vi <- merge_varimps(vi_np_sc)
 
 for (v in rownames(mat)) {
-  temp <- vi_np_sc$res[vi_np_sc$res$feature == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop")
-  mat[v,] <- if (nrow(temp) == 0) 0 else as.numeric((temp)$total_imp)
+  temp <- temp_vi[temp_vi$feature == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop")
+  mat[v,] <- if (nrow(temp) == 0) 0 else as.numeric(temp$total_imp)
 }
 
 mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
 
 pal_4 <- RColorBrewer::brewer.pal(6, "Set3")#[4:6]
-bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total rel. Importance", main = "No-pattern source code variable importance", col = pal_4, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 40 + 60 * mat_sums / max(mat_sums))
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total segment Importance", main = "No-pattern source code variable importance.", col = pal_4, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 20 + 60 * mat_sums / max(mat_sums))
 grid()
-text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)))
+text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)), cex = .8)
 legend(x = 12.5, y= .14, rev(rownames(mat)), fill = rev(pal_4), bg = "white", xpd = TRUE)
 ```
 
 
-In figure \ref{fig:varimp-np-sc} it becomes clear that the divergence features are much less important than the amount features when __both__ types of features are used in a regression model.
-That could indicate, that these features contribute towards are more robust estimator.
-So if both types of features are used simultaneously, it is much more important to know _how much_ of each activity happens in each segment, than it is to know _how different_ the measured amounts across activities were.
-When we plot the same figure using amount features only, the picture is almost the same, minus the importance of the divergence features.
-
-
-The total importance for the divergence features is `r vi_np_sc$res %>% filter(is_versus) %>% select(vi_rel) %>% sum() %>% round(digits = 3)` and the total importance for the amount features is `r vi_np_sc$res %>% filter(!is_versus) %>% select(vi_rel) %>% sum() %>% round(digits = 3)`.
-Table \ref{tab:varimp-np-sc-per-feature} shows the total importance per feature. Here it becomes blear that the activities `CP` and `A` are the most important ($\approx62$% total importance).
-In almost all segments we see this large share reflected.
 
 ```{r echo=FALSE}
-temp <- vi_np_sc$res %>% group_by(feature) %>% summarize(Sum = sum(vi_rel), .groups = "drop") %>% arrange(-Sum)
+temp_vi_sc <- merge_varimps(vi_np_sc)
+temp_vi_it <- merge_varimps(vi_np_it)
+
+temp_vi_sc$segment <- factor(x = temp_vi_sc$segment, levels = 1:10, ordered = TRUE)
+temp_vi_it$segment <- factor(x = temp_vi_it$segment, levels = 1:10, ordered = TRUE)
+
+temp_vi_sc$dtype <- "SC"
+temp_vi_it$dtype <- "IT"
+
+temp_vi <- rbind(temp_vi_sc, temp_vi_it)
+temp_vi$feature <- factor(x = temp_vi$feature, levels = c(rev(use_vars), c("REQ", "DEV", "DESC", "REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")))
+temp_vi$dtype <- factor(x = temp_vi$dtype, levels = c("SC", "IT"), ordered = TRUE)
+temp_vi$is_versus <- sapply(X = temp_vi$feature, FUN = function(f) grepl(pattern = "_vs_", x = f))
+```
+
+```{r echo=FALSE, eval=interactive(), fig.width=10, fig.height=4}
+makefig <- function() {
+  plotexpr <- rlang::expr({
+    ggplot(temp_vi, aes(x = dtype, y = vi_rel, fill = feature)) +
+      ylim(0, .18) +
+      geom_bar(stat = 'identity', position = 'stack') + facet_wrap(~ segment, ncol = 10, strip.position = "bottom") +
+      geom_text(size = 0.36 * 8, vjust = .3, hjust = -.25, angle = 90, stat = "summary", fun = sum, mapping = aes(label = round(after_stat(y), 3), group = dtype)) +
+      gg2_style(FALSE) +
+      theme(axis.text.x = element_blank()) +
+      xlab("Segment") + ylab("Relative Importance") + labs(fill = "Activity", title = "Variable importances for source code and issue-tracking, per segment.") +
+      scale_x_discrete(position = "bottom") +
+      scale_fill_manual(
+        values = (function(n) {
+          set.seed(3)
+          sample(x = RColorBrewer::brewer.pal(n, "Set3"), size = n)
+        })(12),
+        labels = sapply(X = levels(temp_vi$feature), FUN = function(l) {
+          l <- gsub(pattern = "_vs_", replacement = " vs. ", x = l)
+          l <- gsub(pattern = "_", replacement = "\\\\_", x = l)
+          for (vn in c("A", "CP", "FREQ_nm", "REQ", "DEV", "DESC")) {
+            l <- gsub(pattern = vn, replacement = paste0("$\\\\mathsf{", vn, "}$"), x = l)
+          }
+          l
+        })) +
+      theme(legend.title = element_text(size = 9, margin = ggplot2::margin(r = 10)),
+            legend.text = element_text(size = 8, margin = ggplot2::margin(l = -4, r = 3)),
+            legend.position = "bottom",
+            axis.title.x = element_text(size = 9),
+            axis.title.y = element_text(size = 9),
+            axis.line.y = element_line(),
+            axis.text.y = element_text(size = 9),
+            strip.background = element_blank(),
+            strip.text = element_text(size = 9),
+            panel.background = element_rect(fill = "#fbfbfb", linetype = "blank"),
+            panel.grid.major = element_line(linetype = "dotted", color = "#aaaaaa"),
+            panel.grid.minor = element_line(linetype = "dotted", color = "#cccccc"),
+            plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = ggplot2::margin(b = 2.5, unit = "line"))) +
+      guides(fill = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 1)))
+  })
+}
+eval(makefig())
+```
+
+```{r echo=FALSE, eval=FALSE}
+tikzDevice::tikz(file = paste0("../figures/fig_", "rr_var-imp-both", ".tex"), width = FIG_WIDTH, height = 4, verbose = FALSE)
+eval(makefig())
+dev.off()
+```
+
+```{r echo=FALSE, eval=FALSE}
+temp_vi %>% group_by(is_versus, dtype) %>% summarize(Total = sum(vi_rel), .groups = "drop") %>% arrange(dtype)
+```
+
+```{r echo=FALSE, eval=FALSE}
+temp_vi %>% group_by(feature) %>% summarize(Total = sum(vi_rel), .groups = "drop") %>% arrange(-Total)
+```
+
+```{r echo=FALSE, eval=FALSE}
+temp_vi %>% group_by(dtype, is_versus, segment) %>% summarize(Total = sum(vi_rel), .groups = "drop") %>% arrange(-segment)
+```
+
+
+
+In figure \ref{fig:varimp-np-sc} it becomes evident that the divergence features are slightly more important than the amount features (with $\approx$ `r round(100 * sum(temp_vi[temp_vi$dtype == "SC" & temp_vi$is_versus,]$vi_rel), 2)`%), when __both__ types of features are used in a regression model.
+The Fire Drill is a phenomenon that relies on a sensible balance between activities and disturbances to this balance can indicate it.
+Also, the source code activities may not capture the true activities with high precision, so reliance on the divergence between activities is a feature with stronger predictive power on average.
+Still, it is important _how much_ of each activity happened in each segment.
+
+
+Table \ref{tab:varimp-np-sc-per-feature} shows the total importance per feature.
+The table shows that the divergence features are the most important, esp. `A_vs_CP`, which, in theory, should be the strongest indicator of a Fire Drill, as it can give indication to a disturbed balance between two main development activities (that should exhibit a certain balance otherwise).
+However, the relative importance between features is perhaps not significantly different (i.e., there is no feature with extreme low or high relative importance).
+
+
+```{r echo=FALSE}
+temp <- temp_vi[temp_vi$dtype == "SC",] %>% group_by(feature) %>% summarize(Sum = sum(vi_rel), .groups = "drop") %>% arrange(-Sum)
 
 if (interactive()) {
   temp
@@ -2073,19 +2195,20 @@ if (interactive()) {
 ```
 
 In figure \ref{fig:varimp-np-sc} we can already see the total importance per segment.
-We can see that the two most important segments $2,3$ are surrounded by the two least important segments $1,4$.
-It might be the case that a potential Fire Drill cannot be matched well at all using data captured at the very beginning of a project.
-Segments two and three then, however, could give strong early indications as to how the project may play out, hence their importance.
+We can see that the two most important segments are $\{3,4\}$.
+The segments before and after are less important and there is almost a somewhat linearly declining trend, at least towards project end.
+That could indicate that a Fire Drill may very well be detectable (predictable with high confidence) in earlier stages of a project.
 
 
 ## Decision Tree
 
 Another kind of regression model is a decision tree. The goal here is to construct an approximate, yet useful tree.
-Today, we have no _quantitative_ understanding of the Fire Drill and a decision tree gives us one such perspective.
+Today, we have _no quantitative_ understanding of the Fire Drill and a decision tree can provide us with one such perspective.
 
 
 In the following, we build a tree based on the "amount"-features only. The reason behind this is simple: these features are plainly understandable and straightforward to comprehend.
 Also, we do not need to z-standardize them, which is almost required if we want to interpret the resulting tree.
+
 
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
 library(ISLR)
