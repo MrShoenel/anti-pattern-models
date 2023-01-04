@@ -1978,13 +1978,16 @@ for (idx in 1:4) {
 
 ## Variable Importance
 
+Here we will estimate the variable importance, similar to how it was done previously.
+The main difference is that instead of only relying on partial least squares, we will rely on the averaged variable importance of a handful of models, in order to get more robust results.
 
 
 ```{r echo=FALSE}
 # We will have to override the function for variable importance:
-create_variable_importance <- function(dataset) {
-  # Note that PLS is very sensitive to (un-)scaled data, so we
-  # need to make sure the data is properly pre-processed.
+create_variable_importance <- function(dataset, method = c("cubist", "gamboost", "glmboost", "glmnet", "nnet", "pls", "plsRglm", "rpart2", "rf", "treebag", "xgbTree")) {
+  method <- match.arg(method)
+  # Note that PLS (and other methods) are very sensitive to (un-)scaled
+  # data, so we need to make sure the data is properly pre-processed.
   cn <- colnames(dataset)
   cn_x <- cn[cn != "gt"]
   pre_proc_method <- c("nzv", "center", "scale")
@@ -1992,7 +1995,7 @@ create_variable_importance <- function(dataset) {
   dataset <- stats::predict(pre_proc, newdata = dataset)
   
   model <- caret::train(
-    x = dataset[, cn_x], y = dataset[,]$gt, method = "pls",
+    x = dataset[, cn_x], y = dataset[,]$gt, method = method,
     trControl = caret::trainControl(method = "LOOCV", number = 100))
   
   vi <- caret::varImp(model)
@@ -2003,13 +2006,8 @@ create_variable_importance <- function(dataset) {
     # "A_10"
     # "A_vs_FREQ_8"
     is_versus <- grepl(pattern = "_vs_", x = rn)
-    sp <- NULL
-    if (is_versus) {
-      temp <- strsplit(x = rn, split = "_")[[1]]
-      sp <- c(paste(temp[1:3], collapse = "_"), temp[4])
-    } else {
-      sp <- strsplit(x = rn, split = "_")[[1]]
-    }
+    temp <- strsplit(x = rn, split = "_")[[1]]
+    sp <- c(paste(temp[1:(length(temp) - 1)], collapse = "_"), temp[length(temp)])
     
     res <- rbind(res, data.frame(
       feature = sp[1],
