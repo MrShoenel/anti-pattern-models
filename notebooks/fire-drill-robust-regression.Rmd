@@ -2259,16 +2259,18 @@ prp(pruned_tree, type = 2, extra = 1, under = TRUE, fallen.leaves = TRUE, left =
 ## Weighted Mixtures from Data
 
 We have previously estimated densities for each project and activity.
-Using the ground truth, we can now produce a mixture using the projects' weights.
+Using the ground truth, we can produce a mixture using the projects' weights.
 
 
 The main purpose of this exercise is to obtain a density, per activity, that is indicative of the Fire Drill behavior for this activity.
 It lets us better understand the Fire Drill in terms of these activities, since it is a weighted mixture of the observed instances.
 It could also be then used as a pattern.
+Like the decision tree, this is another kind of quantitative understanding of the Fire Drill.
+
 
 Figure \ref{fig:weighted-mixt-sc} shows the mixtures for source code.
 It appears that we have most of the adaptive activities in the 2nd half of the project, with a decline then towards the end.
-Corrective and perfective activities steadily increase and peak towards the end.
+Corrective and perfective activities [@swanson1976dimensions; @mockus2000change] steadily increase and peak towards the end.
 My interpretation of this plot, after having seen the raters' notes, is a late-stage rush with adding new features, followed by switch of dedication of time towards making them work as the project approaches the deadline.
 
 
@@ -2372,8 +2374,8 @@ legend(x = 0, y = 2.1, legend = c("REQ", "DEV", "DESC"), col = c("red", "#0000bb
 
 # Unsupervised Learning
 
-Let's also try unsupervised learning: Clustering of similar projects.
-The goal here is to see, whether similar projects (that is, with a similar ground truth) end up in the same clusters or are at least close to each other in a lower dimensional space.
+Let us also try unsupervised learning: Clustering of similar projects.
+The goal here is to see, whether similar projects (that is, with a similar ground truth) end up in the same clusters or are at least close to each other in a lower-dimensional space.
 
 
 ## 2D and 3D embeddings using t-distributed Stochastic Neighbor Embeddings
