@@ -844,7 +844,7 @@ adaptive_training_caret <- function(
       rmse_train = Metrics::rmse(actual = df_train$gt, predicted = pred_train),
       rmse_valid = Metrics::rmse(actual = df_valid$gt, predicted = pred_valid),
       sd_train = stats::sd(x = df_train$gt - pred_train),
-      sd_valid = stats::sd(x = df_train$gt - pred_valid)
+      sd_valid = stats::sd(x = df_valid$gt - pred_valid)
     ))
   }
   
