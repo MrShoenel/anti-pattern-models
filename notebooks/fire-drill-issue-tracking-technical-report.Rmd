@@ -4920,27 +4920,49 @@ Figure \ref{fig:gwet-ac1ac2-pdf} shows the three top-most categories according t
 ```{r gwet-ac1ac2-pdf, echo=FALSE, fig.align="top", fig.pos="ht!", fig.cap=paste0("Normal distribution for Gwet's AC1/AC2 coefficient. Shown are the integrated areas and the opacity indicates the probability for the coefficient to be in the given range. The mean is at approx. ", round(ac1$coeff.val, 3), " and the standard deviation is about ", round(ac1$coeff.se, 3), ".")}
 tempf <- function(x) dnorm(x = x, mean = ac1$coeff.val, sd = ac1$coeff.se)
 
-curve2(tempf, 0, 1, xlim = c(.35, 1), ylim = c(0, 6.5), main = "Normal distribution for Gwet's AC1/AC2 coefficient.", xlab = "Kappa value", ylab = "Relative likelihood")
-abline(v = irrCAC::landis.koch$ub.LK, col = "#aaaaaa", lty = 2)
-pal <- viridis::viridis(100, begin = .2, end = .3)
-
-text(x = .5, y = 6.25, "Moderate")
-text(x = .7, y = 6.25, "Substantial")
-text(x = .9, y = 6.25, "Almost Perfect")
-
-for (lb in c(.4, .6, .8)) {
-  ub <- lb + .2
-  prob <- stats::integrate(f = tempf, lower = lb, upper = ub)$value
-  intensity <- as.hexmode(round(15 + prob * 240))
-  if (stringi::stri_length(intensity) == 1) {
-    intensity <- paste0("0", intensity)
-  }
+makefig <- function(paper = FALSE) {
+  rlang::expr({
+    paper <- !!paper
+    cex <- if (paper) .9 else 1
+    mline <- if (paper) 2.5 else 3
+    if (paper) {
+      # 5.1 4.1 4.1 2.1
+      par(mar = c(4.1, 3.6, 2.1, .1))
+    }
   
-  use_x <- seq(from = lb, to = ub, length.out = 100)
-  polygon(x = c(ub, lb, use_x), y = c(0, 0, tempf(use_x)), col = paste0(substr(pal[round(prob * 100)], 1, 7), intensity))
-  text(x = lb + .1, y = 1.5, labels = paste0(round(100 * prob, 2),"%"))
+    curve2(tempf, 0, 1, xlim = c(.35, 1), ylim = c(0, 7), main = "Normal distribution for Gwet's AC1/AC2 coefficient.", cex.main = cex, cex.lab = cex, cex.axis = cex, xlab = "", ylab = "", xaxt = "n", yaxt = "n")
+    mtext(text = "Kappa value", side = 1, line = mline, cex = cex)
+    mtext(text = "Relative Likelihood", side = 2, line = mline, cex = cex)
+    axis(1, at = seq(0, 1, by = .1), cex.axis = cex)
+    axis(2, at = seq(0, 10, by = 1), cex.axis = cex)
+    grid()
+    abline(v = irrCAC::landis.koch$ub.LK, col = "#aaaaaa", lty = 2)
+    pal <- viridis::viridis(100, begin = .2, end = .3)
+    
+    text(x = .5, y = 6.4, "Moderate", cex = cex)
+    text(x = .7, y = 6.4, "Substantial", cex = cex)
+    text(x = .9, y = 6.4, "Almost\nPerfect", cex = cex)
+    
+    for (lb in c(.4, .6, .8)) {
+      ub <- lb + .2
+      prob <- stats::integrate(f = tempf, lower = lb, upper = ub)$value
+      intensity <- as.hexmode(round(35 + prob * 220))
+      if (stringi::stri_length(intensity) == 1) {
+        intensity <- paste0("0", intensity)
+      }
+      
+      use_x <- seq(from = lb, to = ub, length.out = 100)
+      polygon(x = c(ub, lb, use_x), y = c(0, 0, tempf(use_x)), col = paste0(substr(pal[round(prob * 100)], 1, 7), intensity))
+      text(x = lb + .1, y = 1.8, labels = paste0(round(100 * prob, 2), (if (paper) "\\"), "%"), col = if (lb == .6) "white" else "black")
+    }
+  })
 }
-grid()
+
+eval(makefig())
+```
+
+```{r echo=FALSE, eval=FALSE}
+saveTikzExpr(makefig(paper = TRUE), "it_gwet-benchmark", height = 2.7, width = .75 * FIG_WIDTH)
 ```
 
 
