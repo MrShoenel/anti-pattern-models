@@ -4761,14 +4761,7 @@ All of the ones we are going to test support, however, weight matrices. That mea
 We will therefore first convert our ground truth, which is in the range $[0,10]$ to a factor/string, and then use linear weights (our ground truth uses a linear Likert scale).
 We can therefore treat our Likert-scaled data as ordinal. Since the items are spaced linearly, so will be the weights.
 We should note, however, that there are are various other methods for assessing inter-rater agreement on Likert scales [@James1984; @ONeill2017] but here, however, we will treat it as an equally-spaced ordinal scale, which is equivalent but more straightforward.
-The weights then assign an order to it. The bigger the differences between two raters' assessments, the bigger the difference in weight will be.
-
-
-Here is the ground truth assessment as of the third rater:
-
-```{r}
-ground_truth_rater.c <- c(0, 0, 10, 8, 0, 2, 4, 2, 2, 1, 0, 0, 6, 0, 0)
-```
+The weights then assign an order and absolute distance between items to it. The bigger the differences between two raters' assessments, the bigger the difference in weight will be.
 
 
 ### Pair-wise Pearson correlation
@@ -4778,8 +4771,8 @@ Let's see how well the individual raters' assessments correlate with each other.
 ```{r}
 c(
   stats::cor(ground_truth_all$rater.a, ground_truth_all$rater.b),
-  stats::cor(ground_truth_all$rater.a, ground_truth_rater.c),
-  stats::cor(ground_truth_all$rater.b, ground_truth_rater.c))
+  stats::cor(ground_truth_all$rater.a, ground_truth_all$rater.c),
+  stats::cor(ground_truth_all$rater.b, ground_truth_all$rater.c))
 ```
 
 These are quite significant correlations. The p-values for these combinations are all almost zero:
@@ -4787,8 +4780,8 @@ These are quite significant correlations. The p-values for these combinations ar
 ```{r}
 c(
   stats::cor.test(ground_truth_all$rater.a, ground_truth_all$rater.b)$p.value,
-  stats::cor.test(ground_truth_all$rater.a, ground_truth_rater.c)$p.value,
-  stats::cor.test(ground_truth_all$rater.b, ground_truth_rater.c)$p.value)
+  stats::cor.test(ground_truth_all$rater.a, ground_truth_all$rater.c)$p.value,
+  stats::cor.test(ground_truth_all$rater.b, ground_truth_all$rater.c)$p.value)
 ```
 
 The null hypothesis is that there is no correlation, but we clearly have to reject it in all cases, as there is no statistical significant evidence for it.
@@ -4802,8 +4795,8 @@ This is roughly the same as one minus the mean of the mean absolute error among 
 ```{r}
 (temp <- 1 - mean(c(
   Metrics::mae(ground_truth_all$rater.a, ground_truth_all$rater.b),
-  Metrics::mae(ground_truth_all$rater.a, ground_truth_rater.c),
-  Metrics::mae(ground_truth_all$rater.b, ground_truth_rater.c)
+  Metrics::mae(ground_truth_all$rater.a, ground_truth_all$rater.c),
+  Metrics::mae(ground_truth_all$rater.b, ground_truth_all$rater.c)
 )) / 10)
 ```
 
@@ -4821,7 +4814,7 @@ This is the one we should report, as Gwet has shown that it outperforms other Ka
 
 
 ```{r}
-ratings <- cbind(ground_truth_all[, c("rater.a", "rater.b")], data.frame(rater.c = ground_truth_rater.c))
+ratings <- cbind(ground_truth_all[, c("rater.a", "rater.b")], data.frame(rater.c = ground_truth_all$rater.c))
 
 temp <- rbind(
   irrCAC::fleiss.kappa.raw(ratings = ratings, weights = "linear", categ.labels = paste0(0:10))$est,
