@@ -4670,6 +4670,8 @@ In order to assess inter-rater agreement of three or more raters, we will have t
 ```{r}
 # Let's put them together.
 ground_truth_all <- rbind(ground_truth, ground_truth_2nd_batch)
+# Add the 3rd rater to it:
+ground_truth_all$rater.c <- c(0, 0, 10, 8, 0, 2, 4, 2, 2, 1, 0, 0, 6, 0, 0)
 ```
 
 
