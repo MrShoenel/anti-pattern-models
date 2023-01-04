@@ -1790,11 +1790,12 @@ if (interactive()) {
 
 
 ```{r echo=FALSE}
-temp <- res_grid_np_both
+temp <- res_grid_np_divergence # res_grid_np_both
 temp <- temp[temp$model == "nnet" & !temp$do_pca & temp$dataset == "dataset_np_sc_oversampled",]# & temp$num_train <= 20,]
 temp <- temp[stats::complete.cases(temp[, colnames(temp)[colnames(temp) != "num_comps"]]),]
 
 tempf <- function(num_train, rmse) {
+  num_train <- round(num_train)
   vals <- temp[temp$num_train == num_train,]$rmse_valid
   mean_ <- mean(vals)
   sd_ <- sd(vals)
@@ -1803,7 +1804,7 @@ tempf <- function(num_train, rmse) {
   #if (temp < 99.9) temp else NA_real_
 }
 
-tempgrid <- outer(X = seq(min(temp$num_train), max(temp$num_train), by = 1), Y = seq(0, 2, length.out = 250), FUN = Vectorize(tempf))
+tempgrid <- outer(X = seq(min(temp$num_train), max(temp$num_train), by = 1), Y = seq(0, 3, length.out = 100), FUN = Vectorize(tempf))
 ```
 
 
@@ -1811,16 +1812,81 @@ Figure \ref{fig:nnet-rmse-cis} shows the confidence interval of the generalizati
 It is obvious that with a lower generalization error, the size of the confidence interval reduces as well (i.e., less variance and more stable predictions).
 
 
-```{r nnet-rmse-cis, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Continuous confidence of the neural network predictor, with regard to number of training instances. Shown are the values according to the 68-95-99.7\\%-rule (assuming a normal distribution for every generalization error)."}
-fields::image.plot(list(
-  x = seq(min(temp$num_train), max(temp$num_train), by = 1), y = seq(0, 2, length.out = 250), z = tempgrid),
-  #col = viridis::inferno(50),
-  col = c(grey.colors(n = 25, start = .2, end = .975, gamma = 1.5), "white"),
-  legend.shrink = .75, legend.lab = "Confidence", legend.line = 2.75,
-  xlab = "Number of training instances", ylab = "RMSE (validation data)",
-  main = "Confidence intervals according to the 68-95-99.7%-rule.")
-grid(col = "darkgrey", lwd = 2)
-abline(h = c(.5, 1), lwd = 3, lty = c(2,5), col = "#0377fc")
+```{r nnet-rmse-cis, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Continuous confidence of the neural network predictor, with regard to number of training instances. Shown are the values according to the 68-95-99.7\\%-rule (assuming a normal distribution for every generalization error). The mean RMSE was determined using 50 models' predictions on validation data. The three color gradients correspond to the three sigmas."}
+makefig <- function(paper = FALSE) {
+  rlang::expr({
+    paper <- !!paper
+    cex <- if (paper) .9 else 1
+    mline <- if (paper) 2.5 else 3
+    lline <- if (paper) 2.4 else 2.75
+    
+    if (paper) {
+      # 5.1 4.1 4.1 2.1
+      par(mar = c(4.1, 3.6, 2.1, 1.1))
+    }
+    
+    fields::image.plot(list(
+      x = seq(min(temp$num_train), max(temp$num_train), by = 1), y = seq(0, 3, length.out = 100), z = tempgrid),
+      #col = viridis::inferno(50),
+      #col = c(grey.colors(n = 25, start = .2, end = .975, gamma = 1.5), "white"),
+      col = c(
+        "#005C4DFF",
+        # 24 colors: 16,6,2 or 15,6,3:
+        #colorRampPalette(colors = c("#006979FF", "#E0EFF3FF"))(18)[2:17],
+        #colorRampPalette(colors = c("#0C46A0FF", "#E3F2FDFF"))(9)[3:7],
+        #colorRampPalette(colors = c("#311A92FF", "#ECE6F6FF"))(10)[c(4,7,10)],
+        colorRampPalette(colors = c("#006979FF", "#E0EFF3FF"))(70)[2:68],
+        colorRampPalette(colors = c("#0C46A0FF", "#E3F2FDFF"))(29)[2:28],
+        colorRampPalette(colors = c("#311A92FF", "#ECE6F6FF"))(10)[c(4,6,8,10)],
+        "white"),
+      legend.shrink = .75, legend.lab = "Confidence", legend.line = lline, legend.cex = cex,
+      xlab = "", ylab = "",
+      xaxt = "n", yaxt = "n",
+      cex.main = cex, cex.lab = cex, cex.axis = cex,
+      main = paste0("Confidence intervals according to the ", if (paper) "$68$--$95$--$99.7$" else "68-95-99.7", if (paper) "\\", "%-rule."))
+    mtext(text = "Number of training instances", side = 1, line = mline, cex = cex)
+    mtext(text = "RMSE (validation data)", side = 2, line = mline, cex = cex)
+    axis(1, at = seq(0, 100, by = 5), cex.axis = cex)
+    axis(2, at = seq(0, 3, by = .25), cex.axis = cex)
+    
+    
+    
+    
+    #abline(h = c(.5, 1), lwd = 3, lty = c(2,5), col = "#fc7703")
+    lines(col = "#fc7703", lwd = 2, x = min(temp$num_train):max(temp$num_train), y =
+          (temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), .groups = "drop"))$Mean)
+    
+    
+    tempf <- function(num_train, sigma = 1, sub = FALSE) {
+      num_train <- round(num_train)
+      vals <- temp[temp$num_train == num_train,]$rmse_valid
+      mean_ <- mean(vals)
+      sd_ <- sd(vals)
+      mean_ + (if (sub) -1 else 1) * sigma * sd_
+    }
+    
+    use_x <- seq(from = 0, to = 55, length.out = 5e2)
+    lines(x = use_x, y = Vectorize(function(num_train) tempf(num_train = num_train, sigma = 1))(use_x), lwd = 2, col = "#000000", lty = 1)
+    lines(x = use_x, y = Vectorize(function(num_train) tempf(num_train = num_train, sigma = 2))(use_x), lwd = 2, col = "#333333", lty = 2)
+    lines(x = use_x, y = Vectorize(function(num_train) tempf(num_train = num_train, sigma = 3))(use_x), lwd = 2, col = "#666666", lty = 4)
+    lines(x = use_x, y = Vectorize(function(num_train) tempf(num_train = num_train, sigma = 1, sub = TRUE))(use_x), lwd = 2, col = "#000000", lty = 1)
+    lines(x = use_x, y = Vectorize(function(num_train) tempf(num_train = num_train, sigma = 2, sub = TRUE))(use_x), lwd = 2, col = "#333333", lty = 2)
+    lines(x = use_x, y = Vectorize(function(num_train) tempf(num_train = num_train, sigma = 3, sub = TRUE))(use_x), lwd = 2, col = "#666666", lty = 4)
+    
+    #grid(col = "#444444", lwd = .5, nx = 12, ny = 11)
+    abline(v = seq(0, 55, by = 5), h = seq(0, 3, by = .5), lty = 3, lwd = .5, col = "#666666")
+    use_leq <- function(n) {
+      if (paper) paste0("$\\leq\\!", n, "$") else paste0("<= ", n)
+    }
+    legend(x = 29, y = 2.9, legend = c("Mean RMSE (validation)", paste0(use_leq(1), " standard deviation"), paste0(use_leq(2), " std. devs."), paste0(use_leq(3), " std. devs.")), col = c("#fc7703", "#000000", "#333333", "#666666"), lwd = 2, lty = c(1, 1, 2, 4), bg = "white", cex = cex, text.width = 15)
+  })
+}
+
+eval(makefig())
+```
+
+```{r echo=FALSE, eval=FALSE, fig.width=8, fig.height=5}
+saveTikzExpr(makefig(paper = TRUE), "rr_3sigma-robust", height = 3.7, width = FIG_WIDTH)
 ```
 
 
