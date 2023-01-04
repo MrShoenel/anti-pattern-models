@@ -57,6 +57,16 @@ library(ggpubr)
 library(fields)
 ```
 
+```{r echo=FALSE}
+FIG_WIDTH <- round(6.49733, 4)
+
+saveTikzExpr <- function(expr, name, width = FIG_WIDTH, height = 3.2) {
+  tikzDevice::tikz(file = paste0("../figures/fig_", name, ".tex"), width = width, height = height, verbose = FALSE, )
+  eval(expr)
+  dev.off()
+}
+```
+
 # Introduction\label{tr:fire-drill-issue-tracking-technical-report}
 
 This is the complementary technical report for the paper/article tentatively entitled "Multivariate Continuous Processes: Modeling, Instantiation, Goodness-of-fit, Forecasting". Similar to the technical report for detecting the Fire Drill using source code, we import all projects' data and the ground truth. This notebook however is concerned with different and additional approaches, i.e., it is not just a repetition of the other technical report.
