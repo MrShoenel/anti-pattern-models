@@ -47,8 +47,8 @@ opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
 ```
 
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
-devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/helpers.R")
-devtools::source_url(url = "https://raw.githubusercontent.com/MrShoenel/R-rank-model/master/R/rank-model.R")
+source(file = "../helpers_rank-model.R")
+source(file = "../models/rank-model.R")
 
 source(file = "../helpers.R")
 source(file = "./common-funcs.R")
@@ -744,6 +744,10 @@ adaptive_training_caret <- function(
     pred_valid <- c()
     tryCatch({
       if (model_type == "rankModel") {
+        # Those need sourcing again.
+        source(file = "../helpers_rank-model.R")
+        source(file = "../models/rank-model.R")
+        
         # We're gonna have a small grid, so that each model is fit a few times.
         use_grid <- expand.grid(list(
           cdf_type = c("auto", "gauss", "ecdf"),
