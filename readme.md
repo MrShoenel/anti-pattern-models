@@ -4,26 +4,28 @@ In this repository, we develop methods that can model and detect the
 presence of so-called anti-patterns (AP). In this repository, you will
 find:
 
--   [**Models** (R)](./models) - Multivariate models (arbitrary many)
-    that can encapsulate the definition of an anti-pattern, using
-    arbitrary user-defined intervals and losses. The models can then be
-    fit to the data (or vice versa). Also, there is lots of
-    functionality for **quantifying differences**, esp. for **scoring**.
--   [**Notebooks** (R)](./notebooks) - Notebooks that can be (re-)run by
-    users to reproduce our results. All results are included, such that
-    the notebooks will only recompute them if you delete them. The
-    notebooks are very detailed and document all steps necessary. See
-    (Hönel 2022b) for a pre-rendered PDF.
--   [**Data** (CSV)](./data) and (precomputed) [**Results**
-    (RDS)](./results) - All data required for reproduction is included.
-    All the results, too. Some of them take days to compute, so be
-    aware. Also see (Hönel et al. 2022).
+- [**Models** (R)](./models) - Multivariate models (arbitrary many) that
+  can encapsulate the definition of an anti-pattern, using arbitrary
+  user-defined intervals and losses. The models can then be fit to the
+  data (or vice versa). Also, there is lots of functionality for
+  **quantifying differences**, esp. for **scoring**.
+- [**Notebooks** (R)](./notebooks) - Notebooks that can be (re-)run by
+  users to reproduce our results. All results are included, such that
+  the notebooks will only recompute them if you delete them. The
+  notebooks are very detailed and document all steps necessary. See
+  (Hönel 2023b) for a pre-rendered PDF.
+- [**Data** (CSV)](./data) and (precomputed) [**Results**
+  (RDS)](./results) - All data required for reproduction is included.
+  All the results, too. Some of them take days to compute, so be aware.
+  Also see (Hönel, Pícha, et al. 2023).
 
-There is a case study that makes extensive use of the data and models
-(Picha et al. 2022). This repository has a release on Zenodo (Hönel
-2022a). From version seven and onwards, each technical reports
-compilation will be paired with a separate release of this repository on
-Zenodo.
+There is a pilot study that makes extensive use of the data and models
+(Picha et al. 2022). The eight version of the repository, dataset, and
+technical report serve then as the basis for a proper, subsequent
+embedded case study (Hönel, Picha, et al. 2023). This repository has a
+release on Zenodo (Hönel 2023a). From version seven and onwards, each
+technical reports compilation will be paired with a separate release of
+this repository on Zenodo.
 
 # Abstract
 
@@ -40,45 +42,56 @@ real-world projects to data-based AP descriptions. Using fifteen
 real-world projects that exhibit a Fire Drill to some degree, we show
 how to further enhance the translated AP. The ground truth in these
 projects was extracted from two individual experts and consensus was
-found between them. Our evaluation spans four kinds of patterns, where
-the first is purely derived from description, the second type is
-enhanced by data, and the third kind is derived from data only. The
-fourth type then is a derivative meta-process pattern. We introduce a
-novel method called automatic calibration, that optimizes a pattern such
-that only necessary and important scores remain that suffice to
-confidently detect the degree to which the AP is present. Without
-automatic calibration, the proposed patterns show only weak potential
-for detecting the presence. Enriching the AP with data from real-world
-projects significantly improves the potential. We conclude that the
-presence of similar patterns is most certainly detectable. Furthermore,
-any pattern that can be characteristically modeled using the proposed
-approach is potentially well detectable.
+found between them. We introduce a novel method called automatic
+calibration, that optimizes a pattern such that only necessary and
+important scores remain that suffice to confidently detect the degree to
+which the AP is present. Without automatic calibration, the proposed
+patterns show only weak potential for detecting the presence. Enriching
+the AP with data from real-world projects significantly improves the
+potential. We also introduce a no-pattern approach that exploits the
+ground truth for establishing a new, quantitative understanding of the
+phenomenon, as well as for finding gray-/black-box predictive models. We
+conclude that the presence of similar patterns is most certainly
+detectable. Furthermore, any pattern that can be characteristically
+modeled using the proposed approach is potentially well detectable.
 
 # References
 
 <div id="refs" class="references csl-bib-body hanging-indent">
 
-<div id="ref-sselnu2022repo" class="csl-entry">
+<div id="ref-gitHub_repo_latest" class="csl-entry">
 
-Hönel, Sebastian. 2022a. “Sse-Lnu/Anti-Pattern-Models: Arxiv-V7,” July.
-<https://doi.org/10.5281/zenodo.6884867>.
+Hönel, Sebastian. 2023a. “<span class="nocase">GitHub Repository:
+Detecting the Fire Drill Anti-pattern Using Source Code and
+Issue-Tracking Data</span>,” January.
+<https://doi.org/10.5281/zenodo.6884866>.
 
 </div>
 
 <div id="ref-honel2021technical" class="csl-entry">
 
-———. 2022b. “Technical Reports Compilation: Detecting the Fire Drill
-Anti-Pattern Using Source Code and Issue-Tracking Data.” *CoRR*.
+———. 2023b. “Technical Reports Compilation: Detecting the Fire Drill
+Anti-Pattern Using Source Code and Issue-Tracking Data.” *CoRR*. arXiv.
 <https://doi.org/10.48550/arXiv.2104.15090>.
+
+</div>
+
+<div id="ref-honel2023embedded" class="csl-entry">
+
+Hönel, Sebastian, Petr Picha, Morgan Ericsson, Premek Brada, Welf Löwe,
+and Anna Wingkvist. 2023. “Activity-Based Detection of Pattern-Like
+Phenomena: An Embedded Case Study of the Fire Drill.” *E-Informatica
+Software Engineering Journal*, February.
 
 </div>
 
 <div id="ref-honel_picha_2021" class="csl-entry">
 
-Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2022.
-“Detection of the Fire Drill Anti-Pattern: 15 Real-World Projects with
-Ground Truth, Issue-Tracking Data, Source Code Density, Models and
-Code.” Zenodo. <https://doi.org/10.5281/zenodo.5992621>.
+Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2023.
+“<span class="nocase">Detection of the Fire Drill anti-pattern: 15
+real-world projects with ground truth, issue-tracking data, source code
+density, models and code</span>.” Zenodo.
+<https://doi.org/10.5281/zenodo.4734053>.
 
 </div>
 
@@ -88,7 +101,7 @@ Picha, Petr, Sebastian Hönel, Premek Brada, Morgan Ericsson, Welf Löwe,
 Anna Wingkvist, and Jakub Danek. 2022. “Process Anti-Pattern Detection
 in Student Projects – a Case Study.” In *EuroPLoP’22: European
 Conference on Pattern Languages of Programs 2022, Irsee, Deutschland,
-July 6 - 10, 2022*. ACM.
+July 6 - 10, 2022*. ACM. <https://doi.org/10.1145/3551902.3551965>.
 
 </div>
 
