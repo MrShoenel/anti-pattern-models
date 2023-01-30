@@ -2008,9 +2008,9 @@ for (pId in levels(student_projects_2nd_batch$project)) {
     support = c(0, 1), isWp = FALSE)
 }
 
-loadResultsOrCompute(file = "../results/project_signals_2nd_batch_sc.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/project_signals_2nd_batch_sc.rds", computeExpr = {
   project_signals_2nd_batch
-})
+}))
 ```
 
 The second batch of projects and their variables are shown in figure \ref{fig:project-vars-2nd-batch}.
@@ -2176,13 +2176,13 @@ CI_cp_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_CP, f_c
 CI_freq_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_FREQ, f_ci_upper = freq_ci_upper_p3avg, f_ci_lower = freq_ci_lower_p3avg, gbar = p3_avg_signals_all$FREQ$get0Function(), omega = omega)
 CI_scd_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_SCD, f_ci_upper = scd_ci_upper_p3avg, f_ci_lower = scd_ci_lower_p3avg, gbar = p3_avg_signals_all$SCD$get0Function(), omega = omega)
 
-loadResultsOrCompute(file = "../data/CI_p3avg_funcs_SC.rds", computeExpr = {
-list(
-  CI_a_p3avg = CI_a_p3avg,
-  CI_cp_p3avg = CI_cp_p3avg,
-  CI_freq_p3avg = CI_freq_p3avg,
-  CI_scd_p3avg = CI_scd_p3avg)
-})
+invisible(loadResultsOrCompute(file = "../data/CI_p3avg_funcs_SC.rds", computeExpr = {
+  list(
+    CI_a_p3avg = CI_a_p3avg,
+    CI_cp_p3avg = CI_cp_p3avg,
+    CI_freq_p3avg = CI_freq_p3avg,
+    CI_scd_p3avg = CI_scd_p3avg)
+}))
 ```
 
 ```{r echo=FALSE}

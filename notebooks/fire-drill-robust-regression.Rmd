@@ -69,6 +69,12 @@ library(fields)
 library(dplyr)
 ```
 
+```{r echo=FALSE, eval=FALSE}
+library(extrafont)
+font_import()
+loadfonts()
+```
+
 ```{r echo=FALSE}
 FIG_WIDTH <- round(6.49733, 4)
 
@@ -77,12 +83,6 @@ saveTikzExpr <- function(expr, name, width = FIG_WIDTH, height = 3.2) {
   eval(expr)
   dev.off()
 }
-```
-
-```{r echo=FALSE, eval=FALSE}
-library(extrafont)
-font_import()
-loadfonts()
 
 gg2_style <- function(facets = FALSE) {
   sty <- theme_minimal(base_size = 10) + theme(

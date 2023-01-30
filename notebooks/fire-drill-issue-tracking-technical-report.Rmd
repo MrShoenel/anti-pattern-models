@@ -904,12 +904,12 @@ CI_req_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_REQ, f
 CI_dev_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DEV, f_ci_upper = dev_ci_upper_p3avg, f_ci_lower = dev_ci_lower_p3avg, gbar = dev_p3, omega = omega)
 CI_desc_p3avg <- function(x, y) CI_p3avg(x = x, y = y, funclist = funclist_DESC, f_ci_upper = desc_ci_upper_p3avg, f_ci_lower = desc_ci_lower_p3avg, gbar = desc_p3, omega = omega)
 
-loadResultsOrCompute(file = "../data/CI_p3avg_funcs.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../data/CI_p3avg_funcs.rds", computeExpr = {
 list(
   CI_req_p3avg = CI_req_p3avg,
   CI_dev_p3avg = CI_dev_p3avg,
   CI_desc_p3avg = CI_desc_p3avg)
-})
+}))
 ```
 
 
@@ -1311,14 +1311,14 @@ L_avgconf_p3_avg <- function(x1, x2, f, CI) {
   )$integral / (x2 - x1)
 }
 
-loadResultsOrCompute(file = "../results/ci_p3avg_Lavg-test.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/ci_p3avg_Lavg-test.rds", computeExpr = {
   c(
     "P2_REQ" = L_avgconf_p3_avg(
       x1 = 0, x2 = 1, f = all_signals$Project2$REQ$get0Function(), CI = CI_req_p3avg),
     "P4_REQ" = L_avgconf_p3_avg(
       x1 = 0, x2 = 1, f = all_signals$Project4$REQ$get0Function(), CI = CI_req_p3avg)
   )
-})
+}))
 ```
 
 Plotting `L_avgconf_p3_avg` for the `REQ`-variable of both projects 2 and 4 gives us the function in figure \ref{fig:p2p4-l3avgconf}. We can clearly observe that the area under the latter is larger, and so will be the average.
@@ -1408,7 +1408,7 @@ L_areadist_p3_avg <- function(x1, x2, f, gbar, CI_upper, CI_lower, use2ndVariant
   c("area" = int1, "maxarea" = int2, "dist" = int1 / int2)
 }
 
-loadResultsOrCompute(file = "../results/ci_p3avg_Larea-test.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/ci_p3avg_Larea-test.rds", computeExpr = {
   list(
     "P2_REQ" = L_areadist_p3_avg(
       x1 = 0, x2 = 1, f = all_signals$Project2$REQ$get0Function(), use2ndVariant = TRUE,
@@ -1417,7 +1417,7 @@ loadResultsOrCompute(file = "../results/ci_p3avg_Larea-test.rds", computeExpr = 
       x1 = 0, x2 = 1, f = all_signals$Project4$REQ$get0Function(), use2ndVariant = TRUE,
       gbar = req_p3, CI_upper = req_ci_upper_p3avg, CI_lower = req_ci_lower_p3avg)
   )
-})
+}))
 ```
 
 Let's show the maximum possible distance vs. the distance of a project's variable in a plot (cf. figure \ref{fig:p2p4-lareadist}). These figures clearly show the smaller distance of project 4 to the average. This is expected, as this project has the highest weight, so the average `REQ%`-variable resembles this project most.
@@ -2146,23 +2146,23 @@ average_confidence <- function(f_low, f_upp, CI_low, CI_upp, CI, lower, upper, m
 
 
 ```{r}
-loadResultsOrCompute(file = "../results/ed_avgconf_80.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/ed_avgconf_80.rds", computeExpr = {
   average_confidence(
     f_low = fch_80_lower, f_upp = fch_80_upper,
     CI_low = dev_ci_lower_p3avg, CI_upp = dev_ci_upper_p3avg,
     CI = CI_dev_smooth_p3avg, # CI_dev_p3avg,
     lower = 0.65, upper = 0.75)
-})
+}))
 ```
 
 ```{r}
-loadResultsOrCompute(file = "../results/ed_avgconf_95.rds", computeExpr = {
+invisible(loadResultsOrCompute(file = "../results/ed_avgconf_95.rds", computeExpr = {
   average_confidence(
     f_low = fch_95_lower, f_upp = fch_95_upper,
     CI_low = dev_ci_lower_p3avg, CI_upp = dev_ci_upper_p3avg,
     CI = CI_dev_smooth_p3avg, # CI_dev_p3avg,
     lower = 0.65, upper = 0.75)
-})
+}))
 ```
 
 As expected, the average confidence in the overlap of the 95% prediction interval is a little lower.
@@ -6361,7 +6361,8 @@ knitr::include_graphics(
 
 Although this is not specific to issue tracking (or source code for that matter), we add a section about a qualitative evaluation of the three raters' findings for each project.
 The analysis is already done and is based on commit `7a4d8`[^1].
-What we will do here, is to load the data into a table so that we can produce nice figures for the paper.
+What we will do here, is to load the data into a table so that we can produce nice figures for the upcoming paper [@honel2023embedded].
+It is the proper successor to our previous pilot study [@picha2022Firedrill].
 
 [^1]: https://github.com/MrShoenel/Software-process-antipatterns-catalogue/blob/7a4d8/catalogue/Fire_Drill.md
 
