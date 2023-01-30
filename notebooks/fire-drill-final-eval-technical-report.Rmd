@@ -383,7 +383,7 @@ coef_rel_pearson_1d <- function(f, g, supp_f = c(0,1), supp_g = c(0,1)) {
     denom_f = denom_f,
     denom_g = denom_g,
     numerator = numerator,
-    corr_func = function(x) {
+    func = function(x) {
       fnum(x) / (denom_f * denom_g)
     },
     corr_fg = numerator / (denom_f * denom_g)
@@ -959,13 +959,14 @@ saveTikzExpr(name = "model_t1_it_req-desc", height = 2.2, width = 3.45, expr = p
 
 ```{r}
 plotexpr <- rlang::expr({
-  layout(mat = matrix(data = c(1,2), nrow = 2), heights = c(4,5), widths = c(1,1))
-  par(mar=c(3,3,1,0), family = "LM Roman 10")
+  #layout(mat = matrix(data = c(1,2), nrow = 2), heights = c(4,5), widths = c(1,1))
+  par(mar=c(3,3,1.2,1), family = "LM Roman 10", mfrow=c(1,2)) # mar=c(3,3,1.2,1)
   
   
   plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1.02), col = "#00000000",
-       xlab = "", ylab = "", cex.axis = 0.8)
-  title(ylab = "Amount of activity", line = 2)
+       xlab = "", ylab = "", cex.axis = 0.7)
+  title(xlab = "Relative project time",
+        ylab = "Amount of activity", line = 2, cex.lab = 0.85)
   grid()
   
   curve2(p1_signals$A$get0Function(), 0, 1, col = "red", lty = 1, lwd = 2, add = TRUE)
@@ -974,11 +975,11 @@ plotexpr <- rlang::expr({
   curve2(p1_signals$SCD$get0Function(), 0, 1, col = "purple", lty = 1, lwd = 2, add = TRUE)
   
   abline(v = fd_data_boundaries[1], col = "#888888")
-  text(x = fd_data_boundaries[1], y = 1.14, paste0("$b_1=", fd_data_boundaries[1], "$"), cex = .8, xpd = NA)
+  text(x = fd_data_boundaries[1], y = 1.12, paste0("$b_1=", fd_data_boundaries[1], "$"), cex = .8, xpd = NA)
   abline(v = fd_data_boundaries[2], col = "#888888")
-  text(x = fd_data_boundaries[2], y = 1.14, paste0("$b_2=", fd_data_boundaries[2], "$"), cex = .8, xpd = NA)
+  text(x = fd_data_boundaries[2], y = 1.12, paste0("$b_2=", fd_data_boundaries[2], "$"), cex = .8, xpd = NA)
   abline(v = fd_data_boundaries[3], col = "#888888")
-  text(x = fd_data_boundaries[3], y = 1.14, paste0("$b_3=", fd_data_boundaries[3], "$"), cex = .8, xpd = NA)
+  text(x = fd_data_boundaries[3], y = 1.12, paste0("$b_3=", fd_data_boundaries[3], "$"), cex = .8, xpd = NA)
   
   legend(.18, 1.03, legend = c("$\\mathsf{A}$", "$\\mathsf{CP}$", "$\\mathsf{FREQ}$", "$\\mathsf{SCD}$"),
          col = c("red", "blue", "forestgreen", "purple"), lty = 1, lwd = 2,
@@ -988,9 +989,9 @@ plotexpr <- rlang::expr({
 
 
   plot(x=0, y=0, xlim = c(0,1), ylim = c(0,1), col = "#00000000",
-       xlab = "", ylab = "", cex.axis = 0.8)
+       xlab = "", ylab = "", cex.axis = 0.7)
   title(xlab = "Relative project time",
-        ylab = "Relative cum. time spent", line = 2, cex = 0.8)
+        ylab = "Relative cum. time spent", line = 2, cex.lab = 0.85)
   grid()
   
   polygon(
@@ -1053,7 +1054,7 @@ eval(plotexpr)
 
 
 ```{r echo=FALSE, eval=FALSE}
-saveTikzExpr(name = "model_t1_comb", height = 3.5, expr = plotexpr, width = 3.4876)
+saveTikzExpr(name = "model_t1_comb", height = 2.3, expr = plotexpr, width = 6.49)
 ```
 
 
@@ -1979,7 +1980,7 @@ saveTikzAndEps(ggInst = eval(plotexpr), name = "detect-it-corr", height = 4)
 
 ```{r}
 # 806:323
-tikzDevice::tikz(file = paste0("../figures/fig_fdfe_", "corr-all-it", ".tex"), width = FIG_WIDTH, verbose = FALSE, height = 2.7)
+tikzDevice::tikz(file = paste0("../figures/fig_fdfe_", "corr-all-it", ".tex"), width = 4.99, verbose = FALSE, height = 2.3)
 eval(plotexpr)
 dev.off()
 #saveTikzExpr(name = "corr-all-it", height = 2.5, width = 6.3, expr = eval(plotexpr))

@@ -210,8 +210,7 @@ plotexpr <- expression({
   par(family = "LM Roman 10")
   temp <- stats::cor(cbind(data.frame(GroundTruth = ground_truth$consensus_score), p3_it_scores_mean[,]))
   temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
-  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90,
-                     col = colorRampPalette(c("#0037AA", "#eeeeee", "#AA0037"))(100))
+  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90, mar = rep(0,4), tl.cex = 0.85, cl.pos = "b", cl.ratio = .18, cl.length = 5, cl.cex = 1, diag = FALSE, col = colorRampPalette(c("#0037AA", "#eeeeee", "#AA0037"))(100))
 })
 
 eval(plotexpr)
@@ -224,7 +223,7 @@ invisible(dev.off())
 ```
 
 ```{r}
-tikzDevice::tikz("../figures/reproduction/rq1_corr_it.tex", width = 0.5 * FIG_WIDTH, height = 3.5)
+tikzDevice::tikz("../figures/reproduction/rq1_corr_it.tex", width = 3, height = 2.6 / 2.4 * 3)
 eval(plotexpr)
 dev.off()
 ```
@@ -264,8 +263,7 @@ plotexpr <- expression({
   temp <- stats::cor(cbind(data.frame("GroundTruth" = ground_truth$consensus_score), p3_sc_scores[,]))
   temp[is.na(temp)] <- 0 # The scores for 'DEV_PEAK' are all 1 and the correlation therefore is NA
   
-  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90,
-                     col = colorRampPalette(c("#0037AA", "#eeeeee", "#AA0037"))(100))
+  corrplot::corrplot(corr = temp, type = "upper", tl.col = "black", tl.srt = 90, mar = rep(0,4), tl.cex = .85, cl.pos = "b", cl.ratio = .18, cl.length = 5, cl.cex = 1, diag = FALSE, col = colorRampPalette(c("#0037AA", "#eeeeee", "#AA0037"))(100))
 })
 
 eval(plotexpr)
@@ -278,7 +276,7 @@ invisible(dev.off())
 ```
 
 ```{r eval=interactive(), echo=FALSE}
-tikzDevice::tikz("../figures/reproduction/rq1_corr_sc.tex", width = 0.5 * FIG_WIDTH, height = 3.5)
+tikzDevice::tikz("../figures/reproduction/rq1_corr_sc.tex", width = 3, height = 2.6 / 2.4 * 3)
 eval(plotexpr)
 dev.off()
 ```
@@ -458,7 +456,7 @@ plotexpr <- expression({
 eval(plotexpr)
 ```
 ```{r eval=interactive(), echo=FALSE}
-tikzDevice::tikz("../figures/reproduction/rq1_corr_all.tex", width = FIG_WIDTH, height = 2.3)
+tikzDevice::tikz("../figures/reproduction/rq1_corr_all.tex", width = FIG_WIDTH, height = 2.25)
 eval(plotexpr)
 dev.off()
 ```
