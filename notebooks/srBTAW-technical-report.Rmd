@@ -67,7 +67,7 @@ Among others, srBTAW has the following features:
 
 srBTAW was developed to solve some concrete problems in the project management domain, and this notebook uses some of the use cases to evolve the models. However, srBTAW can work with many various types of time series-related problems, such as classification, motif discovery etc.
 
-All complementary data and results can be found at Zenodo [@honel_picha_2021]. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/srBTAW-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/srBTAW-technical-report.md)^ version (attention: the math is probably not rendered correctly there!). All code can be found in this repository, too.
+All complementary data and results can be found at Zenodo [@honel_picha_2021]. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/srBTAW-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/srBTAW-technical-report.md)^ version (attention: the math is probably not rendered correctly there!). All code can be found in this repository, too.
 
 
 # Problem description

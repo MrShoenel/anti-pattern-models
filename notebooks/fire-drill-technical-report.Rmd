@@ -58,7 +58,7 @@ library(tidyr)
 
 This is the complementary technical report for the paper/article tentatively entitled "Multivariate Continuous Processes: Modeling, Instantiation, Goodness-of-fit, Forecasting". Here, we import the ground truth as well as all projects' data, and instantiate our model based on _self-regularizing Boundary Time Warping and Boundary Amplitude Warping_. Given a few patterns that represent the __Fire Drill__ anti-pattern (AP), the goal is evaluate these patterns and their aptitude for detecting the AP in concordance with the ground truth.
 
-All complementary data and results can be found at Zenodo [@honel_picha_2021]. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md)^ version. All code can be found in this repository, too.
+All complementary data and results can be found at Zenodo [@honel_picha_2021]. This notebook was written in a way that it can be run without any additional efforts to reproduce the outputs (using the pre-computed results). This notebook has a canonical URL^[[Link]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)^ and can be read online as a rendered markdown^[[Link]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md)^ version. All code can be found in this repository, too.
 
 # Fire Drill - anti-pattern
 
@@ -270,7 +270,7 @@ We have slightly different begin- and end-times in each project. However, the da
 
 For each project, we model __four__ variables: The activities __adaptive__ (__`A`__), __corrective+perfective__ (__`CP`__), the frequency of all activities, regardless of their type (__`FREQ`__), and the __source code density__ (__`SCD`__). While for the first three variables we estimate a Kernel density, the last variable is a metric collected with each commit. The data for it is mined using `Git-Density` [@honel2020gitdens], and we use a highly efficient commit classification model[^1] ($\approx83.6\%$ accuracy, $\approx0.745$ Kappa) [@honel2020using] to attach maintenance activity labels to each commit, based on size- and keyword-data only.
 
-[^1]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd
+[^1]: https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd
 
 Technically, we will compose each variable into an instance of our `Signal`-class. Before we start, we will do some normalizations and conversions, like converting the timestamps. This has to be done on a per-project basis.
 
@@ -2500,7 +2500,7 @@ This approach is based on the idea of __rectification of scores__[^3]. The goal 
 This process has been more formalized in the meantime, since it has applications in multi-objective optimization [@honel2022pareto].
 Even beyond that, we can use this score similar to a probabilistic measure of how well a process matches the PM, so in our case we can translate this information into the degree to which a Fire Drill is present in a project, according to the process model in question. We will also be able to compute the Brier- and Logarithmic scoring rules, and compare against the results that we got using the binary decision rule.
 
-[^3]: https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/rectify-score.md
+[^3]: https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/rectify-score.md
 
 The plan for this new section is to demonstrate the following:
 

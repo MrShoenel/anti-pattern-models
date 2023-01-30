@@ -306,7 +306,7 @@ legend(x = .65, y = .3, legend = c("A (CDF)", "CP (CDF)", "FREQ (CDF)", "SCD"), 
 
 
 
-[^1]: https://github.com/sse-lnu/PathToPoints
+[^1]: https://github.com/MrShoenel/PathToPoints
 
 
 

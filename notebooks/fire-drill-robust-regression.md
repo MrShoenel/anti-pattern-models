@@ -1720,7 +1720,7 @@ Mathematical Statistics* 21 (25-36).
 
 </div>
 
-[^1]: <https://github.com/sse-lnu/PathToPoints>
+[^1]: <https://github.com/MrShoenel/PathToPoints>
 
 [^2]: See the Rank Model repository at
     <https://github.com/MrShoenel/R-rank-model>.

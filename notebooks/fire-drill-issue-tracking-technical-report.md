@@ -109,9 +109,9 @@ All complementary data and results can be found at Zenodo (Hönel et al.
 2022). This notebook was written in a way that it can be run without any
 additional efforts to reproduce the outputs (using the pre-computed
 results). This notebook has a canonical
-URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-issue-tracking-technical-report.Rmd)</sup>
+URL<sup>[\[Link\]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/fire-drill-issue-tracking-technical-report.Rmd)</sup>
 and can be read online as a rendered
-markdown<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-issue-tracking-technical-report.md)</sup>
+markdown<sup>[\[Link\]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/fire-drill-issue-tracking-technical-report.md)</sup>
 version. All code can be found in this repository, too.
 
 # Importing the data

@@ -63,9 +63,9 @@ All complementary data and results can be found at Zenodo (Hönel et al.
 2022). This notebook was written in a way that it can be run without any
 additional efforts to reproduce the outputs (using the pre-computed
 results). This notebook has a canonical
-URL<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)</sup>
+URL<sup>[\[Link\]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.Rmd)</sup>
 and can be read online as a rendered
-markdown<sup>[\[Link\]](https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md)</sup>
+markdown<sup>[\[Link\]](https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/fire-drill-technical-report.md)</sup>
 version. All code can be found in this repository, too.
 
 # Fire Drill - anti-pattern
@@ -2941,6 +2941,6 @@ Diagnostics Based on Pattern Recognition of Statistical Parameters.”
 
 </div>
 
-[1] <https://github.com/sse-lnu/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd>
+[1] <https://github.com/MrShoenel/anti-pattern-models/blob/master/notebooks/comm-class-models.Rmd>
 
 [2] <https://web.archive.org/web/20211120164401/https://topepo.github.io/caret/recursive-feature-elimination.html>
