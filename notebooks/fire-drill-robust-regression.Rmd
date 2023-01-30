@@ -38,6 +38,13 @@ header-includes:
 \newcommand\argmin[1]{\underset{#1}{arg\,min}}
 
 
+```{r}
+if (!endsWith(x = getwd(), suffix = "notebooks")) {
+  setwd(paste0(getwd(), "/notebooks"))
+}
+```
+
+
 ```{r setoptions, echo=FALSE, warning=FALSE, message=FALSE}
 Sys.setenv(LANG = "en_US.UTF-8")
 Sys.setenv(LC_ALL = "en_US.UTF-8")
@@ -396,8 +403,11 @@ for (lvl in levels(temp$project)) {
   df <- temp[temp$project == lvl,]
   templ <- list()
   templ_cdf <- list()
+  templ[["df"]] <- df[,]
   
   temp_A <- get_densities(data = df[df$label == "A",]$AuthorTimeNormalized)
+  temp_C <- get_densities(data = df[df$label == "C",]$AuthorTimeNormalized)
+  temp_P <- get_densities(data = df[df$label == "P",]$AuthorTimeNormalized)
   temp_CP <- get_densities(data = df[df$label %in% c("C", "P"),]$AuthorTimeNormalized)
   acp_ratio <- nrow(df[df$label == "A",]) / nrow(df)
   temp_FREQ <- make_mixture(pdf1 = temp_A$PDF, pdf2 = temp_CP$PDF, pdf1_ratio = acp_ratio)
@@ -405,11 +415,15 @@ for (lvl in levels(temp$project)) {
   temp_FREQ_no_mixture <- get_densities(data = df$AuthorTimeNormalized)
   
   templ[["A"]] <- temp_A$PDF
+  templ[["C"]] <- temp_C$PDF
+  templ[["P"]] <- temp_P$PDF
   templ[["CP"]] <- temp_CP$PDF
   templ[["FREQ"]] <- temp_FREQ$PDF
   templ[["FREQ_nm"]] <- temp_FREQ_no_mixture$PDF
   
   templ_cdf[["A"]] <- temp_A$CDF
+  templ_cdf[["C"]] <- temp_C$CDF
+  templ_cdf[["P"]] <- temp_P$CDF
   templ_cdf[["CP"]] <- temp_CP$CDF
   templ_cdf[["FREQ"]] <- temp_FREQ$CDF
   templ_cdf[["FREQ_nm"]] <- temp_FREQ_no_mixture$CDF
@@ -597,7 +611,7 @@ For example, we have no project with a score of `4` or `7` (see figure \ref{fig:
 Through a number of measures, however, we can alleviate all these problems to a satisfactory degree.
 
 
-The first we will do is to synthetically oversample our dataset using SMOTE for regression [@torgo13, @branco16].
+The first we will do is to synthetically oversample our dataset using SMOTE for regression [@torgo13; @branco16].
 SMOTE is a well-established technique that has been proven to significantly increase model performance.
 Since our label is numeric (we do regression), we will have to oversample instances such that new data points are generated that can be imputed and fill up the numeric labels.
 While ordinary SMOTE cannot oversample unseen classes, the technique works differently for regression and allows us to generate synthetic samples with a previously unseen numeric label.
@@ -751,7 +765,7 @@ adaptive_training_caret <- function(
         # We're gonna have a small grid, so that each model is fit a few times.
         use_grid <- expand.grid(list(
           cdf_type = c("auto", "gauss", "ecdf"),
-          attempt = 1:5 # This is basically a dummy.
+          attempt = 1:5 # This is basically a dummy (well, it's the number of repeats).
         ))
         use_grid$cdf_type <- as.character(use_grid$cdf_type)
         
@@ -1480,7 +1494,7 @@ compute_np_grid_adaptive <- function(type = c("both", "amount", "divergence")) {
     num_train = 2:50,
     do_pca = c(TRUE, FALSE)
   ))
-  model_types <- c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag")#, "avNNet", "M5", "rankModel")
+  model_types <- c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag", "rankModel")#, "avNNet", "M5")
   use_datasets <- c("dataset_np_it_oversampled", "dataset_np_sc_oversampled")
   
   
@@ -1549,14 +1563,14 @@ res_grid_np_divergence <- compute_np_grid_adaptive(type = "d")
 
 
 ```{r np-overview, echo=FALSE, fig.width=12, fig.height=15, fig.cap="Comparing the expected validation error of the trained models of the No-pattern approach. Amount-only features are red, divergence-only are green, and both are blue."}
-par(mfrow = c(6,4), mar = c(4.5,4.5,2,0.25))
+par(mfrow = c(7,4), mar = c(4.5,4.5,2,0.25))
 
 #set.seed(1)
 #pal_3 <- rev(sample(RColorBrewer::brewer.pal(10, "Set3"), 3))
 pal_3 <- c("red", "darkgreen", "blue")
 names(pal_3) <- c("amount", "divergence", "both")
 
-for (model_type in c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag")) {
+for (model_type in c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag", "rankModel")) {
   for (ds_pca in c("sc_yes", "sc_no", "it_yes", "it_no")) {
     sp <- strsplit(x = ds_pca, split = "_")[[1]]
     use_data <- sp[1]
@@ -1581,9 +1595,57 @@ for (model_type in c("gbm", "glm", "nnet", "rf", "svmPoly", "treebag")) {
 }
 ```
 
+```{r echo=FALSE, eval=FALSE}
+makefig <- function() {
+  rlang::expr({
+    temp <- res_grid_np_divergence %>% filter(!do_pca & num_train == 20 & dataset == "dataset_np_sc_oversampled")
+    temp <- temp[!is.na(temp$rmse_valid),]
+    
+    # https://cran.r-project.org/web/packages/ggridges/vignettes/introduction.html
+    ggplot(temp, aes(x = rmse_valid, y = model_type, fill = model_type)) +
+      #stat_density_ridges(quantile_lines = TRUE) +
+      geom_density_ridges2(alpha = .85) +
+      #stat_density_ridges(quantile_lines = TRUE, show.legend = FALSE) +
+      #scale_y_discrete() +
+      scale_fill_manual(values = RColorBrewer::brewer.pal(6, "Set3")) +
+      #geom_density_ridges_gradient(scale = 0.975, rel_min_height = 0.0025) +
+      #scale_fill_viridis_c(option = "C") +
+      scale_x_continuous(limits = c(0, 5), breaks = seq(-1, 6, by = .5), minor_breaks = seq(-1, 6, by = .25)) +
+      #theme_ridges() +
+      xlab("RMSE (validation data)") + ylab("") + labs(fill = "Model", title = "Distribution of validation errors for all six models, each trained on 20 instances.") +
+      gg2_style() +
+      theme(legend.title = element_text(size = 9, margin = ggplot2::margin(r = 10)),
+            legend.text = element_text(size = 8, margin = ggplot2::margin(l = -1, r = 3)),
+            legend.position = "right",
+            legend.key = element_rect(fill = NA, colour = "white"),
+            axis.title.x = element_text(size = 9, margin = ggplot2::margin(t = 1, unit = "line")),
+            axis.title.y = element_blank(),
+            axis.line = element_line(),
+            axis.text.y = element_text(size = 9),
+            strip.background = element_blank(),
+            strip.text = element_text(size = 9),
+            panel.spacing = unit(1.2, "lines"),
+            panel.background = element_rect(fill = "white", linetype = "blank"),
+            panel.grid.major = element_line(linetype = "dotted", color = "#aaaaaa"),
+            panel.grid.minor = element_line(linetype = "dotted", color = "#cccccc"),
+            plot.margin = ggplot2::unit(x = c(.3, -.3, 0, -.3), units = "line"),
+            plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = ggplot2::margin(b = 1.5, unit = "line"))) +
+      guides(fill = guide_legend(nrow = 6, byrow = TRUE, override.aes = list(size = 1)))
+  })
+}
+eval(makefig())
+```
+
+```{r echo=FALSE, eval=FALSE}
+tikzDevice::tikz(file = paste0("../figures/fig_", "rr_model-val-rmse.tex"), width = FIG_WIDTH, height = 3.1, verbose = FALSE)
+eval(makefig())
+dev.off()
+```
+
+
 \clearpage
 
-Figure \ref{fig:np-overview} compares all of the six trained models across both data types, source code and issue-tracking, with and without applied PCA, and using different feature sets (amount only, divergence only, both).
+Figure \ref{fig:np-overview} compares all of the seven trained models across both data types, source code and issue-tracking, with and without applied PCA, and using different feature sets (amount only, divergence only, both).
 The visual inspection tells us that the best model is the neural network for source code, and the one not using PCA being a little better ("nnet, sc, no PCA").
 That model has, for the number of training instances of $15$, an expectation $<1$, regardless of the feature set used.
 The best feature set by a small margin is "divergence", followed by "both".
@@ -1781,7 +1843,7 @@ if (interactive()) {
   knitr::kable(
     x = res,
     booktabs = TRUE,
-    caption = paste0("Four different inequalities giving and their confidence for a given deviation (for the best neural network model trained on $17$ instances). The Three Sigma rule has the tightest bounds, while Gauss' inequality has the loosest. The mean of the data is $", round(mean(temp$rmse_valid), 3), "$ and the standard deviation is $", round(sd(temp$rmse_valid), 3), "$."),
+    caption = paste0("Four different inequalities giving and their confidence for a given deviation (for the best neural network model trained on $17$ instances). The Three Sigma rule has the tightest bounds, while Chebyshev's inequality has the loosest. The mean of the data is $", round(mean(temp$rmse_valid), 3), "$ and the standard deviation is $", round(sd(temp$rmse_valid), 3), "$."),
     label = "confidence-intervals-inequalities"
   )
 }
@@ -1857,7 +1919,7 @@ makefig <- function(paper = FALSE) {
     
     
     #abline(h = c(.5, 1), lwd = 3, lty = c(2,5), col = "#fc7703")
-    lines(col = "#fc7703", lwd = 2, x = min(temp$num_train):max(temp$num_train), y =
+    lines(col = "#FD4103", lwd = 2, x = min(temp$num_train):max(temp$num_train), y =
           (temp %>% group_by(num_train) %>% summarize(Mean = mean(rmse_valid), .groups = "drop"))$Mean)
     
     
@@ -1882,7 +1944,7 @@ makefig <- function(paper = FALSE) {
     use_leq <- function(n) {
       if (paper) paste0("$\\leq\\!", n, "$") else paste0("<= ", n)
     }
-    legend(x = 29, y = 2.9, legend = c("Mean RMSE (validation)", paste0(use_leq(1), " standard deviation"), paste0(use_leq(2), " std. devs."), paste0(use_leq(3), " std. devs.")), col = c("#fc7703", "#000000", "#333333", "#666666"), lwd = 2, lty = c(1, 1, 2, 4), bg = "white", cex = cex, text.width = 15)
+    legend(x = 29, y = 2.9, legend = c("Mean RMSE (validation)", paste0(use_leq(1), " standard deviation"), paste0(use_leq(2), " std. devs."), paste0(use_leq(3), " std. devs.")), col = c("#FD4103", "#000000", "#333333", "#666666"), lwd = 2, lty = c(1, 1, 2, 4), bg = "white", cex = cex, text.width = 15)
   })
 }
 
@@ -2073,8 +2135,8 @@ merge_varimps <- function(l) {
 
 ```{r varimp-np-sc, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Variable importance for the no-pattern source code dataset estimated using 100 repeats and averaged over five models (Boosted Generalized Additive Model [@rpkg_gamboost], Neural network [@venables2002sstat], (Generalized Linear) Partial Least Squares [@rpkg_plsRglm], and Bagged CART [@rpkg_ipred])."}
 par(mar = c(4.5,4.5,3,10))
-use_vars <- rev(c("A", "CP", "FREQ_nm", "A_vs_CP", "A_vs_FREQ_nm", "CP_vs_FREQ_nm")) # rev(unique(vi_np_sc$res$feature))
-mat <- matrix(nrow = 6, ncol = 10, dimnames = list(use_vars))
+use_vars_sc <- rev(c("A", "CP", "FREQ_nm", "A_vs_CP", "A_vs_FREQ_nm", "CP_vs_FREQ_nm")) # rev(unique(vi_np_sc$res$feature))
+mat <- matrix(nrow = 6, ncol = 10, dimnames = list(use_vars_sc))
 temp_vi <- merge_varimps(vi_np_sc)
 
 for (v in rownames(mat)) {
@@ -2091,6 +2153,80 @@ text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)), cex = .8)
 legend(x = 12.5, y= .14, rev(rownames(mat)), fill = rev(pal_4), bg = "white", xpd = TRUE)
 ```
 
+```{r echo=FALSE}
+temp <- mat[rev(rownames(mat)),]
+
+# Add two rows and two columns, holding the mean and sum per row/column
+#temp <- cbind(temp, matrix(ncol = 1, data = as.vector(apply(X = temp[, 1:10], MARGIN = 1, FUN = mean))))
+temp <- cbind(temp, matrix(ncol = 1, data = as.vector(apply(X = temp[, 1:10], MARGIN = 1, FUN = sum))))
+colnames(temp) <- c(paste0("Seg", 1:10),  "sum")
+
+temp <- rbind(temp, `rownames<-`(x = matrix(nrow = 1, data = as.vector(apply(X = temp[1:6,], MARGIN = 2, FUN = mean))), value = "mean"))
+temp <- rbind(temp, `rownames<-`(x = matrix(nrow = 1, data = as.vector(apply(X = temp[1:6,], MARGIN = 2, FUN = sum))), value = "sum"))
+
+temp[7:8, 11] <- NA_real_
+temp[8, 11] <- sum(c(temp[8, 1:10], temp[1:6, 11]))
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = round(100*temp, 2),
+    booktabs = TRUE,
+    caption = "Detailed variable importance (scaled to percent) for the no-pattern source code dataset, including means and sums across segments and features.",
+    label = "varimp-np-sc-detailed"
+  )
+}
+```
+
+Table \ref{tab:varimp-np-sc-detailed} shows the variable importance from figure \ref{fig:varimp-np-sc}, including summaries for average and total importance across segments and features.
+
+
+```{r varimp-np-it, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Variable importance for the no-pattern issue-tracking dataset estimated using 100 repeats and averaged over the same five models as used for source code."}
+par(mar = c(4.5,4.5,3,10))
+use_vars_it <- rev(c("REQ", "DEV", "DESC", "REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC"))
+mat <- matrix(nrow = 6, ncol = 10, dimnames = list(use_vars_it))
+temp_vi <- merge_varimps(vi_np_it)
+
+for (v in rownames(mat)) {
+  temp <- temp_vi[temp_vi$feature == v,] %>% group_by(segment) %>% summarise(total_imp = sum(vi_rel), .groups = "drop")
+  mat[v,] <- if (nrow(temp) == 0) 0 else as.numeric(temp$total_imp)
+}
+
+mat_sums <- apply(X = mat, MARGIN = 2, FUN = sum)
+
+pal_4 <- RColorBrewer::brewer.pal(6, "Set3")#[4:6]
+bp <- barplot(height = mat, names.arg = 1:10, xlab = "Segment", ylab = "Total segment Importance", main = "No-pattern issue-tracking variable importance.", col = pal_4, ylim = c(0, max(mat_sums + .02)), angle = 30, density = 20 + 60 * mat_sums / max(mat_sums))
+grid()
+text(x = bp, y = .01 + mat_sums, labels = paste0(round(mat_sums, 4)), cex = .8)
+legend(x = 12.5, y= .14, rev(rownames(mat)), fill = rev(pal_4), bg = "white", xpd = TRUE)
+```
+
+```{r echo=FALSE}
+temp <- mat[rev(rownames(mat)),]
+temp <- cbind(temp, matrix(ncol = 1, data = as.vector(apply(X = temp[, 1:10], MARGIN = 1, FUN = sum))))
+colnames(temp) <- c(paste0("Seg", 1:10),  "sum")
+
+temp <- rbind(temp, `rownames<-`(x = matrix(nrow = 1, data = as.vector(apply(X = temp[1:6,], MARGIN = 2, FUN = mean))), value = "mean"))
+temp <- rbind(temp, `rownames<-`(x = matrix(nrow = 1, data = as.vector(apply(X = temp[1:6,], MARGIN = 2, FUN = sum))), value = "sum"))
+
+temp[7:8, 11] <- NA_real_
+temp[8, 11] <- sum(c(temp[8, 1:10], temp[1:6, 11]))
+
+if (interactive()) {
+  temp
+} else {
+  knitr::kable(
+    x = round(100*temp, 2),
+    booktabs = TRUE,
+    caption = "Detailed variable importance (scaled to percent) for the no-pattern issue-tracking dataset, including means and sums across segments and features.",
+    label = "varimp-np-it-detailed"
+  )
+}
+```
+
+
+Figure \ref{fig:varimp-np-it} and table \ref{tab:varimp-np-it-detailed} show the same thing, only for issue-tracking data.
 
 
 ```{r echo=FALSE}
@@ -2104,32 +2240,31 @@ temp_vi_sc$dtype <- "SC"
 temp_vi_it$dtype <- "IT"
 
 temp_vi <- rbind(temp_vi_sc, temp_vi_it)
-temp_vi$feature <- factor(x = temp_vi$feature, levels = c(rev(use_vars), c("REQ", "DEV", "DESC", "REQ_vs_DEV", "REQ_vs_DESC", "DEV_vs_DESC")))
+temp_vi$feature <- factor(x = temp_vi$feature, levels = c(rev(use_vars_sc), rev(use_vars_it)))
 temp_vi$dtype <- factor(x = temp_vi$dtype, levels = c("SC", "IT"), ordered = TRUE)
 temp_vi$is_versus <- sapply(X = temp_vi$feature, FUN = function(f) grepl(pattern = "_vs_", x = f))
 ```
 
 ```{r echo=FALSE, eval=interactive(), fig.width=10, fig.height=4}
 makefig <- function() {
-  plotexpr <- rlang::expr({
+  rlang::expr({
     ggplot(temp_vi, aes(x = dtype, y = vi_rel, fill = feature)) +
       ylim(0, .18) +
       geom_bar(stat = 'identity', position = 'stack') + facet_wrap(~ segment, ncol = 10, strip.position = "bottom") +
-      geom_text(size = 0.36 * 8, vjust = .3, hjust = -.25, angle = 90, stat = "summary", fun = sum, mapping = aes(label = round(after_stat(y), 3), group = dtype)) +
+      geom_text(size = 0.36 * 8, vjust = .3, hjust = -.25, angle = 90, stat = "summary", fun = sum, mapping = aes(label = paste0("$", round(after_stat(y), 3), "$"), group = dtype)) +
       gg2_style(FALSE) +
       theme(axis.text.x = element_blank()) +
       xlab("Segment") + ylab("Relative Importance") + labs(fill = "Activity", title = "Variable importances for source code and issue-tracking, per segment.") +
       scale_x_discrete(position = "bottom") +
-      scale_fill_manual(
-        values = (function(n) {
-          set.seed(3)
-          sample(x = RColorBrewer::brewer.pal(n, "Set3"), size = n)
-        })(12),
+      scale_fill_manual(#"#FFFFB3", "#F589F5"
+        values = c("#FF4A36", "#9BC94C", "#BC80BD", "#FCCDE5", "#BEBADA", "#DE657A", "#D58932", "#6F99B9", "#E6CF00", "#D9D9D9", "#8DD3C7", "#ACA585"),
         labels = sapply(X = levels(temp_vi$feature), FUN = function(l) {
           l <- gsub(pattern = "_vs_", replacement = " vs. ", x = l)
-          l <- gsub(pattern = "_", replacement = "\\\\_", x = l)
-          for (vn in c("A", "CP", "FREQ_nm", "REQ", "DEV", "DESC")) {
-            l <- gsub(pattern = vn, replacement = paste0("$\\\\mathsf{", vn, "}$"), x = l)
+          #l <- gsub(pattern = "_", replacement = "\\\\_", x = l)
+          search_for <- c("A", "CP", "FREQ_nm", "(?<!F)REQ", "DEV", "DESC")
+          replace_with <- c("A", "CP", "FREQ_{nm}", "REQ", "DEV", "DESC")
+          for (idx in 1:length(search_for)) {
+            l <- gsub(pattern = search_for[idx], replacement = paste0("$\\\\mathsf{", replace_with[idx], "}$"), x = l, perl = TRUE)
           }
           l
         })) +
@@ -2139,13 +2274,15 @@ makefig <- function() {
             axis.title.x = element_text(size = 9),
             axis.title.y = element_text(size = 9),
             axis.line.y = element_line(),
+            axis.line.x = element_line(colour = "#aaaaaa"),
             axis.text.y = element_text(size = 9),
             strip.background = element_blank(),
             strip.text = element_text(size = 9),
-            panel.background = element_rect(fill = "#fbfbfb", linetype = "blank"),
-            panel.grid.major = element_line(linetype = "dotted", color = "#aaaaaa"),
+            panel.spacing = unit(.7, "lines"),
+            panel.background = element_rect(fill = "white", linetype = "blank"),
+            panel.grid.major = element_line(linetype = "dotted", color = "#444444"),
             panel.grid.minor = element_line(linetype = "dotted", color = "#cccccc"),
-            plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = ggplot2::margin(b = 2.5, unit = "line"))) +
+            plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = ggplot2::margin(b = 1.5, unit = "line"))) +
       guides(fill = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 1)))
   })
 }
@@ -2153,7 +2290,7 @@ eval(makefig())
 ```
 
 ```{r echo=FALSE, eval=FALSE}
-tikzDevice::tikz(file = paste0("../figures/fig_", "rr_var-imp-both", ".tex"), width = FIG_WIDTH, height = 4, verbose = FALSE)
+tikzDevice::tikz(file = paste0("../figures/fig_", "rr_var-imp-both", ".tex"), width = FIG_WIDTH, height = 3.6, verbose = FALSE)
 eval(makefig())
 dev.off()
 ```
@@ -2177,26 +2314,9 @@ The Fire Drill is a phenomenon that relies on a sensible balance between activit
 Also, the source code activities may not capture the true activities with high precision, so reliance on the divergence between activities is a feature with stronger predictive power on average.
 Still, it is important _how much_ of each activity happened in each segment.
 
-
-Table \ref{tab:varimp-np-sc-per-feature} shows the total importance per feature.
+Table \ref{tab:varimp-np-sc-detailed} shows the total importance per feature.
 The table shows that the divergence features are the most important, esp. `A_vs_CP`, which, in theory, should be the strongest indicator of a Fire Drill, as it can give indication to a disturbed balance between two main development activities (that should exhibit a certain balance otherwise).
 However, the relative importance between features is perhaps not significantly different (i.e., there is no feature with extreme low or high relative importance).
-
-
-```{r echo=FALSE}
-temp <- temp_vi[temp_vi$dtype == "SC",] %>% group_by(feature) %>% summarize(Sum = sum(vi_rel), .groups = "drop") %>% arrange(-Sum)
-
-if (interactive()) {
-  temp
-} else {
-  knitr::kable(
-    x = temp,
-    booktabs = TRUE,
-    caption = "Total variable importance per feature for the no-pattern source code dataset.",
-    label = "varimp-np-sc-per-feature"
-  )
-}
-```
 
 In figure \ref{fig:varimp-np-sc} we can already see the total importance per segment.
 We can see that the two most important segments are $\{3,4\}$.
@@ -2275,11 +2395,22 @@ Like the decision tree, this is another kind of quantitative understanding of th
 Figure \ref{fig:weighted-mixt-sc} shows the mixtures for source code.
 It appears that we have most of the adaptive activities in the 2nd half of the project, with a decline then towards the end.
 Corrective and perfective activities [@swanson1976dimensions; @mockus2000change] steadily increase and peak towards the end.
-My interpretation of this plot, after having seen the raters' notes, is a late-stage rush with adding new features, followed by switch of dedication of time towards making them work as the project approaches the deadline.
+My interpretation of this plot, after having seen the raters' notes, would be a late-stage rush with adding new features, followed by switch of dedication of time towards making them work as the project approaches the deadline.
+
+In figure \ref{fig:weighted-mixt-sc} I had split `CP` into corrective and perfective again.
+While the Fire Drill does not make a distinction between these two activities, we can perfectly do it again.
+It appears that both activities exhibit very similar behavior: Up until $\approx75$ % of the time, they show a somewhat linear increase.
+After that, they spike, and the decline only happens close to project end in both cases.
+Now the spikes do not look exactly the same.
+For corrective, it appears to have been carried out in three consecutive phases, each of which contained more corrective activity as the predecessing phase.
+It could hint at some sort of "panic" that grew towards project end.
+Perfective activities have basically only have a single bulk in that time. However, we can also discern another concentration right before it. Interestingly, that concentration ends (normalizes), and right after that, we get into highly active phases of both, corrective and perfective.
+While the accumulation of perfective activities looks more homogeneous, we could perhaps still see this as what is perhaps three spikes.
+The first one lasts a little longer than its corrective counter part, and the second and third seem to overlap with (perhaps accommodate) corrective activities.
 
 
 ```{r}
-weighted_mixture_sc <- function(x, activity = c("A", "CP", "FREQ_nm")) {
+weighted_mixture_sc <- function(x, activity = c("A", "C", "P", "CP", "FREQ_nm")) {
   activity <- match.arg(activity)
   s <- sum(ground_truth_all$consensus)
   y <- 0
@@ -2295,21 +2426,27 @@ weighted_mixture_sc <- function(x, activity = c("A", "CP", "FREQ_nm")) {
 
 
 ```{r echo=FALSE, eval=FALSE, fig.width=15, fig.height=5}
-par(mfrow = c(1, 3))
+par(mfrow = c(2, 3))
 curve2(function(x) weighted_mixture_sc(x, "A"), 0, 1, main = "A")
 grid()
-curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, main = "CP")
+curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, main = "C")
+grid()
+curve2(function(x) weighted_mixture_sc(x, "P"), 0, 1, main = "P")
+grid()
+curve2(function(x) weighted_mixture_sc(x, "CP"), 0, 1, main = "CP")
 grid()
 curve2(function(x) weighted_mixture_sc(x, "F"), 0, 1, main = "FREQ")
 grid()
 ```
 
-```{r weighted-mixt-sc, echo=FALSE, fig.height=5, fig.width=8, fig.cap="The weighted mixtures as of the source code activities. For FREQ, the non-mixture version is shown."}
+```{r weighted-mixt-sc, echo=FALSE, fig.height=6, fig.width=8, fig.cap="The weighted mixtures as of the source code activities. For FREQ, the non-mixture version is shown."}
 curve2(function(x) weighted_mixture_sc(x, "A"), 0, 1, lwd = 1.5, col = "red", ylim = c(0,3.2), main = "Weighted mixtures for the source code activities.", xlab = "Relative project time", ylab = "Relative likelihood")
-curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, lwd = 1.5, col = "#00bb00", add = TRUE)
+curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, lwd = 1.1, col = "blue", add = TRUE)
+curve2(function(x) weighted_mixture_sc(x, "P"), 0, 1, lwd = 1.1, col = "orange", add = TRUE)
+curve2(function(x) weighted_mixture_sc(x, "CP"), 0, 1, lwd = 1.75, col = "#00bb00", add = TRUE)
 curve2(function(x) weighted_mixture_sc(x, "F"), 0, 1, lwd = 1.5, col = "magenta", add = TRUE)
 grid()
-legend(x = 0, y = 3.1, legend = c("A", "CP", "FREQ"), col = c("red", "#00bb00", "magenta"), bg = "white", lty = 1, lwd = 2)
+legend(x = 0, y = 3.1, legend = c("A", "C", "P", "CP", "FREQ"), col = c("red", "blue", "orange", "#00bb00", "magenta"), bg = "white", lty = 1, lwd = 2)
 ```
 
 
@@ -2373,6 +2510,207 @@ curve2(function(x) weighted_mixture_it(x, "DESC"), 0, 1, lwd = 1.5, col = "darkg
 grid()
 legend(x = 0, y = 2.1, legend = c("REQ", "DEV", "DESC"), col = c("red", "#0000bb", "darkgreen"), bg = "white", lty = 1, lwd = 2)
 ```
+
+
+```{r weighted-mixtures, echo=FALSE, eval=FALSE}
+# Let's do some tikz picz!
+makefig <- function() {
+  rlang::expr({
+    par(mar = c(4.1, 3.6, 2.1, 6.3))
+    # "#BEBADA", 
+    use_pal <- c("#FF4A36", "#9BC94C", "#BC80BD", "#D58932", "#6F99B9", "#E6CF00")
+    cex <- .9
+    mline <- 2.5
+    
+    use_vars <- c("A", "CP", "FREQ", "REQ", "DEV", "DESC")
+    
+    plot(x = 0, y = 0, col = "#ffffffff", xlim = c(0, 1), ylim = c(0, 3.2), main = "Weighted mixtures for the source code and issue-tracking activities.", cex.main = cex, cex.lab = cex, cex.axis = cex, xlab = "", ylab = "", xaxt = "n", yaxt = "n")
+    
+    # Draw some polygons
+    #use_x <- seq(0, 1, length.out = 1000)
+    #for (idx in 1:6) {
+    #  use_f <- if (idx > 3) weighted_mixture_it else weighted_mixture_sc
+    #  polygon(x = c(use_x, rev(use_x)), y = c(rep(0, length(use_x)), use_f(x = rev(use_x), activity = use_vars[idx])), col = paste0(use_pal[idx], "88"))
+    #}
+    
+    mtext(text = "Relative project time", side = 1, line = mline, cex = cex)
+    mtext(text = "Relative Likelihood", side = 2, line = mline, cex = cex)
+    axis(1, at = seq(0, 1, by = .1), cex.axis = cex)
+    axis(2, at = seq(0, 3.5, by = .5), cex.axis = cex, las = 1)
+    
+    curve2(function(x) weighted_mixture_sc(x, "A"), 0, 1, lwd = 2.5, col = use_pal[1], add = TRUE)
+    curve2(function(x) weighted_mixture_sc(x, "C"), 0, 1, lwd = 2.5, col = use_pal[2], add = TRUE)
+    curve2(function(x) weighted_mixture_sc(x, "F"), 0, 1, lwd = 2.5, col = use_pal[3], add = TRUE)
+    curve2(function(x) weighted_mixture_it(x, "R"), 0, 1, lwd = 2.5, col = use_pal[4], add = TRUE)
+    curve2(function(x) weighted_mixture_it(x, "DEV"), 0, 1, lwd = 2.5, col = use_pal[5], add = TRUE)
+    curve2(function(x) weighted_mixture_it(x, "DESC"), 0, 1, lwd = 2.5, col = use_pal[6], add = TRUE)
+    
+    
+    # Draw some points
+    for (idx in 1:6) {
+      use_x <- seq(0.02, 0.92, by = .1) + (idx - 1) * .005
+      use_f <- if (idx > 3) weighted_mixture_it else weighted_mixture_sc
+      use_var <- use_vars[idx]
+      points(x = use_x, y = use_f(use_x, use_var), pch = idx, col = use_pal[idx], cex = 1.1, lwd = 1.5)
+    }
+    
+    grid()
+    abline(v = seq(.1, .9, by = .2), lty = 3, lwd = .5, col = "#cccccc")
+    
+    legend("topright", inset = c(-.21, 0), xpd=TRUE, legend = paste0("$\\mathsf{", c("A", "CP", "FREQ_{nm}", "REQ", "DEV", "DESC"), "}$"), col = use_pal, bg = "white", lty = 1, lwd = 2.5, cex = cex, title = "Activity", title.adj = .25, bty = "n", pch = 1:6, pt.cex = 1.1)
+    #legend(x = 0, y = 2.1, legend = c(), col = c("red", "#0000bb", "darkgreen"), bg = "white", lty = 1, lwd = 2)
+  })
+}
+eval(makefig())
+```
+
+```{r echo=FALSE, eval=FALSE}
+saveTikzExpr(expr = makefig(), name = "rr_weighted-mixtures", height = 3.3)
+```
+
+```{r eval=FALSE, echo=FALSE}
+get_smoothed_curve <- function(seed, npoints = 15, integral_eq_1 = TRUE) {
+  if (!is.na(seed)) {
+    set.seed(seed = seed)
+  }
+  
+  x <- sort(c(0, 1, runif(n = npoints - 2)))
+  y <- runif(n = length(x), min = 0, max = 1)
+  temp <- loess.smooth(x = x, y = y, span = 0.35, family = "g", evaluation = 1000)
+  # Make sure it's not negative, and actually slightly positive:
+  temp$y <- temp$y - min(temp$y)
+  temp$y <- temp$y + .1 * (max(temp$y) - min(temp$y))
+  
+  appr <- stats::approxfun(
+    x = ((temp$x - min(temp$x)) / (max(temp$x) - min(temp$x))),
+    y = temp$y / (max(temp$x) - min(temp$x)),
+    yleft = utils::head(temp$y, 1),
+    yright = utils::tail(temp$y, 1))
+  
+  tempf <- Vectorize(appr)
+  if (integral_eq_1) {
+    the_int <- cubature::cubintegrate(f = tempf, lower = 0, upper = 1, maxEval = 1e4)$integral
+    tempf <- Vectorize(function(x) {
+      appr(x) / the_int
+    })
+  }
+  
+  tempf
+}
+
+jsd_segment2 <- function(p, q, ext = c(0, 0.1), xtol = 1e-20) {
+  cubature::cubintegrate(f = function(x) {
+    p_ <- p(x)
+    q_ <- q(x)
+    m_ <- .5 * (p_ + q_)
+    tryCatch({
+      if (abs(p_) < xtol || abs(q_) < xtol || abs(m_) < xtol) 0 else .5 * p_ * log(p_ / m_) + .5 * q_ * log(q_ / m_)
+    }, warning = function(w) {
+      stop(paste0(p(x), " ; ", q(x), " ; ", m_))
+    })
+  }, lower = ext[1], upper = ext[2], maxEval = 1e3)$integral
+}
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+# Let's first do the data for the video:
+wm <- function(x) weighted_mixture_sc(x, "A")
+random_procs <- list()
+metric_data <- c()
+
+set.seed(1)
+for (idx in 1:60) {
+  #random_proc <- stats::approxfun(x = seq(0, 1, length.out = 10), y = runif(n = 10, 0, 5))
+  random_proc <- get_smoothed_curve(seed = 1337 + idx)
+  random_procs <- append(random_procs, random_proc)
+  
+  #metric_data <- c(metric_data, cubature::cubintegrate(f = function(x) {
+  #  (wm(x) - random_proc(x))^2
+  #}, lower = .2, upper = .4, maxEval = 1e3)$integral)
+  
+  #use_x <- seq(0.2, 0.4, length.out = 1e3)
+  #metric_data <- c(metric_data, stats::cor(x = wm(use_x), y = random_proc(use_x)))
+  metric_data <- c(metric_data, jsd_segment2(p = wm, q = random_proc, ext = c(.2, .4)))
+}
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+# Here, we'll make the video
+make_3way_plot <- function(l) {
+  #par(mfrow = c(2, 2))
+  layout.matrix <- matrix(c(1, 1, 2, 3), nrow = 2, ncol = 2)
+  layout(mat = layout.matrix,
+         heights = c(1, 1), # Heights of the two rows
+         widths = c(2, 1))
+  #layout.show(3)
+  par(mar = c(7, 7, 4.1, 2.1))
+  
+  
+  curve2(wm, 0, 1, lwd = 2.5, col = use_pal[1], ylim = c(0,2.5), main = "Logarithmic Jensen-Shannon divergence on segment.", cex.main = 2.5, cex.axis = 2.5, cex.lab = 2.5, xlab = "", ylab = "")
+  mtext(side = 1, text="Relative Project time", line = 4.5, cex = 2.5)
+  mtext(side = 2, text="Relative Likelihood", line = 4.5, cex = 2.5)
+  
+  
+  
+  use_x <- c(seq(.2, .4, length.out = 20))
+  use_x <- c(use_x, rev(use_x))
+  # Let's first add the random processes to the first plot:
+  for (idx in 1:l) {
+  #for (idx in 1:length(random_procs)) {
+    rp <- random_procs[[idx]]
+    polygon(x = use_x, y = c(
+      sapply(X = head(use_x, length(use_x) / 2), FUN = function(x) {
+        max(wm(x), rp(x))
+      }),
+      sapply(X = tail(use_x, length(use_x) / 2), FUN = function(x) {
+        min(wm(x), rp(x))
+      })
+    ), col = if (idx == l) "#add8e6f8" else "#eeeeeef8")
+    curve2(func = rp, from = 0, to = 1, lwd = if (idx == l) 2.5 else 1.5, add = TRUE, col = if (idx == l) "#444444" else "#bbbbbb")
+  }
+  
+  # Let's always over-draw the original proc:
+  curve2(wm, 0, 1, lwd = 3, col = use_pal[1], ylim = c(0,3.2), add = TRUE)
+  abline(v = c(.2, .4), lwd = 2)
+  grid()
+  
+  
+  use_data <- log(metric_data[1:l])
+  
+  # Let's draw the left plot:
+  plot(density(use_data, bw = "SJ", cut = TRUE), main = "PDF", cex.main = 2.5, cex.axis = 2.5, cex.lab = 2.5, xlab = "", ylab = "")
+  mtext(side = 1, text=paste0("log(JSD(p||q)); N=", l), line = 4.5, cex = 2.5)
+  mtext(side = 2, text="Relative Likelihood", line = 4.5, cex = 2.5)
+  grid()
+  
+  
+  
+  # Let's draw the below plot:
+  temp_ecdf <- stats::ecdf(use_data)
+  curve2(temp_ecdf, min(use_data), max(use_data), main = "ECDF", cex.main = 2.5, cex.axis = 2.5, cex.lab = 2.5, xlab = "", ylab = "")
+  mtext(side = 1, text=paste0("log(JSD(p||q)); N=", l), line = 4.5, cex = 2.5)
+  mtext(side = 2, text="F(x); cumulative probability", line = 4.5, cex = 2.5)
+  grid()
+}
+```
+
+```{r eval=FALSE, echo=FALSE}
+make_3way_plot(3)
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+for (l in 2:length(random_procs)) {
+  png(filename = paste0("C:\\temp\\plot\\Rplot_", if (l < 10) paste0("0", l) else l, ".png"), width = 1600, height = 900)
+  make_3way_plot(l)
+  dev.off()
+}
+
+# ffmpeg -loglevel warning -stats -hide_banner -framerate 5 -pattern_type sequence -i "Rplot_%02d.png" -s:v 1600:900 -c:v libx264 -crf 10 -pix_fmt yuv420p -y out.mp4
+```
+
 
 
 
