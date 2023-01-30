@@ -55,6 +55,7 @@ source(file = "../models/SRBTW-R6.R")
 library(ggplot2)
 library(ggpubr)
 library(fields)
+library(dplyr)
 ```
 
 ```{r echo=FALSE}
@@ -4877,8 +4878,73 @@ if (interactive()) {
   knitr::kable(
     x = temp2,
     booktabs = TRUE,
-    caption = "Fleiss benchmark (cumulative probabilities) for Gwet's AC1/AC2 agreement coefficient for all three raters.",
+    caption = "Fleiss's benchmark (cumulative probabilities) for Gwet's AC1/AC2 agreement coefficient for all three raters.",
     label = "bench-fleiss"
+  )
+}
+```
+
+
+Tables \ref{tab:bench-landis-koch} and \ref{tab:bench-fleiss} show the benchmarks for @landis1977application and @Fleiss1981, respectively.
+There are two more common benchmarks, the one by @cicchetti1981 and one by @Regier2013.
+These are shown in tables \ref{tab:bench-cicc} and \ref{tab:bench-regier}, respectively.
+Note that the benchmark by @Regier2013 uses the same levels as the one by @landis1977application, but only uses different labels.
+We will compute these, too, to get a better idea of the goodness of the measured agreement.
+
+```{r}
+bench_cicc <- c("start" = 0, "Poor" = 0.4, "Fair" = 0.6, "Good" = 0.75, "Excellent" = 1)
+bench_regier <- c("start" = 0, "Unacceptable" = 0.2, "Questionable" = 0.4, "Good" = 0.6, "Very Good" = 0.8, "Excellent" = 1)
+
+compute_benchmark <- function(benchvec, name, cdf) {
+  df <- NULL
+  for (idx in 2:length(benchvec)) {
+    a <- benchvec[idx - 1]
+    b <- benchvec[idx]
+    df <- rbind(df, data.frame(
+      X1 = names(benchvec)[idx],
+      X2 = round(cdf(b) - cdf(a), 5),
+      stringsAsFactors = FALSE
+    ))
+  }
+  rownames(x = df) <- sapply(X = 2:length(benchvec), FUN = function(idx) {
+    paste0("(", benchvec[idx - 1], " to ", benchvec[idx], ")")
+  })
+  colnames(x = df) <- c(name, "Prob")
+  df$CumProb <- rev(cumsum(rev(df$Prob)))
+  df[order(nrow(df):1),]
+}
+```
+
+
+```{r echo=FALSE}
+temp_cdf <- function(q) pnorm(q = q, mean = ac1$coeff.val, sd = ac1$coeff.se)
+temp3 <- compute_benchmark(benchvec = bench_cicc, name = "Cicchetti", cdf = temp_cdf)
+
+if (interactive()) {
+  temp3
+} else {
+  knitr::kable(
+    x = temp3,
+    booktabs = TRUE,
+    caption = "Cicchetti et al.'s benchmark (cumulative probabilities) for Gwet's AC1/AC2 agreement coefficient for all three raters.",
+    label = "bench-cicc"
+  )
+}
+```
+
+
+```{r echo=FALSE}
+temp_cdf <- function(q) pnorm(q = q, mean = ac1$coeff.val, sd = ac1$coeff.se)
+temp4 <- compute_benchmark(benchvec = bench_regier, name = "Regier", cdf = temp_cdf)
+
+if (interactive()) {
+  temp4
+} else {
+  knitr::kable(
+    x = temp4,
+    booktabs = TRUE,
+    caption = "Regier et al.'s benchmark (cumulative probabilities) for Gwet's AC1/AC2 agreement coefficient for all three raters.",
+    label = "bench-regier"
   )
 }
 ```
@@ -6287,6 +6353,433 @@ Variable importances can also be further facilitated in a regression model for f
 knitr::include_graphics(
   path = "../figures/compare-pms.png",
   )
+```
+
+
+
+# Qualitative Evaluation of the Rater's Notes
+
+Although this is not specific to issue tracking (or source code for that matter), we add a section about a qualitative evaluation of the three raters' findings for each project.
+The analysis is already done and is based on commit `7a4d8`[^1].
+What we will do here, is to load the data into a table so that we can produce nice figures for the paper.
+
+[^1]: https://github.com/MrShoenel/Software-process-antipatterns-catalogue/blob/7a4d8/catalogue/Fire_Drill.md
+
+## List of Symptoms and Consequences
+
+The first data structure we'll employ is a list with associations Symptoms & Consequence => Empirical Instance(s).
+The empirical instances will be put into a dataframe next.
+
+```{r}
+qe_sc <- list(
+  SC1 = paste0("E", 1:3),
+  SC2 = paste0("E", 4),
+  SC3 = paste0("E", 5),
+  SC4 = paste0("E", 6:7),
+  SC5 = paste0("E", 8),
+  SC6 = paste0("E", 9:11),
+  SC7 = c(), # No concrete instances for this one!
+  
+  # ESC1, ESC2, and ESC3 are new, empirical symptoms and consequences!
+  ESC1 = paste0("E", 12:16),
+  ESC2 = paste0("E", 17:27),
+  ESC3 = paste0("E", 28:31))
+```
+
+
+## Aggregations for Empirical Instances
+
+```{r}
+make_row <- function(idx, obs, obs_agg) {
+  `rownames<-`(data.frame(
+    E = idx,
+    
+    obs = paste0(obs, collapse = ","),
+    num = length(obs),
+    avg = round(mean(obs), 2),
+    sum = sum(obs),
+    
+    agg = paste0(obs_agg, collapse = ","),
+    numAgg = length(obs_agg),
+    meanAgg = round(mean(obs_agg), 2),
+    sumAgg = sum(obs_agg),
+    
+    stringsAsFactors = FALSE
+  ), paste0("E", idx))
+}
+
+split_obs <- function(obs) as.integer(strsplit(x = obs, split = ",")[[1]])
+```
+
+```{r}
+qe_ei <- dplyr::bind_rows(list(
+  # [1,A,1], [3,B,2], [5,A,1], [7,B,1], [9,B,2], [13,A,1], [14,A,1], [15,A,2]
+  make_row( 1, c(1,2,1,1,2,1,1,2), c(1,2,1,1,2,1,1,2)),
+  # [1,A,0], [15,A,0]
+  make_row( 2, c(0,0), c(0,0)),
+  # [3,C,1], ([13,A,3], [13,B,2], [13,C,4]) -> [13,ABC,5], [15,C,1]
+  make_row( 3, c(1,3,2,4,1), c(1,5,1)),
+  # [3,C,1], [6,A,1], [14,A,3]
+  make_row( 4, c(1,1,3), c(1,1,3)),
+  # [13,A,3]
+  make_row( 5, c(3), c(3)),
+  # [3,C,2]
+  make_row( 6, c(2), c(2)),
+  # [12,A,1]
+  make_row( 7, c(1), c(1)),
+  # ([4,B,1], [4,C,2]) -> [4,BC,3], [6,C,2], [7,B,2], ([13,A,4], [13,C,2]) -> [13,AC,5]
+  make_row( 8, c(1,2,2,2,4,2), c(3,2,2,5)),
+  # [1,A,1], [3,C,4], ([5,A,1], [5,B,1]) -> [5,AB,2], [9,A,1], [10,B,2], [12,A,3],
+  # ([13,A,4], [13,B,4]) -> [13,AB,5]
+  make_row( 9, c(1,4,1,1,1,2,3,4,4), c(1,4,2,1,2,3,5)),
+  # [3,C,4], [7,C,3], [9,C,3], [10,C,1], [14,A,1], [15,B,1]
+  make_row(10, c(4,3,3,1,1,1), c(4,3,3,1,1,1)),
+  # [3,C,4], [4,C,2], [7,C,1]
+  make_row(11, c(4,2,1), c(4,2,1)),
+  # ([3,A,4], [3,B,4]) -> [3,AB,5], ([4,A,3], [4,B,4], [4,C,3]) -> [4,ABC,5], [5,C,1],
+  # ([6,A,3], [6,B,3]) -> [6,AB,4], ([7,A,3], [7,C,3]) -> [7,AC,4],
+  # ([10,A,3], [10,B,3], [10,C,2]) -> [10,ABC,5], [11,A,1], [12,A,1], [13,C,1], [14,A,1],
+  # ([15,A,1], [15,C,1]) -> [15,AC,2]
+  make_row(12, c(4,4,3,4,3,1,3,3,3,3,3,3,2,1,1,1,1,1,1), c(5,5,1,4,4,5,1,1,1,1,2)),
+  # [3,C,3], ([10,A,3], [10,B,3]) -> [10,AB,4], ([13,A,3], [13,C,4]) -> [13,AC,5]
+  make_row(13, c(3,3,3,3,4), c(3,4,5)),
+  # [3,A,2]
+  make_row(14, c(2), c(2)),
+  # [3,A,3], [4,C,1]
+  make_row(15, c(3,1), c(3,1)),
+  # [9,B,2]
+  make_row(16, c(2), c(2)),
+  # ([3,C,3], [3,A,3]) -> [3,AC,4], [4,C,3], [6,A,2], [12,A,1]
+  make_row(17, c(3,3,3,2,1), c(4,3,2,1)),
+  # [3,C,2]
+  make_row(18, c(2), c(2)),
+  # [3,C,1], [4,A,2]
+  make_row(19, c(1,2), c(1,2)),
+  # ([6,A,2], [6,B,2]) -> [6,AB,3], [12,A,1], [15,A,1]
+  make_row(20, c(2,2,1,1), c(3,1,1)),
+  # ([6,B,2], [6,C,2]) -> [6,BC,3], ([7,A,1], [7,B,1]) -> [7,AB,2], [9,A,1], [12,C,1],
+  # ([13,A,3], [13,B,2]) -> [13,AB,4]
+  make_row(21, c(2,2,1,1,1,1,3,2), c(3,2,1,1,4)),
+  # [6,C,1], [9,A,1], [13,C,2]
+  make_row(22, c(1,1,2), c(1,1,2)),
+  # [7,C,4], [13,A,4]
+  make_row(23, c(4,4), c(4,4)),
+  # [9,C,1], [11,A,1], [13,A,1]
+  make_row(24, c(1,1,1), c(1,1,1)),
+  # [10,C,1]
+  make_row(25, c(1), c(1)),
+  # ([12,A,3], [12,B,1]) -> [12,AB,3], ([15,A,1], [15,C,1]) -> [15,AC,2]
+  make_row(26, c(3,1,1,1), c(3,2)),
+  # [13,B,4], [15,A,2]
+  make_row(27, c(4,2), c(4,2)),
+  # [3,C,1]
+  make_row(28, c(1), c(1)),
+  # [4,C,1]
+  make_row(29, c(1), c(1)),
+  # [3,C,1], [7,C,4], [10,A,1], [15,A,1]
+  make_row(30, c(1,4,1,1), c(1,4,1,1)),
+  # [4,B,1]
+  make_row(31, c(1), c(1))
+))
+```
+
+Table \ref{tab:empirical-fd-instances} shows, for each empirical instance of a symptom/consequence, how often it has been observed and how severe it was.
+The columns ending in `_agg` represent the count, sum (total severity), and average severity of the aggregated instances.
+Aggregation happens if two or more raters observed the same instance.
+
+```{r echo=FALSE}
+if (interactive()) {
+  qe_ei
+} else {
+  temp <- qe_ei[,]
+  temp$obs <- sapply(X = temp$obs, FUN = function(s) {
+    if (nchar(s) > 14) paste0(substr(x = s, start = 1, stop = 14), " ...") else s
+  })
+  temp$agg <- sapply(X = temp$agg, FUN = function(s) {
+    if (nchar(s) > 14) paste0(substr(x = s, start = 1, stop = 14), " ...") else s
+  })
+  knitr::kable(
+    x = temp,
+    booktabs = TRUE,
+    caption = "Empirical instances of Fire Drill symptoms and consequences as found in the 15 projects.",
+    label = "empirical-fd-instances"
+  )
+}
+```
+
+
+## Connect Symptoms, Consequences, and Empirical Instances
+
+We are now prepared to produce an aggregated table.
+
+```{r}
+emp_obs_df <- function(rns) {
+  df <- NULL
+  for (rn in rns) {
+    all_obs_agg <- split_obs(qe_ei[rn,]$agg)
+    df <- rbind(df, data.frame(
+      E = rn,
+      num = length(all_obs_agg),
+      total = sum(all_obs_agg),
+      mean = if (length(all_obs_agg) == 0) NA_real else mean(all_obs_agg)
+    ))
+  }
+  df
+}
+
+aggregate_e <- function(rns) {
+  all_obs <- do.call("c", lapply(X = rns, function(rn) {
+    split_obs(qe_ei[rn,]$obs)
+  }))
+  all_obs_agg <- do.call("c", lapply(X = rns, function(rn) {
+    split_obs(qe_ei[rn,]$agg)
+  }))
+  
+  temp <- if (length(rns) == 0) NULL else emp_obs_df(rns = rns) %>% arrange(-mean)
+  
+  data.frame(
+    numObs = length(all_obs),
+    numAgg = length(all_obs_agg),
+    min = if (length(all_obs_agg) == 0) NA_real_ else min(all_obs_agg),
+    mean = if (length(all_obs_agg) == 0) NA_real_ else round(mean(all_obs_agg), 2),
+    #median = if (length(all_obs_agg) == 0) NA_real_ else round(median(all_obs_agg), 2),
+    max = if (length(all_obs_agg) == 0) NA_real_ else max(all_obs_agg),
+    total = sum(all_obs_agg),
+    severity = if (is.null(temp)) "" else paste0(sapply(X = rownames(temp), FUN = function(rn) {
+      row <- temp[rn,]
+      paste0(row$E, "(", row$num, "; ", round(row$mean, 2), ")")
+    }), collapse = " >= ")
+  )
+}
+
+sc_agg <- dplyr::bind_rows(lapply(X = names(qe_sc), FUN = function(sc) {
+  cbind(data.frame(
+    SC = sc,
+    numE = length(qe_sc[[sc]])
+  ), aggregate_e(qe_sc[[sc]]))
+}))
+sc_agg$SC <- factor(x = sc_agg$SC, levels = sc_agg$SC, ordered = TRUE)
+```
+
+
+Table \ref{tab:sc-ei-overview} shows, for each of the Fire Drill's symptoms/consequences, how many types of empirical instances were observed, how often they occurred, as well as the average severity.
+The last column orders the associated empirical instances from highest to lowest total severity (only shown interactively).
+
+
+```{r echo=FALSE}
+if (interactive()) {
+  sc_agg
+} else {
+  knitr::kable(
+    x = sc_agg[, colnames(sc_agg) != "severity"],
+    booktabs = TRUE,
+    caption = "Association between (empirical) symptoms and consequences, and empirical instances of concrete observations.",
+    escape = FALSE,
+    label = "sc-ei-overview"
+  )
+}
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+pie(x = sc_agg$total, labels = sc_agg$SC)
+```
+
+```{r echo=FALSE, eval=FALSE}
+temp <- sc_agg[sc_agg$total > 0,]
+lp <- c(0.4870491, 0.8538340, 0.9814114, 1.0770944, 1.3163020, 2.1136605, 3.5170115, 5.2393060, 6.3237136)
+lp[1] <- lp[1] - .05
+lp[2] <- lp[2] - .07
+lp[3] <- lp[3] - .175
+lp[5] <- lp[5] + .2
+lp[7] <- lp[7] + .5
+lp[9] <- lp[9] + .1
+plotrix::pie3D(x = temp$total, labels = temp$SC, explode = .1, theta = 1, start = .2, edges = 300, radius = 2, shade = .9)#, labelpos = lp)
+```
+
+
+Figures \ref{fig:fd-sc-mean} and \ref{fig:fd-sc-total} show the average (out of maximal $5$) and total severity per symptom / consequence.
+
+
+```{r fd-sc-mean, echo=FALSE, warning=FALSE, fig.width=8, fig.height=5, fig.cap="Average severity for each (empirical) Symptom / Consequence."}
+makefig <- function(paper = FALSE) {
+  rlang::expr({
+    paper <- !!paper
+    temp <- rbind(data.frame(SC = sc_agg$SC, data = sc_agg$mean, num = sc_agg$numAgg, grp = "mean"))
+    temp$grp <- factor(x = temp$grp, levels = c("max", "mean"), ordered = TRUE)
+    
+    data_labels <- as.character(temp$data)
+    if (paper) {
+      data_labels[!is.na(data_labels)] <- paste0("$\\,=", data_labels[!is.na(data_labels)], "$")
+    }
+    data_labels[is.na(data_labels)] <- "n/a"
+    
+    g <- ggplot(temp, aes(x = rev(grp), y = data, fill = SC)) + # y = round(100 * total / sum(total))
+      ylim(0, 5) +
+      facet_wrap(~ SC, scales = "fixed", nrow = 2, labeller = labeller(
+        SC = `names<-`(x = paste0((if (paper) "\\texttt{"), temp$SC, (if (paper) "}" else " = "), data_labels, " (", (if (paper) "$"), temp$num, (if (paper) "$"), ")"), value = temp$SC)
+      )) +
+      geom_bar(width = 1, stat = "identity") +
+      coord_polar("y", start = 0) +
+      scale_fill_manual(values = c("#FF4A36", "#9BC94C", "#BC80BD", "#FCCDE5", "#D58932", "#DE657A",
+                                   "#BEBADA", "#6F99B9", "#E6CF00", "#8DD3C7", "#ACA585"),
+                        drop = FALSE,
+                        labels = sapply(X = levels(temp$SC), FUN = function(l) {
+                          if (paper) paste0("\\texttt{", l, "}") else l
+                        })) +
+      xlab("") + ylab("") + labs(fill = "Symptom / Consequence", title = "Average severity per symptom and consequence.") +
+      guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+    
+    if (paper) {
+      g <- g + gg2_style(FALSE) +
+        theme(
+          axis.text.y = element_blank(),
+          legend.title = element_text(size = 9, margin = ggplot2::margin(r = 10)),
+          legend.text = element_text(size = 8, margin = ggplot2::margin(l = -4, r = 3)),
+          legend.position = "bottom",
+          legend.margin = ggplot2::margin(t = -1, unit = "line"),
+          strip.background = element_blank(),
+          strip.text = element_text(size = 9),
+          panel.spacing = unit(1.2, "lines"),
+          panel.background = element_rect(linetype = "blank", fill = "white"),
+          panel.grid.major = element_line(linetype = "dotted", color = "#aaaaaa", size = .6),
+          panel.grid.minor = element_line(linetype = "dotted", color = "#cccccc", size = .5),
+          plot.margin = ggplot2::unit(x = c(-.5, 0, -1, -1.3), units = "line"),
+          plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = ggplot2::margin(b = 1.5, unit = "line"))) +
+      guides(fill = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 1)))
+    } else {
+      g <- g + theme(axis.text.y = element_blank(),
+                     legend.position = "bottom",
+                     panel.background = element_rect(fill = "#fbfbfb", linetype = "blank"),
+                     panel.grid.major = element_line(linetype = "dotted", color = "#aaaaaa"),
+                     panel.grid.minor = element_line(linetype = "dotted", color = "#cccccc"))
+    }
+    
+    g
+  })
+}
+
+eval(makefig())
+```
+
+```{r echo=FALSE, eval=FALSE}
+tikzDevice::tikz(file = paste0("../figures/fig_", "it_fd-sc-mean.tex"), width = FIG_WIDTH, height = 3.9, verbose = FALSE)
+eval(makefig(paper = TRUE))
+dev.off()
+```
+
+
+
+```{r fd-sc-total, echo=FALSE, warning=FALSE, fig.width=8, fig.height=5, fig.cap="Total severity and number of (aggregated) observations for each (empirical) Symptom / Consequence."}
+makefig <- function(paper = FALSE) {
+  rlang::expr({
+    paper <- !!paper
+    temp <- rbind(data.frame(SC = sc_agg$SC, data = sc_agg$total, num = sc_agg$numAgg, grp = "mean"))
+    temp$grp <- factor(x = temp$grp, levels = c("max", "mean"), ordered = TRUE)
+    
+    g <- ggplot(temp, aes(x = SC, y = data, fill = SC)) +
+      geom_bar(width = 0.8, stat = "identity") +
+      # https://stackoverflow.com/questions/17311917/ggplot2-the-unit-of-size
+      geom_text(aes(label = paste0((if (paper) "$"), data, (if (paper) "$"), " (", (if (paper) "$"), num, (if (paper) "$"), ")")), stat = "identity", vjust = -1, size = 9*0.352777778) +
+      scale_fill_manual(values = c("#FF4A36", "#9BC94C", "#BC80BD", "#FCCDE5", "#D58932",
+                                   "#DE657A", "#BEBADA", "#6F99B9", "#E6CF00", "#8DD3C7", "#ACA585"),
+                        labels = sapply(X = levels(temp$SC), FUN = function(l) {
+                          if (paper) paste0("\\texttt{", l, "}") else l
+                        })) +
+      xlab("") + ylab("") + labs(fill = "Symptom / Consequence", title = "Total severity per symptom and consequence.") +
+      theme(legend.position = "bottom") +
+      guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+    
+    if (paper) {
+      g <- g + gg2_style(FALSE) +
+        scale_y_continuous(limits = c(0, 63), breaks = seq(0, 100, by = 10), labels = seq(0, 100, by = 10)) +
+        scale_x_discrete(labels = sapply(X = levels(temp$SC), FUN = function(l) {
+                          if (paper) paste0("\\texttt{", l, "}") else l
+                        })) +
+        theme(
+          legend.title = element_text(size = 9, margin = ggplot2::margin(r = 10)),
+          legend.text = element_text(size = 8, margin = ggplot2::margin(l = -4, r = 3)),
+          legend.position = "bottom",
+          legend.margin = ggplot2::margin(t = -1, unit = "line"),
+          axis.text = element_text(size = 9),
+          axis.title = element_text(size = 9),
+          axis.line = element_line(),
+          panel.spacing = unit(1.2, "lines"),
+          panel.background = element_rect(linetype = "blank", fill = "white"),#element_rect(linetype = "blank", fill = "#fbfbfb"),
+          panel.grid.major = element_line(linetype = "dotted", color = "#aaaaaa", size = .6),
+          panel.grid.minor = element_line(linetype = "dotted", color = "#cccccc", size = .5),
+          plot.margin = ggplot2::unit(x = c(0, 0, 0, -1), units = "line"),
+          plot.title = element_text(size = 9, face = "bold", hjust = 0.5, margin = ggplot2::margin(b = 1.5, unit = "line"))) +
+      guides(fill = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(size = 1)))
+    } else {
+      g <- g + ylim(0, 62)
+    }
+    
+    g
+  })
+}
+
+eval(makefig(FALSE))
+```
+
+```{r eval=FALSE, echo=FALSE}
+eval(makefig(TRUE))
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+tikzDevice::tikz(file = paste0("../figures/fig_", "it_fd-sc-total.tex"), width = FIG_WIDTH, height = 3.1, verbose = FALSE)
+eval(makefig(paper = TRUE))
+dev.off()
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+temp <- rbind(
+  cbind(sc_agg, data.frame(grp = 1, data = sc_agg$mean)),
+  cbind(sc_agg, data.frame(grp = 2, data = sc_agg$total)))
+
+
+ggplot(temp, aes(x = grp, y = data, fill = SC)) + # y = round(100 * total / sum(total))
+  facet_wrap(~ SC, ncol = 10, strip.position = "bottom") +
+  geom_bar(width = 1, stat = "identity") +
+  #scale_fill_manual(values = ggsci::pal_igv()(n = 10)) +
+  scale_fill_manual(values = c("#FF4A36", "#9BC94C", "#BC80BD", "#FCCDE5", "#D58932", "#DE657A", "#BEBADA", "#6F99B9", "#E6CF00", "#8DD3C7", "#ACA585")) +
+  gg2_style() +
+  xlab("") + ylab("") + labs(fill = "Symptom / Consequence")
+```
+
+```{r echo=FALSE, eval=FALSE}
+temp <- NULL
+for (n in names(qe_sc)) {
+  data <- data.frame(
+    data = do.call("c", lapply(X = qe_sc[[n]], function(rn) {
+      split_obs(qe_ei[rn,]$obs_agg)
+    }))
+  )
+  if (nrow(data) > 0) {
+    data$SC <- n
+    temp <- rbind(temp, data)
+  }
+}
+temp$SC <- factor(x = temp$SC, levels = levels(sc_agg$SC), ordered = TRUE)
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+ggplot(temp, aes(x = data, y = SC, fill = rev(SC))) +
+  geom_density_ridges_gradient() +
+  scale_fill_discrete() +
+  #scale_fill_viridis_c(name = "Temp. [F]", option = "C") +
+  labs(title = 'Temperatures in Lincoln NE in 2016')
+```
+
+```{r echo=FALSE, eval=FALSE}
+set.seed(1)
+ggplot(temp, aes(x = SC, y = data, fill = SC)) +
+  geom_violin() +
+  geom_jitter(position = position_jitter(.1), show.legend = FALSE) +
+  scale_fill_brewer(palette = "Set2")
 ```
 
 
