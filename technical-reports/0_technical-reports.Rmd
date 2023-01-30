@@ -59,6 +59,8 @@ opts_chunk$set(tidy = TRUE, tidy.opts = list(indent=2))
 ```
 
 ```{r echo=FALSE, warning=FALSE}
+source(file = "../helpers_rank-model.R")
+source(file = "../models/rank-model.R")
 source(file = "../helpers.R")
 source(file = "./common-funcs.R")
 source(file = "../models/modelsR6.R")
@@ -70,10 +72,17 @@ library(ggpubr)
 
 # Overview
 
-This document is a compilation of four separate technical reports. In all detail, the development of methods for detecting the presence of so-called _\"anti-patterns\"_ in software development projects is presented.
+This document is a compilation of five separate technical reports.
+The canonical reference to this report is [@honel2021technical].
+In all detail, the development of methods for detecting the presence of so-called _\"anti-patterns\"_ in software development projects is presented.
 
-The first technical report is concerned with this concrete problem, and it facilitates two major building blocks: The first is the application of a new method for time warping, called self-regularizing boundary time/amplitude warping (srBTAW). The second building block is a detailed walkthrough of creating a classifier for commits, based on source code density. Both these blocks have dedicated technical reports.
+The first technical report is concerned with this concrete problem, and it facilitates two major building blocks: The first is the application of a new method for time warping, called self-regularizing boundary time/amplitude warping (srBTAW). The second building block is a detailed walk-through of creating a classifier for commits, based on source code density. Both these blocks have dedicated technical reports.
 
 The second technical report is concerned with the same problem, but it facilitates issue-tracking data, as well as additional methods for detecting, such as inhomogeneous confidence intervals and vector fields.
 
-All of the data, source code, and raw materials can be found online. These reports and resources are made available for reproduction purposes. The interested reader is welcome and enabled to re-run all of the computations and to extend upon our ideas. The repository is to be found at <https://github.com/sse-lnu/anti-pattern-models>. The data is made available online [@honel_picha_2021].
+The third technical report is an attempt to replace the approach of unsupervised scoring with a robust regression model that has good generalizability using stable learning through adaptive training.
+Also, it add a slight adaptation of the first source code pattern.
+
+Notebooks four and five are concerned with an optimization framework for curve warping and -transformation, as well as classifying commits, respectively.
+
+All of the data, source code, and raw materials can be found online. These reports and resources are made available for reproduction purposes. The interested reader is welcome and enabled to re-run all of the computations and to extend upon our ideas. The repository is to be found at <https://github.com/MrShoenel/anti-pattern-models>. The data is made available online [@honel_picha_2021].
