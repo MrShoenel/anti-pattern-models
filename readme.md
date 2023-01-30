@@ -51,9 +51,9 @@ the AP with data from real-world projects significantly improves the
 potential. We also introduce a no-pattern approach that exploits the
 ground truth for establishing a new, quantitative understanding of the
 phenomenon, as well as for finding gray-/black-box predictive models. We
-conclude that the presence of similar patterns is most certainly
-detectable. Furthermore, any pattern that can be characteristically
-modeled using the proposed approach is potentially well detectable.
+conclude that the presence detection and severity assessment of the Fire
+Drill anti-pattern, as well as some of its related and similar patterns,
+is certainly possible using some of the presented approaches.
 
 # References
 
@@ -87,10 +87,10 @@ Software Engineering Journal*, February.
 
 <div id="ref-honel_picha_2021" class="csl-entry">
 
-Hönel, Sebastian, Petr Pícha, Premek Brada, and Lenka Rychtarova. 2023.
-“<span class="nocase">Detection of the Fire Drill anti-pattern: 15
-real-world projects with ground truth, issue-tracking data, source code
-density, models and code</span>.” Zenodo.
+Hönel, Sebastian, Petr Pícha, Premek Brada, Lenka Rychtarova, and Jakub
+Danek. 2023. “<span class="nocase">Detection of the Fire Drill
+anti-pattern: 15 real-world projects with ground truth, issue-tracking
+data, source code density, models and code</span>.” Zenodo.
 <https://doi.org/10.5281/zenodo.4734053>.
 
 </div>
